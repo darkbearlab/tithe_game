@@ -56,7 +56,7 @@
 | 側翼 / 繞背 | `CONFIG.flank` ~159 | 搬 | 盾衛的「正確答案」就是它 |
 | 術 / 卷軸 | `ARTS` ~784、`castArt` ~3986 | **改** | 保留「術」，**成本從 CD 改成怒火**（`DESIGN.md` §2.3） |
 | **大絕招掛勾** | `useOathSkill()` ~4396（目前 `return false`）、`空白` 鍵 | **改** | 空殼已經留好，接上「滿怒火 → 清空換一發大的」 |
-| **視錐 / 迷霧** | `CONFIG.vision` ~196、`canSee` ~2243、`visionPolygon` ~6982、`drawFog` ~6988、`drawSkeleton` ~7016 | **改（保留，預設關）** | 一般房間關掉，留給**暗房**房型。已有 `arenaNoFog` 旗標可比照。見 `DESIGN.md` §5.2 |
+| **視錐 / 迷霧** | `CONFIG.fog.enabled`、`fogOn()`、`canSee`、`visionPolygon`、`drawFog`、`drawSkeleton` | ✅ **改（保留，已預設關）** | 機制完整保留，`CONFIG.fog.enabled` 預設 `false`＝一般房間看得見全場。打開就回到「只看得見視錐內」＝**暗房**房型（試作場 `N` 鍵可即時預覽）。見 `DESIGN.md` §5.2 |
 | 投擲物 / 煙 / 閃光 | ~4400–4515 | 改 | 煙霧是潛行道具（多半砍）；爆裂物留 |
 | **奔跑 / 負重懲罰** | `sprintMult` ~5650、`carriedWeight` ~5641 | **改** | 奔跑改吃怒火；**負重懲罰整條拿掉**。另外新寫 **dash**（免費、CD、i-frame） |
 | **攻擊權配額** | `attackTokens` ~4116–4136、`tryAcquireToken`、`releaseAttackToken` | **砍** | 見 `DESIGN.md` §2.7 |

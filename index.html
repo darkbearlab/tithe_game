@@ -165,7 +165,11 @@ const CONFIG = {
     fanRays: 28,            // 視錐渲染射線數
     coneMax: 2200,          // 視錐射線最大長度（≈無限，實際被牆截斷）
   },
-  fog: { color: '#05070b', skeletonAlpha: 0.16 },
+  // 戰爭迷霧（TITHE C3）：機制完整保留，但**一般房間預設關閉**（DESIGN.md §5.2）——
+  // 你進的是一個已經被驚動的封閉空間，藏沒有意義，而視野遮蔽只會妨礙高速戰鬥的閱讀。
+  // 留給「暗房」房型：那種房間把 enabled 打開，只看得見視錐內的東西。
+  // color 仍是全場的底色，不受 enabled 影響。
+  fog: { enabled: false, color: '#05070b', skeletonAlpha: 0.16 },
 
   // 旋轉鏡頭（跟隨騎士、使其朝上）；anchorY＝單位在畫面的縱向位置(0.5置中, 越大越靠下→前方視野越長)
   camera: { scale: 1.0, followLerp: 9, rotateLerp: 8, anchorY: 0.66 },
@@ -2054,7 +2058,9 @@ function canSee(observer, targetPos) {
   const baseHalf = (observer.coneHalfDeg || CONFIG.vision.coneHalfDeg) * (1 - flashF(observer) * CONFIG.flash.coneShrink);   // 閃光暈眩：視錐變窄
   return Math.abs(angDiff(angTo(observer.pos, targetPos), observer.facing)) <= baseHalf * Math.PI / 180;
 }
-function isRevealed(enemy) { return arenaNoFog || activePlayers().some(p => canSee(p, enemy.pos)); }   // 被任一我方看到（試作場：全可見）
+// 敵人是否畫得出來。迷霧關著＝全部看得見（一般房間）；開著才回到「被任一我方看到」。
+const fogOn = () => CONFIG.fog.enabled && !arenaNoFog;
+function isRevealed(enemy) { return !fogOn() || activePlayers().some(p => canSee(p, enemy.pos)); }
 
 /* =====================================================================
    Camera — 旋轉視角（跟隨置中騎士、使其朝上）
@@ -5068,7 +5074,7 @@ window.addEventListener('keydown', e => {
     if (k === 't') arenaResetFight();                                    // T 重來
     if (k === 'y') for (const e of enemies) if (!e.dead && !e.dummy) e.state = 'ENGAGED';   // Y 叫敵人立刻開戰
     if (k === 'c') { arenaSetArmor(arenaArmorIdx + 1); e.preventDefault(); return; }   // C 換身上的甲（蓋掉道具鍵；試作場用不到道具）
-    if (k === 'n') arenaNoFog = !arenaNoFog;                             // N 迷霧開關
+    if (k === 'n') { CONFIG.fog.enabled = !CONFIG.fog.enabled; arenaNoFog = false; }   // N 迷霧開關（暗房房型的預覽）
     if (k === 'escape' || k === 'backspace') { enterArenaSelect(); e.preventDefault(); return; }   // Esc 回試作場入口（換場地）
     if (k === 'm') { arenaMode = false; goMenu(); e.preventDefault(); return; }   // M 回主選單（戰役等原有功能）
   }
@@ -5231,7 +5237,7 @@ function draw() {
   ctx.restore();
 
   // ---- 戰爭迷霧（除錯時關閉）。演出鎖控制時 drawFog 改挖「聚光圈」＝重點區外全是迷霧 ----
-  if (!debugView) drawFog();
+  if (!debugView && fogOn()) drawFog();
 
   // ---- 霧上：淡牆骨架（空間參考）+ 機密檔案掉落標記（永遠可見）----
   ctx.save(); applyCam(); drawSkeleton(); drawFileDrop(); drawCacheDrops(); ctx.restore();
@@ -5334,7 +5340,7 @@ function drawArenaHUD() {
       : (s.id ? ((s.type === 'item' ? ITEMS[s.id].name + '×' + (s.count || 0) : ABILITIES[s.id].name)) : '—');
     return `${on ? '▶' : ''}${i + 1}:${nm}`;
   }).join('  ');
-  const line2 = `槽位 ${slotLine}　·　Tab 換主手 · O 副手[${offName}] · C 甲[${(ARMORS[k.armorId] || ARMORS.none).name}] · V 不屈[${knightRelics.has('secondwind') ? '有' : '無'}] · N 迷霧[${arenaNoFog ? '關' : '開'}] · \` 面板`;
+  const line2 = `槽位 ${slotLine}　·　Tab 換主手 · O 副手[${offName}] · C 甲[${(ARMORS[k.armorId] || ARMORS.none).name}] · V 不屈[${knightRelics.has('secondwind') ? '有' : '無'}] · N 迷霧[${fogOn() ? '開' : '關'}] · \` 面板`;
   ctx.textAlign = 'center'; ctx.font = '11px Consolas';
   ctx.fillStyle = 'rgba(255,210,122,0.9)'; ctx.fillText(line1, cv.width / 2, cv.height - 126);
   ctx.fillStyle = 'rgba(160,180,200,0.85)'; ctx.fillText(line2, cv.width / 2, cv.height - 112);
