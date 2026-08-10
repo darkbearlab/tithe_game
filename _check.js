@@ -148,6 +148,7 @@ const EPILOGUE = `
   enterArenaSelect, editorOpen, enterSandbox, enterFinaleSetup, playEnding,
   keys, mouse,
   get execCount() { return execCount; },
+  get knight() { return knight(); },
   get floaters() { return floaters; },
   setScene(s) { scene = s; },
   forceMap(k) { forcedMap = k; },
@@ -216,7 +217,7 @@ const SCENARIOS = [
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
   { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, noMorale, noStealth, noTacticalAI] },
-  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
@@ -298,11 +299,14 @@ function noTacticalAI() {
 // TITHE D2/D4 的行為探針：處決與飄字都要真的發生過。
 // 這兩個是新加的核心（處決是唯一的回血手段、飄字是它可讀的前提），
 // 所以它們不該只是「有寫」——要有證據說它在模擬裡真的觸發得到。
-let sawExec = false, sawFloater = false;
+let sawExec = false, sawFloater = false, sawDash = false;
 function sampleNewFx() {
   if (!sawExec && (T.execCount || 0) > 0) sawExec = true;
   if (!sawFloater && (T.floaters || []).length) sawFloater = true;
+  const k = T.knight;
+  if (!sawDash && k && k.dash) sawDash = true;
 }
+function dashHappened() { return sawDash ? null : '整場沒有 dash 過——空白鍵的閃避路徑可能斷了'; }
 function executionHappened() { return sawExec ? null : '整場沒有觸發過處決——F 鍵的處決路徑可能斷了'; }
 function floatersHappened() { return sawFloater ? null : '整場沒有出現過傷害飄字'; }
 
@@ -334,14 +338,24 @@ function pokeCombat(i) {
   if (i % 61 === 20) { key('keydown', '1'); key('keyup', '1'); }
   if (i % 71 === 30) { key('keydown', '2'); key('keyup', '2'); }
   if (i % 83 === 11) { key('keydown', 'x'); key('keyup', 'x'); }   // 換武器組
+  // dash 會取消當下的揮擊（那是它刻意的代價），所以按太密會讓騎士整場都揮不完一刀，
+  // 連帶讓處決窗打不出來。這裡按得比揮擊週期稀疏＝兩條路徑都走得到。
+  if (i % 97 === 13) { key('keydown', ' '); key('keyup', ' '); }
   if (i % 89 === 17) { key('keydown', 'r'); key('keyup', 'r'); }   // 換彈
   if (i % 9 === 4) { key('keydown', 'f'); key('keyup', 'f'); }   // 互動
-  /* 處決的探針：**主動製造踉蹌窗**。
-     為什麼要作弊：以目前的數值，敵人往往在體幹破之前就先被血量殺死（實測 shieldman
-     體幹只掉到 38/60 就死了），所以自然狀態下處決窗幾乎不會出現。那是一個**平衡問題**，
-     要靠玩測與調值解決；而這個探針要回答的是另一個問題——「處決這條路走不走得通」。
-     兩者不該混在一起，否則調值一動測試就紅，測試就會被當成雜訊。 */
-  if (i > 30 && i % 40 === 0) { const e = (T.enemies || []).find(x => !x.dead && !x.dummy); if (e) e.poise = 1; }
+  /* 處決的探針：**直接製造踉蹌狀態**，不經傷害與體幹的數值。
+     為什麼要這樣作弊：以目前的平衡，敵人往往在體幹破之前就先被血量殺死（實測 shieldman
+     體幹只掉到 38/60 就死了），而且試作場的三隻非假人一分鐘內就會被清光——
+     自然狀態下處決窗出不出現，完全看那一局的數值與運氣。
+
+     那是一個**平衡問題**（已記在 HARVEST D 表），要靠玩測解決；而這個探針要回答的是
+     另一個問題：「處決這條路——找目標、按鍵、動作、擊殺、回血——走不走得通」。
+     兩者混在一起的話，日後每次調傷害或體幹，這條測試就會無辜地紅，然後被當成雜訊忽略。
+     所以這裡直接塞 staggerT，跳過整條數值鏈。 */
+  if (i > 20 && i % 40 === 0) {
+    const e = (T.enemies || []).find(x => !x.dead && !x.dummy);
+    if (e) e.staggerT = Math.max(e.staggerT || 0, 1.0);
+  }
   if ((T.enemies || []).some(e => !e.dead && !e.dummy && e.staggerT > 0)) { key('keydown', 'f'); key('keyup', 'f'); }
   const mm = { movementX: (i % 7) - 3, movementY: (i % 5) - 2, clientX: 640, clientY: 360, preventDefault() {} };
   fire(listeners.canvas, 'mousemove', mm); fire(listeners.window, 'mousemove', mm);
@@ -361,7 +375,7 @@ for (const s of list) {
   let stage = 'enter', i = 0;
   try {
     seedRng(0x51ED + sIdx);   // 每個情境固定種子＝失敗可以原地重現
-    sawEnemyHurt = false; sawExec = false; sawFloater = false;
+    sawEnemyHurt = false; sawExec = false; sawFloater = false; sawDash = false;
     s.enter();
     grabPointer();
     stage = 'loop';
