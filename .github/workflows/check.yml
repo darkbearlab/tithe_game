@@ -1,0 +1,16 @@
+# headless 驗證：逐幀跑遍所有場景的 update()+draw()，並斷言幾條不變式。
+# 這個 repo 沒有建置步驟、沒有依賴——所以 CI 也只需要一個 node。
+name: check
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  headless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node _check.js
