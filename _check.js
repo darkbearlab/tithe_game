@@ -149,6 +149,7 @@ const EPILOGUE = `
   keys, mouse,
   get execCount() { return execCount; },
   get knight() { return knight(); },
+  get exitPortal() { return exitPortal; },
   get floaters() { return floaters; },
   setScene(s) { scene = s; },
   forceMap(k) { forcedMap = k; },
@@ -216,7 +217,7 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noMorale, noStealth, noTacticalAI] },
   { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
@@ -307,6 +308,17 @@ function sampleNewFx() {
   if (!sawDash && k && k.dash) sawDash = true;
 }
 function dashHappened() { return sawDash ? null : '整場沒有 dash 過——空白鍵的閃避路徑可能斷了'; }
+
+/* 出口的洞（D6 第一塊）：清場 → 開洞 → 走進去才過關。
+   這條探針顧的是「清場之後還走得完」——改成要走進洞之後，過關路徑就不再是
+   自動發生的了，很容易在後續改動中悄悄斷掉而測試全綠。 */
+let sawPortal = false;
+function samplePortal() { if (!sawPortal && T.exitPortal && T.exitPortal.open) sawPortal = true; }
+function portalRun() {
+  if (!sawPortal) return '清場之後沒有開出口的洞';
+  if (T.scene === 'COMBAT') return '走進洞裡了卻還停在 COMBAT——過關判定沒接上';
+  return null;
+}
 function executionHappened() { return sawExec ? null : '整場沒有觸發過處決——F 鍵的處決路徑可能斷了'; }
 function floatersHappened() { return sawFloater ? null : '整場沒有出現過傷害飄字'; }
 
@@ -357,6 +369,11 @@ function pokeCombat(i) {
     if (e) e.staggerT = Math.max(e.staggerT || 0, 1.0);
   }
   if ((T.enemies || []).some(e => !e.dead && !e.dummy && e.staggerT > 0)) { key('keydown', 'f'); key('keyup', 'f'); }
+  /* 洞開了就把騎士挪到洞口。為什麼用瞬移而不是走過去：合成輸入沒有尋路，
+     直線走過去會不會卡牆全看地圖——而這條探針要驗的是「進洞＝過關」這個判定，
+     不是走路。距離判定仍由遊戲自己在下一幀跑。 */
+  const ep = T.exitPortal;
+  if (ep && ep.open) { const k = T.knight; if (k) { k.pos.x = ep.x + 6; k.pos.y = ep.y + 6; } }
   const mm = { movementX: (i % 7) - 3, movementY: (i % 5) - 2, clientX: 640, clientY: 360, preventDefault() {} };
   fire(listeners.canvas, 'mousemove', mm); fire(listeners.window, 'mousemove', mm);
 }
@@ -375,7 +392,7 @@ for (const s of list) {
   let stage = 'enter', i = 0;
   try {
     seedRng(0x51ED + sIdx);   // 每個情境固定種子＝失敗可以原地重現
-    sawEnemyHurt = false; sawExec = false; sawFloater = false; sawDash = false;
+    sawEnemyHurt = false; sawExec = false; sawFloater = false; sawDash = false; sawPortal = false;
     s.enter();
     grabPointer();
     stage = 'loop';
@@ -385,7 +402,7 @@ for (const s of list) {
       T.update(FIXED);
       T.draw();
       T.drawSeedTag();
-      sampleCombat(); sampleNewFx();
+      sampleCombat(); sampleNewFx(); samplePortal();
     }
     releaseKeys();
     for (const inv of (s.invariants || [])) {

@@ -106,6 +106,14 @@ const CONFIG = {
      i-frame 只佔動作的前段（iframeFrac）＝**穿過攻擊**要抓時機，不是無腦按了就無敵。 */
   dash: { dist: 200, dur: 0.15, cd: 0.8, iframeFrac: 0.75, trail: 6 },
 
+  /* 出口的洞（TITHE D6 的第一塊，DESIGN.md §5.3）：
+       清場那一刻，房間中央地板碎裂、一個洞打開，跳下去＝下一層。
+     為什麼不是「清場即過關」：那樣最後一刀會直接把畫面切走，玩家連
+     「我贏了」都還沒感覺到，也沒有撿東西、喘口氣的那一拍。
+     **洞是一個動作**，不是一個判定——玩家要自己走過去跳下去。
+     （洞口的三選一獎勵是 D6 的後半，還沒做。） */
+  exit: { openDur: 0.8, radius: 38, drawR: 46 },
+
   // Shift 奔跑：奔跑倍率 = base − (武器weight−1)×weightPenalty，夾在 [minMult, base]（越重跑越慢）
   sprint: { base: 1.9, weightPenalty: 0.5, minMult: 1.1 },
   // 武器數值移至下方 WEAPONS 目錄（可指派、未來可換）
@@ -2170,6 +2178,7 @@ let simTime, deadCount;
 // TITHE C6：本房是否已清空。取代 Homeward 的「騎士走到撤離點＝過關」——
 // 出口是房間中央的洞（DESIGN.md §5.3），洞在清場那一刻才開，所以過關條件就是清場本身。
 let roomCleared = false;
+let exitPortal = null;   // 清場後開啟的洞 { x, y, t, open }（t＝開啟演出進度）
 let result;
 let scene = 'MAP';           // 場景：MAP | COMBAT | REST | RUNEND | RUNWIN | EDITOR
 let forcedMap = null;        // 非 null 時 startMission 強制用此地圖鍵（關卡編輯器試玩用）
@@ -2602,7 +2611,7 @@ function startMission() {
   const faceInto = ENTRY ? angTo(ENTRY, { x: WORLD.w / 2, y: WORLD.h / 2 }) : 0;   // 開場面向地圖內部
   for (const p of players) { p.facing = faceInto; p.idleAnchor = faceInto; }
   controlledId = 0;
-  enemies = []; bullets = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; floaters = []; execCount = 0; shakeAmt = 0; kickY = 0; hitstopT = 0;
+  enemies = []; bullets = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; floaters = []; execCount = 0; exitPortal = null; shakeAmt = 0; kickY = 0; hitstopT = 0;
   attackTokens = new Map(); enemyIdSeq = 1; drops = []; fileDrop = null;
   cacheGround = (MAP.caches || []).map(c => ({ x: c.x, y: c.y }));   // 密封容器：本場地圖配置的（撿走撤離才開封）
   for (const p of players) p.caches = 0;
@@ -3165,7 +3174,7 @@ function startIntro() {
   for (const d of (MAP.destructibles || [])) { d.cur = d.intact; d.curHp = d.hp; }
   enemyIdSeq = 1;
   bullets = []; grenades = []; flashFx = []; particles = []; drops = []; fileDrop = null;
-  cacheGround = []; prisoners = []; corpses = []; decals = []; floaters = []; execCount = 0; shakeAmt = 0; kickY = 0; hitstopT = 0;
+  cacheGround = []; prisoners = []; corpses = []; decals = []; floaters = []; execCount = 0; exitPortal = null; shakeAmt = 0; kickY = 0; hitstopT = 0;
   introGuards = []; introConsole = null;
   // 騎士＝出身選定的孤身一人；醒來處在戰場左側
   const wake = { x: 220, y: 360 };
@@ -3912,6 +3921,29 @@ function breakPoise(t, fromAng, by) {
   spawnFloater(t.pos, '體幹破', 'poise');
   Sfx.play('block', t.pos);
 }
+/* ── 出口的洞 ─────────────────────────────────────────────────────── */
+// 位置：房間中央。但中央可能落在牆裡，所以取**離中央最近的 waypoint**——
+// waypoint 依定義是可站的點，這樣才保證跳得到（不會開在玩家走不進去的地方）。
+function openExitPortal() {
+  const c = { x: WORLD.w / 2, y: WORLD.h / 2 };
+  let pos = c;
+  if (MAP.waypoints && MAP.waypoints.length) {
+    const n = nearestNode(c, false);
+    if (n != null && wp(n)) pos = wp(n).pos;
+  }
+  exitPortal = { x: pos.x, y: pos.y, t: 0, open: false };
+  hitstop(0.06);
+  addShakeAt(pos, 7);            // 地板碎裂：一下悶震
+  for (let i = 0; i < 26; i++) particles.push(mkPart(pos, 150, 0.7, '#c9a45c'));   // 碎石
+  Sfx.play('grenade', pos);
+}
+function tickExitPortal(dt) {
+  const p = exitPortal; if (!p || p.open) return;
+  p.t += dt;
+  if (p.t >= CONFIG.exit.openDur) { p.t = CONFIG.exit.openDur; p.open = true; }
+}
+const exitPortalReady = () => !!(exitPortal && exitPortal.open);
+
 /* ── dash ─────────────────────────────────────────────────────────── */
 // 方向：有移動輸入就用輸入方向（想往哪閃就往哪閃），沒有就用面向（往前突進）。
 function startDash(u) {
@@ -5381,15 +5413,22 @@ function update(dt) {
     return;
   }
 
-  // 7.5) 清場判定（TITHE C6）：場上再無活著的敵人＝本房結束。
-  // 這取代了 Homeward 的「走到撤離點」——出口是房間中央的洞，洞在清場那一刻才開，
-  // 所以「開洞」和「過關」是同一件事，不必再讓玩家走一段路。
-  // （D6 會在這裡接上開洞演出與洞口三選一；現在先直接結算。）
-  if (!roomCleared && enemies.length && enemies.every(e => e.dead)) roomCleared = true;
+  // 7.5) 清場 → **開洞**（不是直接結算）。
+  // 清場那一刻房間中央的地板碎裂、洞打開；玩家自己走過去跳下去才進下一層。
+  // 中間那段時間是留給你的：撿東西、看戰場、喘一口氣。
+  if (!roomCleared && enemies.length && enemies.every(e => e.dead)) {
+    roomCleared = true;
+    // 序章是腳本化的演出（他是離開戰場，不是墜入地獄），不開洞、照舊直接收尾。
+    if (!introActive) openExitPortal();
+  }
+  tickExitPortal(dt);
 
-  // 8) 計時 + 結算。清場＝過關；騎士陣亡＝run 結束。
+  // 8) 計時 + 結算。**跳進洞**＝過關；騎士陣亡＝run 結束。
   simTime += dt;
-  if (!knight() || !knightAlive() || roomCleared) endMission();
+  const kn = knight();
+  if (!kn || !knightAlive()) endMission();
+  else if (roomCleared && !exitPortal) endMission();                                  // 序章等不開洞的情境：沿用清場即結束
+  else if (exitPortalReady() && dist(kn.pos, exitPortal) <= CONFIG.exit.radius) endMission();
 }
 
 /* =====================================================================
@@ -5431,7 +5470,7 @@ function draw() {
   // ---- 世界（鏡頭變換）----
   ctx.save(); applyCam();
   drawGrid(); drawBushes(); drawAreas(); drawLowWalls(); drawDestructibles(); drawWalls(); drawDoors(); drawButtons(); drawWaypoints(); drawZonesWorld();
-  drawDecals(); drawCorpses(); drawDrops(); drawPrisoners(); drawIntroActors(); drawParticles(); drawBullets(); drawGrenades();
+  drawDecals(); drawExitPortal(); drawCorpses(); drawDrops(); drawPrisoners(); drawIntroActors(); drawParticles(); drawBullets(); drawGrenades();
   drawMeleeFx([...enemies.filter(e => !e.dead && isRevealed(e)), ...players]);   // 近接弧畫在單位之下（不遮血條/身體）；敵人比照 drawEnemies 只畫已感知者
   drawEnemies(); drawPlayers(); drawFlashFx();
   drawStaggerMarks([...enemies.filter(e => !e.dead && isRevealed(e)), ...players]);
@@ -5804,7 +5843,35 @@ function drawWaypoints() {
   for (const [a, b] of MAP.edges) { ctx.beginPath(); ctx.moveTo(wp(a).pos.x, wp(a).pos.y); ctx.lineTo(wp(b).pos.x, wp(b).pos.y); ctx.stroke(); }
   for (const n of MAP.waypoints) { ctx.fillStyle = 'rgba(120,140,160,0.18)'; ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, 3, 0, Math.PI * 2); ctx.fill(); }
 }
-function drawZonesWorld() {   // 進場點（撤離圈隨 C6 移除；D6 之後這裡會改畫「清場後開啟的洞」）
+// 出口的洞：碎裂的地板 → 黑洞 → 往上打的光柱。開啟中是縮放進場，開好之後緩慢脈動。
+function drawExitPortal() {
+  const p = exitPortal; if (!p) return;
+  const X = CONFIG.exit;
+  const k = clamp(p.t / X.openDur, 0, 1);
+  const ease = 1 - Math.pow(1 - k, 3);                   // 開得快、收得緩
+  const R = X.drawR * ease * (p.open ? 1 + 0.04 * Math.sin(simTime * 3) : 1);
+  // 碎裂的邊：外圈鋸齒石環
+  ctx.save();
+  ctx.strokeStyle = `rgba(190,150,90,${0.7 * ease})`; ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (let i = 0; i <= 18; i++) {
+    const a = (i / 18) * Math.PI * 2, rr = R * (1.08 + 0.10 * Math.sin(i * 2.7));
+    const x = p.x + Math.cos(a) * rr, y = p.y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath(); ctx.stroke();
+  // 洞本體：往內漸深
+  const g = ctx.createRadialGradient(p.x, p.y, R * 0.15, p.x, p.y, R);
+  g.addColorStop(0, 'rgba(0,0,0,0.96)'); g.addColorStop(0.7, 'rgba(10,6,14,0.9)'); g.addColorStop(1, 'rgba(40,20,30,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, Math.PI * 2); ctx.fill();
+  // 往上打的光：地獄在下面，但光是從洞裡透出來的
+  ctx.globalCompositeOperation = 'lighter';
+  const lg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R * 2.2);
+  lg.addColorStop(0, `rgba(255,150,80,${0.30 * ease})`); lg.addColorStop(1, 'rgba(255,120,60,0)');
+  ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(p.x, p.y, R * 2.2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+function drawZonesWorld() {   // 進場點（撤離圈隨 C6 移除）
   ctx.strokeStyle = hsl(30, 70, 55, 0.5); ctx.lineWidth = 3;
   ctx.beginPath(); ctx.arc(ENTRY.x, ENTRY.y, 22, 0, Math.PI * 2); ctx.stroke();
 }
@@ -6239,6 +6306,7 @@ function drawKnightResources() {
 function drawScreenOverlays() {
   // 區域標記（永遠正立、離場時夾到邊緣）
   edgeMarker(ENTRY, '#caa05a', 'ENTRY', false);
+  if (exitPortalReady()) edgeMarker(exitPortal, '#ff9b5a', '出口', true);   // 洞開了：畫面邊緣指過去（清完場你可能離它很遠）
 
   // 我方單位：血條 + 編號（永遠可見）
   for (const p of activePlayers()) {
@@ -6327,8 +6395,19 @@ function drawHUD() {
   }
   // 計數（右上）
   ctx.textAlign = 'right'; ctx.font = '13px Consolas'; ctx.fillStyle = '#cdd6e0';
-  ctx.fillText(`ENEMIES ${enemies.filter(e => !e.dead).length}${roomCleared ? '   · 已清場' : ''}`, cv.width - 16, 22);
+  ctx.fillText(`ENEMIES ${enemies.filter(e => !e.dead).length}`, cv.width - 16, 22);
   if (drops.length || backpack.length) { ctx.fillStyle = '#ffe08a'; ctx.fillText(`BACKPACK ${backpack.length}${drops.length ? `   · 地上 ${drops.length} 件可撿` : ''}`, cv.width - 16, 40); }
+
+  // 清場後的提示：洞在哪、要做什麼。刻意寫「跳下去」而不是「前往出口」——
+  // 那是這個遊戲的動作（DESIGN.md §5.3：你是一路往下的）。
+  if (exitPortalReady()) {
+    ctx.textAlign = 'center';
+    const blink = 0.72 + 0.28 * Math.sin(simTime * 4);
+    ctx.fillStyle = `rgba(255,155,90,${0.16 * blink})`; ctx.fillRect(cv.width / 2 - 210, 14, 420, 30);
+    ctx.fillStyle = `rgba(255,205,150,${blink})`; ctx.font = 'bold 15px Consolas';
+    ctx.fillText('肅清 — 地板裂開了。走進洞裡，往下一層', cv.width / 2, 34);
+    ctx.textAlign = 'left';
+  }
 
   // 機密檔案掉落警示（公平性：醒目提示 + 螢幕邊框指向掉落點的箭頭）
   if (fileDrop) {
