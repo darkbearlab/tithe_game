@@ -155,10 +155,24 @@ const key = (type, k) => fire(listeners.window, type, {
   ctrlKey: false, shiftKey: k === 'Shift', altKey: false, metaKey: false,
   preventDefault() {}, stopPropagation() {},
 });
-const mouseEv = (type, button, x, y) => fire(listeners.window, type, {
-  button, clientX: x == null ? 640 : x, clientY: y == null ? 360 : y, movementX: 3, movementY: -2,
-  preventDefault() {}, stopPropagation() {},
-});
+// ⚠️ 滑鼠事件在 index.html 裡是分開掛的：mousedown / mousemove / wheel / contextmenu
+// 掛在 **canvas** 上，mouseup 掛在 **window** 上。只丟給 window 的話，玩家永遠不會攻擊——
+// 模擬跑一整場連一次 damageUnit 都不會進去，而測試看起來還是綠的。
+// 所以一律兩個 bag 都丟（同一個 type 只會有一邊真的掛著 handler）。
+const mouseEv = (type, button, x, y) => {
+  const ev = { button, clientX: x == null ? 640 : x, clientY: y == null ? 360 : y,
+               movementX: 3, movementY: -2, preventDefault() {}, stopPropagation() {} };
+  fire(listeners.canvas, type, ev);
+  fire(listeners.window, type, ev);
+};
+
+// 戰鬥中的滑鼠輸入全部被 `pointerLocked` 擋著（cv 的 mousedown 第一行就是
+// `if (scene !== 'COMBAT' || !pointerLocked) return;`）。而 pointerLocked 只由
+// document 的 pointerlockchange 設定。不模擬它，玩家就永遠不會攻擊。
+function grabPointer() {
+  document.pointerLockElement = cv;
+  fire(listeners.document, 'pointerlockchange', {});
+}
 
 /* ── 6. 情境 ─────────────────────────────────────────────────────────── */
 function bootCampaignToMap() {
@@ -183,9 +197,9 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight] },
-  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat },
-  { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat },
+  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened] },
+  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened] },
+  { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
   { name: 'armory',          frames: 60,  enter: () => { bootCampaignToMap(); T.enterArmory(); } },
@@ -217,7 +231,30 @@ function soloKnight() {
   return n === 1 ? null : `場上有 ${n} 個我方單位，應該只有騎士`;
 }
 
+// 把最近的敵人拖到騎士刀口前（正面、觸及距離內）並叫醒它。
+// 為什麼要這樣：合成輸入只會讓騎士對著空氣揮刀——敵人在幾百 px 外，一場模擬跑完
+// 連一次 damageUnit 都不會進去。而傷害/體幹/擊殺正是拆解過程中最該被守住的路徑。
+function dragFoeToBlade() {
+  const k = (T.players || [])[0]; if (!k) return;
+  const foes = (T.enemies || []).filter(e => !e.dead); if (!foes.length) return;
+  const e = foes[0];
+  e.pos.x = k.pos.x + Math.cos(k.facing) * 26;
+  e.pos.y = k.pos.y + Math.sin(k.facing) * 26;
+  e.state = 'ENGAGED';
+  e.facing = k.facing + Math.PI;   // 面向騎士＝牠也會還手（順便走到我方受傷的路徑）
+}
+
+// 行為探針：跑完 900 幀之後，場上應該真的打過架。
+// 純粹「不丟例外」不足以證明拆解沒把 AI 弄啞——這條確認敵人確實有受傷或陣亡。
+function combatHappened() {
+  const es = T.enemies || [];
+  if (!es.length) return null;                      // 沒敵人的情境不判
+  const hurt = es.some(e => e.dead || e.hp < e.maxHp);
+  return hurt ? null : '900 幀下來沒有任何敵人受傷或陣亡——AI 可能被拆啞了';
+}
+
 function pokeCombat(i) {
+  if (i > 20 && i % 12 === 0) dragFoeToBlade();   // 持續把敵人塞到刀口前＝這場模擬真的會見血
   if (i === 1) { key('keydown', 'w'); key('keydown', 'Shift'); }
   if (i === 90) key('keyup', 'Shift');
   if (i === 150) { key('keyup', 'w'); key('keydown', 'd'); }
@@ -232,7 +269,8 @@ function pokeCombat(i) {
   if (i % 83 === 11) { key('keydown', 'x'); key('keyup', 'x'); }   // 換武器組
   if (i % 89 === 17) { key('keydown', 'r'); key('keyup', 'r'); }   // 換彈
   if (i % 53 === 23) { key('keydown', 'f'); key('keyup', 'f'); }   // 互動
-  fire(listeners.window, 'mousemove', { movementX: (i % 7) - 3, movementY: (i % 5) - 2, clientX: 640, clientY: 360, preventDefault() {} });
+  const mm = { movementX: (i % 7) - 3, movementY: (i % 5) - 2, clientX: 640, clientY: 360, preventDefault() {} };
+  fire(listeners.canvas, 'mousemove', mm); fire(listeners.window, 'mousemove', mm);
 }
 
 /* ── 7. 執行 ─────────────────────────────────────────────────────────── */
@@ -247,6 +285,7 @@ for (const s of list) {
   let stage = 'enter', i = 0;
   try {
     s.enter();
+    grabPointer();
     stage = 'loop';
     for (i = 0; i < s.frames; i++) {
       NOW += FIXED * 1000;
