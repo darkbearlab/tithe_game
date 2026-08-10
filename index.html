@@ -91,7 +91,7 @@ const CONFIG = {
   // **整體節奏**（使用者定案：先通通拉長 1.2 倍）。這是單一旋鈕：
   //   時間類（前後搖、預告瞄準）× tempo＝更長；速度類（移動）÷ tempo＝更慢。
   //   套用點：spdOf（我方移動）、makeEnemy.moveSpeed（敵方移動）、startSwing（揮擊三段）、aimTimeOf（預告）。
-  //   設回 1.0＝恢復原速。刻意不動士氣/CD/耐力回復等純邏輯計時。
+  //   設回 1.0＝恢復原速。刻意不動士氣等純邏輯計時。
   // TITHE：Homeward 這裡是 1.2（刻意拉長 20% 的戰術節奏）。我們要往反方向走——
   // <1 ＝前後搖更短、移動更快。見 DESIGN.md §3。
   tempo: 0.9,
@@ -259,33 +259,34 @@ const WEAPONS = {
   //   cleave 單次最多命中數 / knock 擊退力(px/s) / stagger 命中造成的硬直秒 / backstabMul 繞背額外倍率
   //   swingStyle：'sweep'＝刀刃在判定窗內**由一側掃到另一側**（左右交替），只有刀刃掃過的瞬間才判定；
   //               'thrust'＝突刺，刀尖沿正前方由近推到遠（arcDeg 只是刺擊的容錯寬度）。
-  //   poiseDmg：體幹傷害（扣光＝體幹破＝大硬直+處決窗）／stamCost：揮一次的耐力成本
+  //   poiseDmg：體幹傷害（扣光＝體幹破＝大硬直+處決窗）。**揮擊不花任何資源**——
+//     DESIGN §2.2：「攻擊不花怒火」是 push-forward 的前提，你永遠打得動。
   //   hyperArmor：判定窗中不被前搖打斷、且體幹傷害減半＝重武器的身分（斧/鎚）
   //   stagger：直接硬直秒數。現已由「體幹破」取代，全部留 0（欄位保留給未來的特殊武器）
   // range 仍填 reach＝敵 AI 的接近距離判斷沿用同一欄位。
   // 節奏＝windup+activeT+recover（近接沒有額外 CD，這一輪就是攻速）。
   sword: { name: '長劍',  rarity: 'common',   weight: 1.5, damage: 30, fireRate: 6, range: 66, turnSpeed: 520, pierce: 0.35, melee: true, swingStyle: 'sweep', hands: 1,
-           arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, stagger: 0, backstabMul: 1.0, poiseDmg: 22, stamCost: 18,
+           arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, stagger: 0, backstabMul: 1.0, poiseDmg: 22,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // 石中劍（事件解鎖，S2/S1 的產物）：傷害同長劍、**完全穿甲(pierce 1.0)**、noEnhance＝charges 已用盡不能再打。
   stonesword: { name: '石中劍', rarity: 'legendary', weight: 1.5, damage: 30, fireRate: 6, range: 66, turnSpeed: 520, pierce: 1.0, melee: true, swingStyle: 'sweep', hands: 1, noEnhance: true,
-           arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, stagger: 0, backstabMul: 1.0, poiseDmg: 22, stamCost: 18,
+           arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, stagger: 0, backstabMul: 1.0, poiseDmg: 22,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   axe:   { name: '雙手斧', rarity: 'common',  weight: 2.2, damage: 48, fireRate: 4, range: 62, turnSpeed: 380, pierce: 0.30, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 2,
-           arcDeg: 160, reach: 62, windup: 0.20, activeT: 0.14, recover: 0.38, cleave: 5, knock: 320, stagger: 0, backstabMul: 1.0, poiseDmg: 34, stamCost: 28,
+           arcDeg: 160, reach: 62, windup: 0.20, activeT: 0.14, recover: 0.38, cleave: 5, knock: 320, stagger: 0, backstabMul: 1.0, poiseDmg: 34,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   mace:  { name: '戰鎚',  rarity: 'uncommon', weight: 2.4, damage: 38, fireRate: 3.5, range: 58, turnSpeed: 360, pierce: 0.95, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 1,
-           arcDeg: 80,  reach: 58, windup: 0.24, activeT: 0.09, recover: 0.42, cleave: 1, knock: 560, stagger: 0, backstabMul: 1.0, poiseDmg: 45, stamCost: 30,
+           arcDeg: 80,  reach: 58, windup: 0.24, activeT: 0.09, recover: 0.42, cleave: 1, knock: 560, stagger: 0, backstabMul: 1.0, poiseDmg: 45,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   spear: { name: '長槍',  rarity: 'common',   weight: 1.8, damage: 30, fireRate: 5, range: 104, turnSpeed: 440, pierce: 0.55, melee: true, swingStyle: 'thrust', hands: 2,
-           arcDeg: 16,  reach: 104, windup: 0.14, activeT: 0.08, recover: 0.30, cleave: 2, knock: 200, stagger: 0, backstabMul: 1.0, poiseDmg: 18, stamCost: 20,
+           arcDeg: 16,  reach: 104, windup: 0.14, activeT: 0.08, recover: 0.30, cleave: 2, knock: 200, stagger: 0, backstabMul: 1.0, poiseDmg: 18,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   dagger:{ name: '短劍',  rarity: 'common',   weight: 0.4, damage: 13, fireRate: 9, range: 44, turnSpeed: 640, pierce: 0.20, melee: true, swingStyle: 'sweep', hands: 1,
-           arcDeg: 60,  reach: 44, windup: 0.05, activeT: 0.06, recover: 0.16, cleave: 1, knock: 120, stagger: 0, backstabMul: 2.0, poiseDmg: 10, stamCost: 10,
+           arcDeg: 60,  reach: 44, windup: 0.05, activeT: 0.06, recover: 0.16, cleave: 1, knock: 120, stagger: 0, backstabMul: 2.0, poiseDmg: 10,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // 底線武器（§7）：永遠有、彈藥無限。中世紀化後由「短刀」擔任（人人身上都有一把）
   knife: { name: '短刀',  rarity: 'common',   weight: 0.2, damage: 9,  fireRate: 9, range: 38, turnSpeed: 660, pierce: 0.10, melee: true, swingStyle: 'sweep', hands: 1,
-           arcDeg: 55,  reach: 38, windup: 0.05, activeT: 0.05, recover: 0.16, cleave: 1, knock: 90,  stagger: 0, backstabMul: 2.0, poiseDmg: 7,  stamCost: 8,
+           arcDeg: 55,  reach: 38, windup: 0.05, activeT: 0.05, recover: 0.16, cleave: 1, knock: 90,  stagger: 0, backstabMul: 2.0, poiseDmg: 7,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // ===== HOMEWARD 中世紀遠程（Phase 2 的先遣；試作場 6/7 鍵可試）=====
   // 穿甲軸的遠程擔當（原版 rifle 0.5 / DMR 0.9 的位置）：長弓＝反人員、十字弓＝破甲。
@@ -302,17 +303,17 @@ const WEAPONS = {
   // 術士騎士（救援變體 B1）的法杖：走遠程開火 AI（隊友本就會射），發射魔法彈＝彈藥無限、過半穿甲、視覺另畫。noRandom＝不進任何隨機池。
   staff:   { name: '法杖',  rarity: 'rare', weight: 1.4, damage: 30, fireRate: 1.2, range: 900, projSpeed: 320, spreadBase: 1.0, spreadPerShot: 0.5, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 1.5, turnSpeed: 500, pierce: 0.55, aimTime: 0, reloadMoveMul: 0.85, hands: 2, magic: true, infinite: true, noRandom: true },   // A 彈幕型：魔法彈本來就畫成發光光矢＝最適合當慢而顯眼的那種
   falchion:{ name: '彎刀',  rarity: 'uncommon', weight: 1.3, damage: 34, fireRate: 6, range: 62, turnSpeed: 560, pierce: 0.25, melee: true, swingStyle: 'sweep', hands: 1,
-             arcDeg: 120, reach: 62, windup: 0.09, activeT: 0.09, recover: 0.24, cleave: 4, knock: 240, stagger: 0, backstabMul: 1.0, poiseDmg: 24, stamCost: 17,
+             arcDeg: 120, reach: 62, windup: 0.09, activeT: 0.09, recover: 0.24, cleave: 4, knock: 240, stagger: 0, backstabMul: 1.0, poiseDmg: 24,
              magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },   // 單手廣掃：對付雜兵群
   // 最終解鎖（通過真相挑戰）：原版 Siren 致敬 The Patriot（無限彈但全場聽得見）→ 中世紀等價物：
   // 「喪鐘」＝雙手大劍，每一擊的鳴響全場聽得見（loud）＝威力極高但徹底放棄潛行。敘事於 Phase 4 重寫。
   knell:   { name: '喪鐘',  rarity: 'legendary', weight: 2.8, damage: 58, fireRate: 3, range: 78, turnSpeed: 400, pierce: 0.75, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 2, loud: true, noRandom: true,
-             arcDeg: 150, reach: 78, windup: 0.18, activeT: 0.13, recover: 0.34, cleave: 4, knock: 420, stagger: 0, backstabMul: 1.0, poiseDmg: 50, stamCost: 26,
+             arcDeg: 150, reach: 78, windup: 0.18, activeT: 0.13, recover: 0.34, cleave: 4, knock: 420, stagger: 0, backstabMul: 1.0, poiseDmg: 50,
              magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // --- 敵人專屬武器（不入玩家戰利品池）---
   fangs:  { name:'獠牙',  rarity:'common',   weight: 0,   damage: 7,  fireRate: 8,  range: 34,  projSpeed: 520, spreadBase: 6,   spreadPerShot: 0,   spreadMax: 6,  spreadRecover: 20, magazine: 999, reloadTime: 0.1, turnSpeed: 560, pierce: 0, hands: 0 },   // 戰狼：貼臉短間距連咬（走一般射擊管線）
   club:   { name:'木棍',  rarity:'common',   weight: 1.0, damage: 18, fireRate: 5, range: 54, turnSpeed: 460, pierce: 0.05, melee: true, swingStyle: 'sweep', hands: 1,
-            arcDeg: 90,  reach: 54, windup: 0.16, activeT: 0.09, recover: 0.32, cleave: 1, knock: 180, stagger: 0, backstabMul: 1.0, poiseDmg: 14, stamCost: 14,
+            arcDeg: 90,  reach: 54, windup: 0.16, activeT: 0.09, recover: 0.32, cleave: 1, knock: 180, stagger: 0, backstabMul: 1.0, poiseDmg: 14,
             magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },   // 農兵：慢、弱、體幹傷害低
 };
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -327,7 +328,7 @@ const ENEMY_ONLY_WEAPON_IDS = ['fangs', 'club'];                       // 敵人
 
    精良程度＝**能強化幾次**（charge 預算，從稀有度衍生），本身不加數值。
    每次強化吃 charge，由不同的人賦予：
-     鐵匠 → 鋒利(+傷害)/平衡(−耐力)，連哪個都隨機、數值也隨機，1 格。
+     鐵匠 → 鋒利(+傷害)/平衡(+命中回怒)，連哪個都隨機、數值也隨機，1 格。
      導師/女巫 → 詞條 affix，1~3 格；純數值的併進 effWeapon，有效果的訂閱 Hooks（同聖物）。
    石中劍＝一把預先打滿的實例（charges 用盡＝不能再強化），帶 rally 詞條 → 接 S1 whileEquipped 氣勢。
    ===================================================================== */
@@ -383,7 +384,7 @@ function effWeapon(inst) {
   const w = Object.assign({}, base);
   for (const e of inst.enh) {
     if (e.kind === 'sharp') w.damage = (w.damage || 0) + (e.value || 0);
-    else if (e.kind === 'balance') w.stamCost = Math.max(0, (w.stamCost || 0) - (e.value || 0));
+    else if (e.kind === 'balance') w.wrathAdd = (w.wrathAdd || 0) + (e.value || 0);   // 平衡＝順手：每次命中多回這麼多怒火（舊義「減耐力消耗」隨耐力一起作廢）
     else if (e.kind === 'affix') { const A = AFFIXES[e.affix]; if (A && A.delta) { if (A.delta.dmgAdd) w.damage += A.delta.dmgAdd; if (A.delta.pierceAdd) w.pierce = Math.min(1, (w.pierce || 0) + A.delta.pierceAdd); } }
   }
   w._inst = inst;   // 讓 Hooks/氣勢掃得到此把的詞條
@@ -405,13 +406,13 @@ const handsOf = (id) => { const W = WEAPONS[id]; return W ? (W.hands != null ? W
 /* =====================================================================
    OFFHANDS — 副手（HOMEWARD Phase 2）
    **格擋（按住右鍵）只有副手拿盾才有**。沒盾＝只能「武器招架」（窄窗、失敗自己硬直）。
-   盾的差異＝護弧寬窄 / 減傷 / 耐力成本 / 招架窗寬窄 / 負重：小盾靈活好招架、大盾穩但笨重。
+   盾的差異＝護弧寬窄 / 減傷 / 怒火成本 / 招架窗寬窄 / 負重：小盾靈活好招架、大盾穩但笨重。
    副手也可以放一把單手近接武器（雙持）＝沒有格擋，換取多一套武器與背刺。
    ===================================================================== */
 const OFFHANDS = {
-  buckler: { name: '小圓盾', rarity: 'common',   blockArcDeg: 90,  blockResist: 0.55, stamMul: 0.7, parryWinMul: 1.4, moveMul: 0.98, weight: 0.6 },   // 窄護弧但招架窗最寬＝技術型
-  shield:  { name: '圓盾',   rarity: 'common',   blockArcDeg: 120, blockResist: 0.75, stamMul: 1.0, parryWinMul: 1.0, moveMul: 0.95, weight: 1.1 },
-  kite:    { name: '鳶盾',   rarity: 'uncommon', blockArcDeg: 150, blockResist: 0.85, stamMul: 1.4, parryWinMul: 0.7, moveMul: 0.88, weight: 1.8 },   // 護弧最寬減傷最高，但耗耐力且難招架
+  buckler: { name: '小圓盾', rarity: 'common',   blockArcDeg: 90,  blockResist: 0.55, wrathMul: 0.7, parryWinMul: 1.4, moveMul: 0.98, weight: 0.6 },   // 窄護弧但招架窗最寬＝技術型
+  shield:  { name: '圓盾',   rarity: 'common',   blockArcDeg: 120, blockResist: 0.75, wrathMul: 1.0, parryWinMul: 1.0, moveMul: 0.95, weight: 1.1 },
+  kite:    { name: '鳶盾',   rarity: 'uncommon', blockArcDeg: 150, blockResist: 0.85, wrathMul: 1.4, parryWinMul: 0.7, moveMul: 0.88, weight: 1.8 },   // 護弧最寬減傷最高，但吃怒火且難招架
 };
 const OFFHAND_IDS = Object.keys(OFFHANDS);
 const isShield = (id) => !!(id && OFFHANDS[id]);
@@ -424,7 +425,7 @@ CONFIG.melee = {
   blockArcDeg: 120,        // 盾格有效角（總角度，以 facing 為中心）※ 實際以副手盾的 blockArcDeg 為準
   blockResist: 0.75,       // 格擋成立的減傷比例（0.75＝只吃 25%）※ 實際以副手盾的 blockResist 為準
   /* ── 武器招架（沒有盾時的唯一防禦手段，使用者定案）──────────────────
-     有盾＝按住右鍵格擋（持續、耗耐力）；**沒盾＝點按右鍵招架**：
+     有盾＝按住右鍵格擋（持續、吃怒火）；**沒盾＝點按右鍵招架**：
        · 判定窗比盾更窄（wpWindow < parryWindow）
        · **窗內沒接到任何攻擊 → 自己硬直 wpFailStagger**（＝空揮的代價，逼你讀招而不是亂按）
        · 成功＝與盾招架同等回報（完全格擋 + 對方體幹重創 + 硬直）
@@ -432,7 +433,6 @@ CONFIG.melee = {
   wpWindow: 0.11,          // 武器招架的有效窗（秒）
   wpRecover: 0.30,         // 招架動作的總長（窗結束後仍在收招，這段挨打就是正常吃傷）
   wpFailStagger: 0.45,     // 招架落空的自我硬直
-  wpStamCost: 14,          // 招架動作的耐力成本
   wpMoveMul: 0.4,          // 招架動作中的移動倍率
   blockMoveMul: 0.45,      // 舉盾時移動速度倍率
   blockTurnMul: 0.6,       // 舉盾時轉向速度倍率（笨重感）
@@ -481,21 +481,11 @@ CONFIG.melee = {
   armorPoiseMul: 1.7,      // **被裝甲整發彈開的那一擊，體幹傷害加成**（刀滑開了，力道全變成衝擊）
                            // ＝裝甲讓你砍不動他、但更容易把他砸崩。重裝的解法是鈍器，不是硬砍。
 
-  /* ── 耐力（stamina）：解決「攻擊沒有成本」────────────────────────────
-     揮擊/格擋/奔跑都要錢。歸零＝揮不動；**舉盾時耐力不足擋下 → 直接破防**（＝體幹破）。
-     主題上就是「敗戰騎士的疲憊」：不能什麼架都接。 */
-  stamMax: 100,
-  stamRegen: 30,           // 耐力回復 /s
-  stamRegenDelay: 0.55,    // 停止消耗後多久開始回
-  stamBlockRegenMul: 0.3,  // 舉盾期間的回復倍率（龜盾回得慢）
-  stamBlockBase: 6,        // 擋下一擊的固定耐力成本
-  stamBlockPerPoise: 0.55, // 擋下一擊的額外成本＝來襲體幹傷害 × 此值（重武器砸盾特別耗）
-  stamSprintDrain: 14,     // 奔跑耐力消耗 /s
-  stamParryRefund: 14,     // 招架成功退還的耐力（獎勵技術）
+  // 耐力已整條換成**怒火**（CONFIG.wrath，就在這個物件下面）。
 
   /* ── 攻擊權（1 對多的可讀性）────────────────────────────────────────
      同時只有 maxAttackers 隻近接敵可以進攻，其餘在 ringDist 外圍繞行伺機。
-     不是放水：沒有這層，體幹/耐力只會讓被圍毆變成必死宣告，而不是有趣的壓力。 */
+     不是放水：沒有這層，體幹只會讓被圍毆變成必死宣告，而不是有趣的壓力。 */
   poiseKnight: 100,        // 騎士（我方單位）的體幹上限
   poiseDefault: 50,        // 敵人未指定 ENEMY_TYPES.poise 時的體幹上限
   maxAttackers: 2,         // 同時可進攻的近接敵數
@@ -525,6 +515,42 @@ CONFIG.melee = {
   arcFadeT: 0.22,          // 揮斬弧特效殘留秒數
   staggerFlashT: 0.25,     // 硬直時頭頂符號閃爍週期
 };
+/* ── 怒火（wrath）——取代耐力的唯一資源（DESIGN.md §2.2–2.3）───────────────
+   三條規則決定它的形狀，動任何一條之前先回去讀設計文件：
+     ① **開場滿**：聽完禱文、想起那個不曾回來的父親，騎士是滿身怒火跨進地獄的。
+        第一房不需要暖機，而且一進去就有一發大絕招可以放。
+     ② **攻擊不花怒火**：push-forward 的前提是你永遠打得動。花費只有格擋/奔跑/技能/大絕招。
+     ③ **不隨時間回、只隨時間退**：時間回復會讓「退開等回氣」變成最優解（那就是站著不打，
+        只是換了個名字）；時間衰退則讓等待永遠是虧的——想留住怒火只有繼續打。
+
+   衰退**只在房裡還有活著的敵人時**跑，清場那一刻凍結。換房不另外扣：
+   那是純粹的 feel bad，而且會懲罰仔細撿東西的玩家。打得快的人帶著高怒火進下一房＝獎勵。
+
+   ⚠️ 「怒火高 → 減傷」（dr*）的形狀本來是死亡螺旋，它之所以安全**完全是因為怒火靠打人回復**：
+   低怒火會逼你進攻，進攻就回怒火，系統自我修正。哪天若改成時間回復，減傷這條必須同時拿掉。
+
+   調值目標寫成一句話：**大部分時間在中段徘徊，偶爾見底。**
+   整場貼著上限＝花費（cost*）太便宜，不是衰退太慢——衰退只負責傳達「不出手＝慢性繳械」，
+   不負責製造稀缺。永遠的保底手段是免費的 dash。 */
+CONFIG.wrath = {
+  max: 100,                // 上限（開場即為此值）
+  decay: 4.5,              // 戰鬥中的衰退 /s（房裡還有活敵人時才跑；清場凍結）
+  gainHit: 5,              // 命中回怒（小）：保底，只要還在揮就不會枯竭
+  gainHitBlocked: 2,       // 命中但被盾擋下/被甲彈開＝打了個寂寞，只給零頭
+  gainParry: 18,           // 招架回怒（中）：獎勵讀招
+  gainExec: 36,            // 處決回怒（大）：與回血同一個動作＝處決是雙重補給
+  costBlockBase: 7,        // 擋下一擊的固定成本
+  costBlockPerPoise: 0.6,  // 擋下一擊的額外成本＝來襲體幹傷害 × 此值（重武器砸盾特別貴）
+  costSprint: 16,          // 奔跑消耗 /s
+  ultCost: 90,             // 大絕招門檻。**刻意低於 max**：怒火一直在衰退，門檻若等於上限，
+                           // 你只有「回滿的那一幀」按得下去＝實際上放不出來。放出去一律清空歸零。
+  drStart: 0.35,           // 減傷從這個怒火比例開始長（以下＝完全沒有減傷）
+  drMax: 0.28,             // 怒火全滿時的減傷（「盛怒中的騎士感覺不到痛」）
+  ultRadius: 200,          // 大絕招半徑
+  ultDmg: 90,              // 大絕招傷害（滿穿甲）
+  ultPoise: 999,           // 大絕招體幹傷害：一發全場踉蹌＝直接鋪出一地處決窗
+  ultKnock: 700,
+};
 const RARITY_COLOR = { common: '#b8c2cc', uncommon: '#5fd06b', rare: '#5aa9ff', epic: '#c07bff', legendary: '#ffb454' };
 const rarityColor = (r) => RARITY_COLOR[r] || '#b8c2cc';
 
@@ -543,7 +569,7 @@ const rarityColor = (r) => RARITY_COLOR[r] || '#b8c2cc';
      poiseLow      體幹跌破門檻（每次跌破觸發一次）      { u, frac }
      poiseBroken   體幹破（大硬直開始）                  { u, by }
      hpLow         生命跌破門檻（每次跌破觸發一次）      { u, frac }
-     stamEmpty     耐力耗盡（想揮但揮不動）              { u }
+     wrathEmpty    怒火不足（想放技能/大絕招但放不出來）  { u }
      beforeDeath   即將死亡（**可攔截**）                { u, killer, prevented, reviveHp }
                      handler 設 ctx.prevented=true ＝免死，以 ctx.reviveHp（預設 1）復活
      death         死亡定案                              { u, killer }
@@ -599,7 +625,7 @@ CONFIG.freeSlots = { base: 2, max: 4 };
 /* 誓約（OATHS）— 可裝備的被動 build 層（詳見 OATHS.md）。引擎 + 綁定誓約 + 自選誓約池：
    每位騎士由出身綁定 1 個常駐誓約（不可卸）＝本質區分不同騎士。效果全走 `mods(k)`＝開局改騎士數值/旋鈕
    （u.weapon 是 WEAPONS 共用參照，絕不可改，一律用 per-unit 旋鈕：parryWinMul/reachMul/knockMul/
-   pierceBonus/artCdMul/castMul/magicPierce）。自選誓約池 + 解鎖 + 配裝 UI 是後續階段。 */
+   pierceBonus/artCostMul/castMul/magicPierce）。自選誓約池 + 解鎖 + 配裝 UI 是後續階段。 */
 const OATHS = {
   // ── 綁定誓約（每位騎士各 1；boundTo＝出身 id）──
   bulwark:  { name: '壁壘之誓', kind: 'bound', boundTo: 'warden',     desc: '以盾為牆：招架窗放寬、承受更韌。',
@@ -608,8 +634,8 @@ const OATHS = {
               mods(k) { k.poiseMax = Math.round(k.poiseMax * 1.3); k.poise = k.poiseMax; k.poiseRegenMul = (k.poiseRegenMul || 1) * 1.6; k.dmgResist = (k.dmgResist || 0) + 0.06; } },
   gale:     { name: '疾風之誓', kind: 'bound', boundTo: 'ranger',     desc: '疾風：射擊發散大減、步伐更輕快（風箏）。',
               mods(k) { k.spreadMul = (k.spreadMul || 1) * 0.4; k.moveSpeed *= 1.12; } },
-  incant:   { name: '咒能之誓', kind: 'bound', boundTo: 'adept',      desc: '咒能：術冷卻 −40%、施法前搖 −35%。',
-              mods(k) { k.artCdMul = (k.artCdMul || 1) * 0.6; k.castMul = (k.castMul || 1) * 0.65; } },
+  incant:   { name: '咒能之誓', kind: 'bound', boundTo: 'adept',      desc: '咒能：術的怒火成本 −40%、施法前搖 −35%。',
+              mods(k) { k.artCostMul = (k.artCostMul || 1) * 0.6; k.castMul = (k.castMul || 1) * 0.65; } },
   // ── 可解鎖 3 出身的綁定誓約 ──
   reachvow: { name: '長驅之誓', kind: 'bound', boundTo: 'spearknight', desc: '長驅：reach 更長、刺擊逼退更硬、穿甲 +。',
               mods(k) { k.reachMul = (k.reachMul || 1) * 1.15; k.knockMul = (k.knockMul || 1) * 1.6; k.pierceBonus = (k.pierceBonus || 0) + 0.2; } },
@@ -623,9 +649,9 @@ const OATHS = {
   dauntless:{ name: '無畏之誓', kind: 'free', slotCost: 1, desc: '背水：生命低於 35% 時，輸出 ×1.3。',
               unlockHint: '一個 run 內擊殺 40 名敵人', unlock: (rs) => (rs.kills || 0) >= 40,
               mods(k) { k.berserk = { frac: 0.35, mul: 1.3 }; } },
-  endurance:{ name: '堅忍之誓', kind: 'free', slotCost: 1, desc: '不倦：耐力回復 ×1.35、耐力上限 +15。',
+  endurance:{ name: '堅忍之誓', kind: 'free', slotCost: 1, desc: '不倦：怒火獲得 ×1.35、怒火上限 +15。',
               unlockHint: '一個 run 內清滿 5 關', unlock: (rs) => (rs.missions || 0) >= 5,
-              mods(k) { k.stamRegenMul = (k.stamRegenMul || 1) * 1.35; k.stamMax += 15; k.stam = k.stamMax; } },
+              mods(k) { k.wrathGainMul = (k.wrathGainMul || 1) * 1.35; k.wrathMax += 15; k.wrath = k.wrathMax; } },
   vengeance:{ name: '復仇之誓', kind: 'free', slotCost: 1, desc: '斬將：擊殺菁英後 4 秒內移速/攻速提升。',
               unlockHint: '累計斬將（擊殺菁英）8 次', unlock: (rs) => (rs.lifetimeElite || 0) >= 8 },
   guardian: { name: '守護之誓', kind: 'free', slotCost: 1, desc: '扈從崩潰門檻 −8＝更難潰逃。',
@@ -673,8 +699,10 @@ function applyOathLoadout(k) {
    使用者的洞見：內容只有一份，**資源模型有兩種**——卷軸（撿到的）與習得（學會的）。
    所以這張表只描述「效果是什麼」，不描述「你憑什麼用它」。後者叫**載具(carrier)**：
 
-     卷軸 scroll   有限次數、無 CD、**即時**（沒有前搖、不吃耐力）＝救命按鈕
-     習得 learned  無限次數、有 CD、**有前搖且吃耐力、會被打斷**＝可持續的工具
+     卷軸 scroll   有限次數、**即時**（沒有前搖、不吃怒火）＝救命按鈕
+     習得 learned  無限次數、**有前搖且吃怒火、會被打斷**＝可持續的工具
+                   （**沒有 CD**：DESIGN §2.3——玩家只看一條資源條，
+                     而且技能的施放頻率由你打得多兇決定，技能因此被接進戰鬥迴圈）
 
    ★ 載具改變的是**成本**，不是威力。同一發火矢，卷軸和習得打出來一樣痛——
      這樣「找到已學會法術的卷軸」仍然有價值（它的即時性是別的東西給不了的），
@@ -688,18 +716,18 @@ const ARTS = {
   // ── 學得會的 ──────────────────────────────────────────────────────
   firebolt: { name: '火矢', kind: 'projectile', rarity: 'uncommon', learnable: true,
               bolt: { dmg: 34, pierce: 0.9, projSpeed: 520, range: 520 },   // 高 pierce＝專門對付披甲士（走既有彈道管線）
-              cooldown: 6, castTime: 0.45, stamCost: 22, scrollUses: 3, scrollsToLearn: 2 },
+              wrathCost: 24, castTime: 0.45, scrollUses: 3, scrollsToLearn: 2 },
   mend:     { name: '癒手', kind: 'self', rarity: 'common', learnable: true, heal: 25,
-              cooldown: 8, castTime: 0.35, stamCost: 18, scrollUses: 3, scrollsToLearn: 2 },
+              wrathCost: 30, castTime: 0.35, scrollUses: 3, scrollsToLearn: 2 },
   salve:    { name: '藥膏', kind: 'self', rarity: 'common', learnable: true, heal: 50,
-              cooldown: 14, castTime: 0.5, stamCost: 26, scrollUses: 2, scrollsToLearn: 3 },
+              wrathCost: 48, castTime: 0.5, scrollUses: 2, scrollsToLearn: 3 },
   bandage:  { name: '包紮', kind: 'self', rarity: 'common', learnable: true, heal: 14,
-              cooldown: 5, castTime: 0.3, stamCost: 12, scrollUses: 3, scrollsToLearn: 2 },
+              wrathCost: 18, castTime: 0.3, scrollUses: 3, scrollsToLearn: 2 },
   miracle:  { name: '聖療', kind: 'self', rarity: 'rare', learnable: true, heal: 75,
-              cooldown: 28, castTime: 0.7, stamCost: 40, scrollUses: 1, scrollsToLearn: 4 },   // 局外里程碑解鎖
+              wrathCost: 75, castTime: 0.7, scrollUses: 1, scrollsToLearn: 4 },   // 局外里程碑解鎖
   holylight:{ name: '聖光', kind: 'thrown', rarity: 'uncommon', learnable: true,
               flash: { pellets: 36, range: 130, projSpeed: 600, throwRange: 230, throwSpeed: 520, fuse: 1.4, perHit: 0.34 },
-              cooldown: 16, castTime: 0.4, stamCost: 20, scrollUses: 3, scrollsToLearn: 3 },
+              wrathCost: 40, castTime: 0.4, scrollUses: 3, scrollsToLearn: 3 },
   // ── 學不會的實體：只有卷軸(消耗品)那一欄 ──────────────────────────
   firepot:  { name: '火油罐', kind: 'thrown', rarity: 'uncommon', learnable: false, scrollUses: 3,
               grenade: { pellets: 40, dmg: 9, range: 120, projSpeed: 600, throwRange: 230, throwSpeed: 520, fuse: 1.5 } },
@@ -753,16 +781,16 @@ const EQUIPMENT = {
 /* =====================================================================
    ARMORS — 身上的甲（HOMEWARD 新增，獨立於 EQUIPMENT 的槽位）
    走的是與重裝敵人**完全相同**的機制：機率「整發擋下」非穿甲攻擊（有效擋格率 = armor × (1−pierce)）。
-   代價是移動與耐力回復——穿得越重越挨得住，但揮不了幾刀、跑不動、久戰必竭。
+   代價是移動與**怒火獲得**——板甲把你和戰場隔開，打擊的實感傳不進來，怒火積得慢。
    （呼應主題：疲憊的敗軍騎士。裝甲不是純加值，是「安全 vs 續戰力」的取捨。）
    ※ 繞背(flank)無視裝甲；被彈開的那一擊體幹傷害 ×CONFIG.melee.armorPoiseMul ＝重甲更怕鈍器。
    ===================================================================== */
 const ARMORS = {
-  none:    { name: '布衣',   rarity: 'common',   armor: 0,    moveMul: 1.00, stamRegenMul: 1.00, weight: 0 },
-  gambeson:{ name: '厚襖',   rarity: 'common',   armor: 0.18, moveMul: 0.98, stamRegenMul: 0.95, weight: 0.5 },
-  mail:    { name: '鎖子甲', rarity: 'common',   armor: 0.35, moveMul: 0.95, stamRegenMul: 0.90, weight: 1.2 },
-  cuirass: { name: '胸甲',   rarity: 'uncommon', armor: 0.55, moveMul: 0.90, stamRegenMul: 0.80, weight: 2.0 },
-  plate:   { name: '板甲',   rarity: 'rare',     armor: 0.75, moveMul: 0.82, stamRegenMul: 0.65, weight: 3.2 },
+  none:    { name: '布衣',   rarity: 'common',   armor: 0,    moveMul: 1.00, wrathGainMul: 1.00, weight: 0 },
+  gambeson:{ name: '厚襖',   rarity: 'common',   armor: 0.18, moveMul: 0.98, wrathGainMul: 0.95, weight: 0.5 },
+  mail:    { name: '鎖子甲', rarity: 'common',   armor: 0.35, moveMul: 0.95, wrathGainMul: 0.90, weight: 1.2 },
+  cuirass: { name: '胸甲',   rarity: 'uncommon', armor: 0.55, moveMul: 0.90, wrathGainMul: 0.80, weight: 2.0 },
+  plate:   { name: '板甲',   rarity: 'rare',     armor: 0.75, moveMul: 0.82, wrathGainMul: 0.65, weight: 3.2 },
 };
 const ARMOR_IDS = Object.keys(ARMORS);
 const EQUIP_IDS = Object.keys(EQUIPMENT);
@@ -906,8 +934,8 @@ const UPGRADES = [
   { id: 'hp',         name: '堅韌', desc: '基礎生命 +15 / 級',      per: 15,   max: 5, cost: 40 },
   { id: 'poise',      name: '鎮定', desc: '基礎體幹 +12 / 級',      per: 12,   max: 4, cost: 45 },
   { id: 'poiseRegen', name: '穩固', desc: '體幹恢復 +25% / 級',     per: 0.25, max: 4, cost: 45 },
-  { id: 'stamina',    name: '耐力', desc: '基礎耐力 +12 / 級',      per: 12,   max: 4, cost: 40 },
-  { id: 'stamRegen',  name: '不倦', desc: '耐力恢復 +20% / 級',     per: 0.20, max: 4, cost: 40 },
+  { id: 'wrath',      name: '怒火', desc: '怒火上限 +12 / 級',      per: 12,   max: 4, cost: 40 },
+  { id: 'wrathGain',  name: '不倦', desc: '怒火獲得 +20% / 級',     per: 0.20, max: 4, cost: 40 },
   { id: 'attack',     name: '鋒銳', desc: '攻擊力 +6% / 級',        per: 0.06, max: 5, cost: 55 },
   { id: 'moveSpeed',  name: '疾行', desc: '移動速度 +4% / 級',      per: 0.04, max: 4, cost: 45 },
   { id: 'swap',       name: '換手', desc: '武器切換加速（×成本）',   per: 0.22, max: 3, cost: 40 },
@@ -1019,13 +1047,13 @@ function giveItemStack(id) { warehouse.push({ kind: 'item', id, count: ITEM_STAC
    刻意**不**管的東西：
    - **武器**：敵人由 ENEMY_TYPES.weaponId 綁死，扈從走四槽位自選——這是雙方真正的差別。
    - **性格**：敵人由 ENEMY_TYPES.personality（同一份 CONFIG.ai）。
-   - **耐力**：**唯一的例外**（使用者定案）。只有玩家操作的騎士管理耐力；
-     AI 不會用資源管理，牠們的壓力由體幹＋攻擊權承擔。makeEnemy 一律 stamMax:0。
+   - **怒火**：**唯一的例外**（使用者定案）。只有玩家操作的騎士管理怒火；
+     AI 不會用資源管理，牠們的壓力由體幹＋攻擊權承擔。makeEnemy 一律 wrathMax:0。
 
    血量刻意壓縮在同一個量級——重裝的質差來自**裝甲與體幹**而非血量（§使用者設計）。
    ===================================================================== */
 const UNIT_CLASSES = {
-  knight:      { name: '騎士',     hp: CONFIG.unitHp, poise: CONFIG.melee.poiseKnight, moveSpeed: CONFIG.moveSpeed, radius: CONFIG.unitRadius },   // 英雄：唯一管理耐力的單位
+  knight:      { name: '騎士',     hp: CONFIG.unitHp, poise: CONFIG.melee.poiseKnight, moveSpeed: CONFIG.moveSpeed, radius: CONFIG.unitRadius },   // 英雄：唯一管理怒火的單位
   levy:        { name: '農兵',     hp: 45,            poise: 25,  moveSpeed: CONFIG.enemy.moveSpeed, radius: CONFIG.unitRadius },
   footman:     { name: '徒步兵',   hp: CONFIG.enemy.hp, poise: 45, moveSpeed: 105, radius: CONFIG.unitRadius },
   spearman:    { name: '槍兵',     hp: CONFIG.enemy.hp, poise: 55, moveSpeed: 95,  radius: CONFIG.unitRadius },
@@ -2254,9 +2282,9 @@ function makeWeaponSlot(weaponId, reserve, fx, enhRec) {
 const instOfSlotMain = (m) => (m ? { id: m.weaponId, quality: m.quality, enh: m.enh || [] } : null);
 // 自由位載具工廠：從 roster 的 freeExtra 條目 {kind,id,count} 造一個 slot（空＝item 型空位，放東西時再定型）。
 function makeFreeSlot(e) {
-  if (!e || !e.id) return { kind: 'free', type: 'item', id: null, count: 0, cd: 0 };
-  if (e.kind === 'ability') return { kind: 'free', type: 'ability', id: e.id, cd: 0 };
-  return { kind: 'free', type: 'item', id: e.id, count: e.count || 0, cd: 0 };
+  if (!e || !e.id) return { kind: 'free', type: 'item', id: null, count: 0 };
+  if (e.kind === 'ability') return { kind: 'free', type: 'ability', id: e.id };
+  return { kind: 'free', type: 'item', id: e.id, count: e.count || 0 };
 }
 function makePlayer(i, cfg, pos) {
   const W = WEAPONS[cfg.weaponId];
@@ -2264,7 +2292,7 @@ function makePlayer(i, cfg, pos) {
   const fx = (cfg.equipId && EQUIPMENT[cfg.equipId]) ? EQUIPMENT[cfg.equipId].fx : {};   // 裝備持續被動
   const AR = ARMORS[cfg.armorId] || ARMORS.none;                                         // 身上的甲（獨立槽位）
   // **身體來自共用單位數值表**（扈從＝敵人）。騎士固定 knight 級；扈從依 roster 的 classId，
-  // 未指定退回 footman。耐力是唯一不從這裡來的東西——只有騎士管理（見 UNIT_CLASSES 註解）。
+  // 未指定退回 footman。怒火是唯一不從這裡來的東西——只有騎士管理（見 UNIT_CLASSES 註解）。
   const CLS = classOf(i === KNIGHT_ID ? 'knight' : (cfg.classId || 'footman'));
   const kUp = (id) => (i === KNIGHT_ID ? upgVal(id) : 0);   // meta 升級只套騎士（扈從兵種鎖死）
   const maxHp = CLS.hp + (cfg.bonusMaxHp || 0) + (fx.maxHpAdd || 0) + kUp('hp');
@@ -2286,8 +2314,8 @@ function makePlayer(i, cfg, pos) {
   const slots = [
     mkSet(cfg.weaponId, cfg.offId, cfg.allocatedAmmo, { quality: cfg.quality, enh: cfg.enh }) || mkSet(FLOOR_WEAPON, null, 0),
     mkSet(cfg.weaponId2, cfg.offId2, cfg.allocatedAmmo2, { quality: cfg.quality2, enh: cfg.enh2 }),
-    { kind: 'free', type: 'item', id: cfg.itemId || null, count: cfg.itemId ? (cfg.itemCount || 1) : 0, cd: 0 },        // 自由位 0（卷軸載具，舊 itemId）
-    { kind: 'free', type: 'ability', id: cfg.abilityId || null, cd: 0 },                                                 // 自由位 1（習得載具，舊 abilityId）
+    { kind: 'free', type: 'item', id: cfg.itemId || null, count: cfg.itemId ? (cfg.itemCount || 1) : 0 },        // 自由位 0（卷軸載具，舊 itemId）
+    { kind: 'free', type: 'ability', id: cfg.abilityId || null },                                                 // 自由位 1（習得載具，舊 abilityId）
   ];
   // 自由位 2+（已解鎖才存在）：來自 roster 的 freeExtra[]（通用載具，放道具或習得）。只有騎士的數量會超過 base。
   for (let fi = 2; fi < memberFreeSlots(i); fi++) slots.push(makeFreeSlot((cfg.freeExtra || [])[fi - 2]));
@@ -2311,13 +2339,13 @@ function makePlayer(i, cfg, pos) {
     // 以下是「當前主手」的鏡像（既有戰鬥碼只認得這些欄位；換 set 由 equipActiveSet 重寫）
     weaponId: mainSlot.weaponId, weapon: mainSlot.weapon, quality: mainSlot.quality, enh: mainSlot.enh, magazine: mainSlot.magazine, ammoInMag: mainSlot.ammoInMag, ammoReserve: mainSlot.ammoReserve, reloadT: 0, reloadDur: 0, bloom: 0,
     swapT: 0, turnMul,   // 換手冷卻 + 轉向倍率(換手時重算 turnSpeed)
-    abilityId: cfg.abilityId, ability: ab, abilityCd: 0,
+    abilityId: cfg.abilityId, ability: ab,
     equipId: cfg.equipId || null, itemId: cfg.itemId || null, itemCount: cfg.itemId ? (cfg.itemCount || 1) : 0,   // 裝備槽 / 道具槽(itemCount 充能)
     dmgResist: (fx.dmgResist || 0), reloadMul: (fx.reloadMul || 1), spreadMul: fx.spreadMul || 1,
     turnSpeed: mainSlot.weapon.turnSpeed * turnMul, moveMul: (fx.moveMul || 1) * AR.moveMul * (offW ? offW.moveMul : 1),
-    // 身上的甲：與重裝敵人同一套機率擋格機制（代價＝移速/耐力回復）。
+    // 身上的甲：與重裝敵人同一套機率擋格機制（代價＝移速/怒火獲得）。
     // 取「兵種自帶」與「穿戴」的較大者——披甲士之所以叫披甲士就是因為他有甲，脫不掉。
-    armorId: cfg.armorId || 'none', armor: Math.max(AR.armor, CLS.armor || 0), stamRegenMul: AR.stamRegenMul * (1 + kUp('stamRegen')),
+    armorId: cfg.armorId || 'none', armor: Math.max(AR.armor, CLS.armor || 0), wrathGainMul: AR.wrathGainMul * (1 + kUp('wrathGain')),
     coneHalfDeg: null,                     // 逐單位視錐覆寫（null＝用全域）
     buffT: 0, buffMove: 1, buffFire: 1,    // 道具（腎上腺素）短時 buff
     hasFile: !!cfg.carriesFile,            // 是否身上帶著遺物（獨立攜帶格，跨關隨撤出者；CONFIG.relicEnabled 關閉時恆 false）
@@ -2330,12 +2358,13 @@ function makePlayer(i, cfg, pos) {
     cast: null,   // 施法前搖狀態 { slot, artId, t, dur }；卷軸即時＝不經過這裡
     parryT: 0, parryDur: 0, parryHit: false,   // 武器招架（無盾時的防禦）：動作計時 / 總長 / 這次有沒有接到攻擊
     poiseMax: CLS.poise + kUp('poise'), poise: CLS.poise + kUp('poise'), poiseHitT: -99,     // 體幹：扣光＝大硬直＋處決窗（來自共用兵種表）
-    // 耐力：**只有玩家操作的騎士**管理（這是統一數值表唯一的例外，見 UNIT_CLASSES）。
-    // 扈從吃 0＝所有 stamMax 閘門短路，行為與敵人完全一致。
+    // 怒火：**只有玩家操作的騎士**管理（這是統一數值表唯一的例外，見 UNIT_CLASSES）。
+    // 扈從吃 0＝所有 wrathMax 閘門短路，行為與敵人完全一致。
     // 之前扈從有 100 耐力卻沒有任何管理邏輯（AI 不會退出來回氣），打到見底就變沙包——
+    // 怒火沿用同一個結論：AI 不碰。
     // 舊版 100 體幹把這件事遮住了，統一數值表一削到 45 才暴露出來。
-    stamMax: i === KNIGHT_ID ? CONFIG.melee.stamMax + kUp('stamina') : 0, stam: i === KNIGHT_ID ? CONFIG.melee.stamMax + kUp('stamina') : 0, stamT: -99,
-    poiseBreakFxT: 0, guardBreakFxT: 0, flinchFxT: 0, noStamFxT: 0,
+    wrathMax: i === KNIGHT_ID ? CONFIG.wrath.max + kUp('wrath') : 0, wrath: i === KNIGHT_ID ? CONFIG.wrath.max + kUp('wrath') : 0,   // **開場滿**（DESIGN §2.2 ①）
+    poiseBreakFxT: 0, guardBreakFxT: 0, flinchFxT: 0, noWrathFxT: 0,
     fireCooldown: 0, engageTimer: 0, alertTimer: 0, muzzle: 0, sprinting: false,
     idleAnchor: 0, sweepPhase: 0, sweepDir: 1, extractNode: null,   // idleAnchor＝進入閒置時的正前方
     burstLeft: CONFIG.idleTap.size, burstCd: 0, wanderTarget: 0, wanderTimer: 0,
@@ -2367,8 +2396,8 @@ function makeEnemy(nodeId, personalityName, isReinforce = false, facing = Math.P
     swing: null, blocking: false, blockT: null, staggerT: 0, kbx: 0, kby: 0, parryFxT: 0,   // 近接（敵人拿近接武器時同樣走揮斬管線）
     aimT: 0, aimDur: 0,   // 遠程瞄準進度／所需時間（＝預告長方形的填滿進度）
     poiseMax: TYPE.poise || CONFIG.melee.poiseDefault, poise: TYPE.poise || CONFIG.melee.poiseDefault, poiseHitT: -99,
-    stamMax: 0, stam: 0, stamT: -99,   // 敵人不管理耐力（AI 不會用；壓力靠體幹 + 攻擊權）
-    poiseBreakFxT: 0, guardBreakFxT: 0, flinchFxT: 0, noStamFxT: 0,
+    wrathMax: 0, wrath: 0,   // 敵人不管理怒火（AI 不會用；壓力靠體幹 + 攻擊權）
+    poiseBreakFxT: 0, guardBreakFxT: 0, flinchFxT: 0, noWrathFxT: 0,
     fireCooldown: 0, engageTimer: 0, muzzle: 0, isReinforce, watchFacing: facing,
     lastSeenPos: null, lastSeenT: -Infinity,   // 逐隻自己的目標記憶（TITHE C5：不再有全體共享的情報網）
     opensDoors: TYPE.opensDoors !== false,   // 是否會操作門（狗＝false）
@@ -2680,7 +2709,7 @@ function endMission() {
 let arenaMode = false;          // true＝試作場（update 跳過撤離/結算判定）
 let arenaNoFog = true;          // 試作場預設關迷霧（看得見扇形判定才調得動數值）
 let arenaWIdx = 0;              // 目前武器在 ARENA_WEAPON_IDS 的索引
-let arenaStats = { swings: 0, hits: 0, blocked: 0, parried: 0, dmg: 0, lastHits: 0, lastDmg: 0, tookHits: 0, tookBlocked: 0, tookParried: 0, brokeFoe: 0, interrupted: 0, noStam: 0, tookBreak: 0, lastShotDist: 0 };
+let arenaStats = { swings: 0, hits: 0, blocked: 0, parried: 0, dmg: 0, lastHits: 0, lastDmg: 0, tookHits: 0, tookBlocked: 0, tookParried: 0, brokeFoe: 0, interrupted: 0, noWrath: 0, tookBreak: 0, lastShotDist: 0 };
 // 試作場的武器輪盤：明列 id（不要用 MELEE_WEAPON_IDS 派生——加武器就會把熱鍵順序整個位移）
 const ARENA_WEAPON_IDS = ['sword', 'axe', 'mace', 'spear', 'dagger', 'longbow', 'crossbow', 'javelin'];
 const arenaWIdxOf = (id) => Math.max(0, ARENA_WEAPON_IDS.indexOf(id));
@@ -2744,14 +2773,14 @@ function arenaSetOff(i) {
   k.moveMul = AR.moveMul * (offW ? offW.moveMul : 1);
   Sfx.play('swap', k.pos);
 }
-// 換甲（試作場熱鍵）：重建 makePlayer 太重，直接改活值（armor/移速/耐力回復/負重全部即時生效）
+// 換甲（試作場熱鍵）：重建 makePlayer 太重，直接改活值（armor/移速/怒火獲得/負重全部即時生效）
 function arenaSetArmor(i) {
   if (!arenaMode) return;
   arenaArmorIdx = ((i % ARMOR_IDS.length) + ARMOR_IDS.length) % ARMOR_IDS.length;
   const k = knight(); if (!k) return;
   const id = ARMOR_IDS[arenaArmorIdx], AR = ARMORS[id];
   const eqFx = (k.equipId && EQUIPMENT[k.equipId]) ? EQUIPMENT[k.equipId].fx : {};
-  k.armorId = id; k.armor = AR.armor; k.stamRegenMul = AR.stamRegenMul;
+  k.armorId = id; k.armor = AR.armor; k.wrathGainMul = AR.wrathGainMul;
   k.moveMul = (eqFx.moveMul || 1) * AR.moveMul;
   Sfx.play('swap', k.pos);
 }
@@ -2782,7 +2811,7 @@ function enterArena(modeKey) {
   startMission();          // 沿用一般開場流程（建地圖衍生表/我方單位/相機），試作場地圖的 enemySpawns 為空
   arenaSpawn();            // 再放測試對象
   forcedMap = null;
-  arenaStats = { swings: 0, hits: 0, blocked: 0, parried: 0, dmg: 0, lastHits: 0, lastDmg: 0, tookHits: 0, tookBlocked: 0, tookParried: 0, brokeFoe: 0, interrupted: 0, noStam: 0, tookBreak: 0, lastShotDist: 0 };
+  arenaStats = { swings: 0, hits: 0, blocked: 0, parried: 0, dmg: 0, lastHits: 0, lastDmg: 0, tookHits: 0, tookBlocked: 0, tookParried: 0, brokeFoe: 0, interrupted: 0, noWrath: 0, tookBreak: 0, lastShotDist: 0 };
 }
 const arenaNextMode = () => { const keys = Object.keys(ARENA_MODES); return keys[(keys.indexOf(arenaModeKey) + 1) % keys.length]; };
 
@@ -2858,8 +2887,8 @@ function arenaResetFight() {
     p.state = (p.id === KNIGHT_ID) ? 'CONTROLLED' : 'IDLE';
     p.swing = null; p.staggerT = 0; p.blocking = false; p.blockT = null; p.kbx = 0; p.kby = 0;
     p.hitFlash = 0; p.cardHitT = 0; p.flinchX = 0; p.flinchY = 0; p.parryFxT = 0;
-    p.poise = p.poiseMax; p.stam = p.stamMax; p.poiseHitT = -99; p.stamT = -99;
-    p.poiseBreakFxT = 0; p.guardBreakFxT = 0; p.flinchFxT = 0; p.noStamFxT = 0;
+    p.poise = p.poiseMax; p.wrath = p.wrathMax; p.poiseHitT = -99;
+    p.poiseBreakFxT = 0; p.guardBreakFxT = 0; p.flinchFxT = 0; p.noWrathFxT = 0;
     const sp = spawnPos(i, players.length); p.pos.x = sp.x; p.pos.y = sp.y;
   });
   controlledId = KNIGHT_ID;
@@ -3227,7 +3256,7 @@ function introBeats() {
     { kind: 'gate', on: 'approach' },                         // 玩家接近敵兵 → 觸發文字卡
     { kind: 'card', title: '操作說明', lines: [
         'WASD 移動　·　滑鼠轉向',
-        '左鍵　揮擊（前搖 → 判定 → 後搖，要耐力）',
+        '左鍵　揮擊（前搖 → 判定 → 後搖，不花任何資源）',
         '右鍵　格擋／招架（有盾才擋得住）',
         '',
         '前方有名敵兵正在搜刮屍體——解決他。',
@@ -3456,7 +3485,7 @@ function blacksmithPick(i) {
   if (!canEnhance(t.inst)) { blacksmithMsg = `${WEAPONS[t.id].name}：沒有可強化的格了`; return false; }
   const r = enhanceWeapon(t.inst);   // 就地改 enh 陣列（參照）
   if (!r) { blacksmithMsg = '強化失敗'; return false; }
-  blacksmithMsg = `${WEAPONS[t.id].name}　${r.kind === 'sharp' ? '鋒利 +傷害' : '平衡 −耐力'} ${r.value}`;
+  blacksmithMsg = `${WEAPONS[t.id].name}　${r.kind === 'sharp' ? '鋒利 +傷害' : '平衡 +回怒'} ${r.value}`;
   return true;
 }
 function blacksmithLeave() { if (scene !== 'BLACKSMITH') return; blacksmithMsg = ''; advanceNode(); }
@@ -3727,7 +3756,7 @@ const canBlock = (u) => !!shieldOf(u) && !!(u.weapon && u.weapon.melee);
 const blockArcOf = (u) => { const sh = shieldOf(u); return (sh ? sh.blockArcDeg : CONFIG.melee.blockArcDeg); };
 const blockResistOf = (u) => { const sh = shieldOf(u); return (sh ? sh.blockResist : CONFIG.melee.blockResist); };
 const parryWindowOf = (u) => { const sh = shieldOf(u); return CONFIG.melee.parryWindow * (sh ? sh.parryWinMul : 1) * (u.parryWinMul || 1); };   // 誓約「壁壘」：放寬招架窗
-const blockStamMulOf = (u) => { const sh = shieldOf(u); return sh ? sh.stamMul : 1; };
+const blockWrathMulOf = (u) => { const sh = shieldOf(u); return sh ? sh.wrathMul : 1; };
 /* ── 盾兵的反射式格擋（使用者定案：不做預判、不做 AI）─────────────────────
    挨打 → 體幹沒破 → 舉盾 reactBlockDur 秒 → 放下，並進 reactBlockCd 冷卻。
    **刻意不給招架窗**：招架是讀招，是玩家的技巧；讓一個純反射的 AI 每次挨打就白送一次
@@ -3782,34 +3811,33 @@ function selectSlot(u, i) {
 }
 /* ── 自由位＝術的載具（Phase 2-B，使用者定案）──────────────────────────
    槽位欄位沿用舊名以免動到休息關/倉庫 UI（約 85 處），但語意已經是「載具」：
-     sl.type === 'item'    → **卷軸**：sl.count 次、無 CD、即時（無前搖、不吃耐力）
-     sl.type === 'ability' → **習得**：無限次、sl.cd 秒 CD、有前搖且吃耐力、會被打斷
-   ★ CD 存在**槽位**上而不是單位上。舊版寫在 u.abilityCd，兩個習得的術會共用同一條 CD。
+     sl.type === 'item'    → **卷軸**：sl.count 次、即時（無前搖、不吃怒火）
+     sl.type === 'ability' → **習得**：無限次、無 CD、有前搖且吃怒火、會被打斷
+   ★ **沒有 CD**（D1 怒火）：閘門只有一個，就是怒火夠不夠。槽位的 cd 欄位已整條拿掉。
 
    舊版這裡還有一個靠運氣在動的 bug：useAbility/useItem 都沒有 return，
    而呼叫端寫的是 `const r = useX(u); if (!r) { 還原 }` → r 恆為 undefined ＝**每次都還原**。
    道具因為先寫回 sl.count 才僥倖正確。現在全部走 castArt，有真正的回傳值。 */
 function useFreeSlot(u, i) { return castArt(u, i); }
-const artCdOf = (sl) => (sl && sl.cd > 0 ? sl.cd : 0);
+const artWrathCost = (u, A) => Math.round(((A && A.wrathCost) || 0) * ((u && u.artCostMul) || 1));   // 誓約「咒能」：成本打折
 const artUsesOf = (sl) => (sl && sl.type === 'item' ? (sl.count || 0) : Infinity);
 // 這個槽位現在按得下去嗎（HUD 用；不含「正在施法」等瞬時狀態）
 function artReady(u, sl) {
   if (!sl || sl.kind !== 'free' || !sl.id || !artOf(sl.id)) return false;
-  return sl.type === 'ability' ? artCdOf(sl) <= 0 : artUsesOf(sl) > 0;
+  return sl.type === 'ability' ? (u.wrath || 0) >= artWrathCost(u, artOf(sl.id)) : artUsesOf(sl) > 0;
 }
 function castArt(u, i) {
   const sl = u && u.slots && u.slots[i];
   if (!sl || sl.kind !== 'free' || !sl.id) return false;
   const A = artOf(sl.id); if (!A) return false;
-  // **騎士專屬**（使用者定案）：AI 不做資源管理——給了 CD 與次數，扈從只會亂放或永遠不放，
-  // 就跟「扈從有耐力卻不會回氣」是同一個坑。
+  // **騎士專屬**（使用者定案）：AI 不做資源管理——給了成本與次數，扈從只會亂放或永遠不放，
+  // 就跟「扈從有怒火卻不知道要打人回怒」是同一個坑。
   if (u.id !== KNIGHT_ID || u.state !== 'CONTROLLED') return false;
   if (u.staggerT > 0 || u.cast || u.swing) return false;
   const learned = sl.type === 'ability';
   if (learned && !A.learnable) return false;   // 陶罐學不會
   if (learned) {
-    if (artCdOf(sl) > 0) return false;
-    if (u.stamMax && (u.stam || 0) < (A.stamCost || 0)) { u.noStamFxT = 0.25; Hooks.fire('stamEmpty', { u }); return false; }
+    if (!hasWrath(u, artWrathCost(u, A))) { failWrath(u); return false; }   // 怒火不足＝放不出來（無 CD，資源就是唯一的閘門）
     u.cast = { slot: i, artId: resolveArt(sl.id), t: 0, dur: (A.castTime || 0.4) * (u.castMul || 1) };   // 前搖開始，會被打斷（誓約「咒能」：castMul 縮短）
     u.blocking = false; u.blockT = null;
     Hooks.fire('castStart', { u, artId: u.cast.artId, art: A, carrier: 'learned' });
@@ -3821,12 +3849,8 @@ function castArt(u, i) {
   Hooks.fire('cast', { u, artId: resolveArt(sl.id), art: A, carrier: 'scroll' });
   return true;
 }
-// CD 逐槽位遞減（**每個習得的術有自己的 CD**，不是共用一條）
-function tickArtSlots(u, dt) {
-  if (!u.slots) return;
-  for (const sl of u.slots) if (sl && sl.cd > 0) sl.cd = Math.max(0, sl.cd - dt);
-}
-// 前搖推進：走完＝扣耐力、生效、進 CD。被打斷在 damageUnit 裡（與揮擊同一處）。
+// 前搖推進：走完＝扣怒火、生效。被打斷在 damageUnit 裡（與揮擊同一處）。
+// **怒火在前搖走完才扣**＝被打斷不會白花錢（打斷的懲罰是失去節奏，不是罰款）。
 function tickCast(u, dt) {
   if (!u.cast) return;
   u.cast.t += dt;
@@ -3834,9 +3858,8 @@ function tickCast(u, dt) {
   const artId = u.cast.artId, sl = u.slots && u.slots[u.cast.slot], A = ARTS[artId];
   u.cast = null;
   if (!sl || !A) return;
-  if (u.stamMax) { u.stam = Math.max(0, (u.stam || 0) - (A.stamCost || 0)); u.stamT = simTime; }
+  spendWrath(u, artWrathCost(u, A));
   applyArt(u, A);
-  sl.cd = (A.cooldown || 0) * (u.artCdMul || 1);   // 誓約「咒能」：術冷卻縮短
   Hooks.fire('cast', { u, artId, art: A, carrier: 'learned' });
 }
 // 效果本體：敵我共用一套管線，載具只決定「你憑什麼用它」
@@ -3874,15 +3897,15 @@ function swapWeapon(u) {
    接在 fireUnit 的最前面＝**所有既有開火路徑（玩家手動 / 扈從 overwatch / 敵人 AI）自動共用**，
    不必為玩家寫一條專用碼；Phase 2 敵種中世紀化只要把 ENEMY_TYPES.weaponId 換成近接武器即可。
    ===================================================================== */
-/* ── 體幹 / 耐力 / 攻擊權 ─────────────────────────────────────────────
+/* ── 體幹 / 怒火 / 攻擊權 ─────────────────────────────────────────────
    兩條資源解決兩個獨立的問題：
      體幹（poise）＝「被打有代價」：扣光＝大硬直＋處決窗 → 亂 trade 會被直接處決
-     耐力（stamina）＝「攻擊有成本」：揮擊/格擋/奔跑都要錢 → 不能無限攻擊，也不能無限龜盾
+     怒火（wrath）  ＝「容錯有價格」：格擋/奔跑/技能/大絕招要錢，攻擊免費 → 想活得漂亮就得一直打
    攻擊權（token）＝讓 1 對多 可讀：同時只有幾隻能進攻，其餘繞行伺機。 */
 const poiseMaxOf = (u) => (u.poiseMax || 1);
 const inSwingActive = (u) => !!(u.swing && u.swing.t >= u.swing.windup && u.swing.t < u.swing.windup + u.swing.active);
 const hasHyperArmor = (u) => !!(u.weapon && u.weapon.hyperArmor && inSwingActive(u));
-// 每幀回復體幹/耐力（受擊或消耗後有延遲；舉盾時耐力回得慢）＋ hpLow/poiseLow 門檻重新武裝
+// 每幀推進體幹（受擊後有延遲才回）與怒火（只退不回）＋ hpLow/poiseLow 門檻重新武裝
 function tickResources(u, dt) {
   const M = CONFIG.melee;
   if (u.poiseMax) {
@@ -3890,13 +3913,28 @@ function tickResources(u, dt) {
       u.poise = Math.min(u.poiseMax, (u.poise || 0) + M.poiseRegen * (u.poiseRegenMul || 1) * dt);   // meta 升級「穩固」
     if (u._poiseLowFired && u.poise / u.poiseMax >= CONFIG.hooks.poiseLowFrac) u._poiseLowFired = false;
   }
-  if (u.stamMax) {
-    if (simTime - (u.stamT || -99) >= M.stamRegenDelay)
-      u.stam = Math.min(u.stamMax, (u.stam || 0) + M.stamRegen * (u.blocking ? M.stamBlockRegenMul : 1) * (u.stamRegenMul || 1) * dt);   // 重甲＝耐力回得慢
-  }
+  // 怒火：**只退不回**（DESIGN §2.2 ③），而且只在房裡還有活敵人時退——
+  // 清場那一刻凍結，換房不另外扣（懲罰仔細撿東西的玩家是最糟的一種扣款）。
+  if (u.wrathMax && wrathDecaying()) u.wrath = Math.max(0, (u.wrath || 0) - CONFIG.wrath.decay * dt);
   if (u._hpLowFired && u.maxHp && u.hp / u.maxHp >= CONFIG.hooks.hpLowFrac) u._hpLowFired = false;
 }
-function spendStam(u, n) { if (!u.stamMax) return true; u.stam = Math.max(0, (u.stam || 0) - n); u.stamT = simTime; return true; }
+/* ── 怒火的四個入口（其餘地方一律走這四個，不要直接動 u.wrath）──────────
+   wrathDecaying  現在該不該扣（房裡還有活敵人＝還在戰鬥）
+   hasWrath       付得起嗎（wrathMax 為 0 的單位一律「付得起」＝所有閘門對 AI 短路）
+   spendWrath     花掉
+   gainWrath      回充（吃 wrathGainMul：重甲積得慢、誓約「不倦」積得快） */
+const wrathDecaying = () => !roomCleared && enemies.some(e => !e.dead);
+function hasWrath(u, n) { return !u.wrathMax || (u.wrath || 0) >= n; }
+function spendWrath(u, n) { if (!u.wrathMax) return true; u.wrath = Math.max(0, (u.wrath || 0) - n); return true; }
+function gainWrath(u, n) { if (!u || !u.wrathMax || !(n > 0)) return; u.wrath = Math.min(u.wrathMax, (u.wrath || 0) + n * (u.wrathGainMul || 1)); }
+// 想花但花不起：閃一下 + 掛勾（給之後的聖物/語音接線）
+function failWrath(u) { u.noWrathFxT = 0.25; if (arenaMode && u.id === KNIGHT_ID && u.faction === 'player') arenaStats.noWrath++; Hooks.fire('wrathEmpty', { u }); }
+// 怒火減傷：drStart 以下完全沒有，往上線性長到 drMax。乘算套在 damageUnit 最後＝永遠看得出效果。
+function wrathDR(u) {
+  if (!u.wrathMax) return 0;
+  const W = CONFIG.wrath, f = (u.wrath || 0) / u.wrathMax;
+  return W.drMax * clamp((f - W.drStart) / Math.max(1e-6, 1 - W.drStart), 0, 1);
+}
 // 體幹傷害 → 可能觸發體幹破（大硬直 + 處決窗 + 大幅擊退）。回傳是否破了。by＝造成者（給 Hooks）。
 function applyPoise(t, amount, fromAng, by) {
   if (!t.poiseMax || amount <= 0) return false;
@@ -4022,6 +4060,7 @@ function tickExecution(u, dt) {
   u.hp = Math.min(u.maxHp, u.hp + heal);
   const gained = Math.round(u.hp - before);
   e.hp = 0; killUnit(e, u);
+  gainWrath(u, CONFIG.wrath.gainExec);   // 處決回怒（大）＝和回血同一個動作：處決是雙重補給
   execCount++;
   // 演出：頓幀 + 大震 + 血花 + 兩個字
   hitstop(X.hitstop);
@@ -4081,14 +4120,7 @@ function friendlyInSwingArc(u, aimPos) {
 function startSwing(u, fireRateMult) {
   const W = u.weapon;
   if (u.swing || u.staggerT > 0 || u.swapT > 0 || u.parryT > 0 || u.cast || u.exec || u.dash) return false;   // 揮擊中/硬直中/換手中/招架中/施法前搖中/處決中/dash 中不能再揮
-  const cost = W.stamCost || 0;   // 耐力不足＝揮不動（攻擊有成本）
-  if (u.stamMax && cost > 0 && (u.stam || 0) < cost) {
-    u.noStamFxT = 0.25;
-    if (arenaMode && u.id === KNIGHT_ID && u.faction === 'player') arenaStats.noStam++;
-    Hooks.fire('stamEmpty', { u });
-    return false;
-  }
-  if (cost > 0) spendStam(u, cost);
+  // **揮擊不花任何資源**（DESIGN §2.2 ②）：你永遠打得動，因為往前打是唯一的活路。
   const rm = CONFIG.tempo / Math.max(0.05, (fireRateMult || 1) * (u.buffFire || 1));   // 攻速 buff＝縮短全段；× tempo＝整體前後搖更長
   u.swingDir = -(u.swingDir || -1);   // 左右交替：連續揮擊會是 →、←、→…（不是每次都同一邊）
   u.swing = {
@@ -4213,9 +4245,8 @@ function blockCovers(u, fromAng) {
 function startWeaponParry(u) {
   if (!u.weapon || !u.weapon.melee) return false;          // 遠程武器不能招架
   if (u.parryT > 0 || u.swing || u.staggerT > 0 || u.swapT > 0) return false;
-  const cost = CONFIG.melee.wpStamCost;
-  if (u.stamMax && (u.stam || 0) < cost) { u.noStamFxT = 0.25; Hooks.fire('stamEmpty', { u }); return false; }
-  if (cost) spendStam(u, cost);
+  // 招架不收費（DESIGN §2.2：招架是三段回充的中段）。它的代價是**落空就自己硬直**，
+  // 那比扣資源更好——賭錯的懲罰立刻兌現在身體上，而不是記在帳上。
   u.parryT = 1e-6; u.parryDur = CONFIG.melee.wpRecover; u.parryHit = false;
   Sfx.play('block', u.pos);
   return true;
@@ -4314,7 +4345,34 @@ function tickAmmo(u, dt) {
 const SLOT_SCROLL = 2, SLOT_LEARNED = 3;   // 自由位 0/1 的槽位索引（unit slot 2/3）；槽位本身可放任一載具
 // 預留：空白鍵＝綁定誓約的「主動技能」觸發鍵。未來某些綁定（預設）誓約會給騎士一個可施展的技能，掛在這裡。
 // 目前沒有任何誓約提供主動技能＝no-op（回 false，不搶操作）。實作時：讀 knight 的綁定誓約 activeSkill → 施展 → 回 true。
-function useOathSkill(u) { return false; }
+/* 大絕招「聖怒」（DESIGN.md §2.3）：怒火滿 → 清空換一發大的。按 Q。
+   「開場滿」的連帶效果就是**你一進地獄就有一發可以放**——第一房直接炸，開場一分鐘內有爆點。
+   內容刻意是「一發把全場打踉蹌」而不是「一發清空全場」：它不替你收人頭，
+   它把整個房間變成處決窗——血和怒火還是要你自己走過去，一個一個吃回來。 */
+function useOathSkill(u) {
+  if (!u || u.state === 'DEAD' || u.staggerT > 0 || u.exec || u.dash) return false;
+  const W = CONFIG.wrath;
+  if (!hasWrath(u, W.ultCost) || !u.wrathMax) { failWrath(u); return false; }
+  u.swing = null; u.cast = null; u.blocking = false; u.blockT = null; u.parryT = 0;
+  u.invulnT = Math.max(u.invulnT || 0, 0.35);
+  for (const e of enemies.slice()) {
+    if (e.dead || e.state === 'DEAD') continue;
+    if (dist(u.pos, e.pos) > W.ultRadius) continue;
+    // 滿穿甲：這一發不該被板甲擲骰擋掉——大絕招要是會 miss，它就不是爆點了
+    damageUnit(e, W.ultDmg, 1, angTo(e.pos, u.pos), { melee: true, attacker: u, knock: W.ultKnock, stagger: 0, poiseDmg: W.ultPoise });
+  }
+  // 清空放在傷害結算**之後**：這一發自己打出來的命中不回怒。
+  // 大絕招是支出，不是連段的一環——不然在人多的房間放一發就回一半，等於可以連放。
+  spendWrath(u, u.wrathMax);   // 門檻是 ultCost，代價是**整條**：放完一定見底
+  hitstop(0.12);
+  addShakeAt(u.pos, 14);
+  for (let i = 0; i < 48; i++) particles.push(mkPart(u.pos, 260, 0.55, i % 3 ? '#ff8a3c' : '#ffd66a'));
+  pushDecal(u.pos.x, u.pos.y, 26, 'rgba(120,50,20,0.35)');
+  spawnFloater({ x: u.pos.x, y: u.pos.y - 14 }, '聖怒', 'exec');
+  Sfx.play('crit', u.pos);
+  Hooks.fire('ultimate', { u, radius: W.ultRadius });
+  return true;
+}
 function useAbility(u) { return castArt(u, SLOT_LEARNED); }
 function useItem(u) { return castArt(u, SLOT_SCROLL); }
 // 手榴彈：朝瞄準方向「丟出去」一顆會飛的手榴彈→落點才 360° 炸開散射一批彈丸（不算爆破半徑，威力＝被幾顆打中＝中心密/遠處稀，自然衰減）。
@@ -4456,7 +4514,7 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
       atk.staggerT = Math.max(atk.staggerT || 0, M.parryStagger); atk.swing = null;
       applyPoise(atk, poiseDmg, fromAng + Math.PI, u);
     }
-    if (u.stamMax) u.stam = Math.min(u.stamMax, (u.stam || 0) + M.stamParryRefund);
+    gainWrath(u, CONFIG.wrath.gainParry);   // 招架回怒（中）：獎勵讀招
     u.parryFxT = M.arcFadeT;
     Hooks.fire('parry', { u, from: atk || null });
     spawnBlock(u.pos); Sfx.play('parry', u.pos); spawnFloater(u.pos, '招架', 'parry');
@@ -4469,25 +4527,28 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
     spawnBlock(u.pos);
     if (parry) {
       const atk = opts && opts.attacker;
-      // 招架＝把衝擊整個反推回去：**近戰**攻擊者吃體幹傷害（常常直接體幹破）+ 固定硬直；自己退還耐力
+      // 招架＝把衝擊整個反推回去：**近戰**攻擊者吃體幹傷害（常常直接體幹破）+ 固定硬直；自己回怒火
       // （招架到遠程箭矢＝只完全格擋，不會隔空震到射手）
       if (atk && opts.melee) {
         atk.staggerT = Math.max(atk.staggerT || 0, M.parryStagger); atk.swing = null;
         applyPoise(atk, poiseDmg, fromAng + Math.PI, u);
       }
-      if (u.stamMax) { u.stam = Math.min(u.stamMax, (u.stam || 0) + M.stamParryRefund); }
+      gainWrath(u, CONFIG.wrath.gainParry);
       u.parryFxT = M.arcFadeT;   // 招架成功的視覺回饋
       Hooks.fire('parry', { u, from: atk || null });
       Sfx.play('parry', u.pos);
       return true;                          // 完全格擋：不吃傷、不吃擊退/體幹
     }
-    // 擋下：傷害大減（減多少看盾），但**耐力要付錢**；耐力不夠 → 破防（＝體幹破，大硬直）
+    /* 擋下：傷害大減（減多少看盾），但**怒火要付錢**；怒火不夠 → 破防（＝體幹破，大硬直）。
+       這一筆和「怒火高＝減傷」疊起來就是整套防禦的張力（DESIGN §2.3）：
+       格擋救了你這一下，但花掉的怒火讓你之後更脆——它不是免費的保險，是一筆得趕快打回來的借款。 */
     dmg *= (1 - blockResistOf(u));
     poiseDmg *= M.blockPoiseMul;
-    if (u.stamMax) {
-      const cost = (M.stamBlockBase + poiseDmg * M.stamBlockPerPoise) * blockStamMulOf(u);
-      const enough = (u.stam || 0) >= cost;
-      spendStam(u, cost);
+    if (u.wrathMax) {
+      const W = CONFIG.wrath;
+      const cost = (W.costBlockBase + poiseDmg * W.costBlockPerPoise) * blockWrathMulOf(u);
+      const enough = (u.wrath || 0) >= cost;
+      spendWrath(u, cost);
       if (!enough) { u.guardBreakFxT = M.arcFadeT * 2; breakPoise(u, fromAng, opts && opts.attacker); poiseDmg = 0; }
     }
     Hooks.fire('blockHit', { u, from: (opts && opts.attacker) || null });
@@ -4526,6 +4587,12 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
     applyKnock(u, fromAng + Math.PI, opts.knock || 0);                                   // 往「背離攻擊者」的方向推
     if (opts.stagger) { u.staggerT = Math.max(u.staggerT || 0, opts.stagger); u.swing = null; u.cast = null; }
   }
+  // 命中回怒（小）＝保底：只要你還在揮就不會完全枯竭。
+  // 被盾擋下/被甲彈開只給零頭——打了個寂寞不該和砍進肉裡一樣值錢。武器詞條「平衡」加在這裡。
+  if (opts && opts.attacker) {
+    const W = CONFIG.wrath, aw = opts.attacker.weapon;
+    gainWrath(opts.attacker, (blocked || armorBlocked) ? W.gainHitBlocked : W.gainHit + ((aw && aw.wrathAdd) || 0));
+  }
   if (armorBlocked) { spawnFloater(u.pos, '擋', 'blocked'); return blocked; }   // 被甲彈開：不流血（體幹/擊退已在上面結算過了）
   if (u.staggerT > 0 && !blocked) dmg *= M.poiseBreakDmgMul;   // 處決窗：硬直中的人挨打特別痛
   /* 甲的第二層：**被彈開之外，穿過來的那一下也吃得少一點**（使用者定案）。
@@ -4537,7 +4604,8 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
   const A = CONFIG.armor;
   const armorResist = (u.armor || 0) * A.flatResist * (1 - (pierce || 0) * A.pierceBypass);
   const resist = flanked ? 0 : clamp((u.dmgResist || 0) + armorResist, 0, A.resistCap);
-  const raw = dmg * mult * (1 - resist);
+  // 怒火減傷乘在最後（不進 resistCap）＝板甲騎士也感覺得到怒火的差別，而不是被上限吃掉。
+  const raw = dmg * mult * (1 - resist) * (1 - wrathDR(u));
   // **溢出傷害不計**：對 1 HP 的目標打 999，實際只造成 1 點。
   // 若照全額往下傳，吃「每點傷害」的效果（士氣、吸血、統計）會被overkill 灌爆。
   const dealt = Math.min(raw, Math.max(0, u.hp));
@@ -4916,7 +4984,7 @@ function enemyTick(e, dt) {
   const inRange = dist(e.pos, aimPos) <= e.weapon.range;
   const melee = !!e.weapon.melee;
   // 攻擊權（1 對多的可讀性）：近接敵要先取得攻擊權才進逼；沒拿到的在 ringDist 外圍繞行伺機。
-  // 沒有這層，體幹/耐力只會讓被圍毆變成必死宣告。
+  // 沒有這層，體幹只會讓被圍毆變成必死宣告。
   let token = true;
   if (melee && seen) {
     token = tryAcquireToken(e, tgt);
@@ -5296,7 +5364,7 @@ window.addEventListener('keydown', e => {
   // 空白＝dash。**最常用的防禦動作配最大的鍵**（Hades 也是空白）。
   // 大絕招因此讓位到 Q——Q 在 C1 拿掉隨從姿態切換之後就空出來了。
   if (k === ' ') { if (knight() && startDash(knight())) e.preventDefault(); }
-  if (k === 'q') { if (controlledId != null) useOathSkill(players[controlledId]); }   // 大絕招（目前 no-op，等 D1 怒火接上）
+  if (k === 'q') { if (controlledId != null) useOathSkill(players[controlledId]); }   // 大絕招「聖怒」：怒火滿才放得出來，放完見底
   if (k === 'r') { if (controlledId != null) startReload(players[controlledId]); } // 換彈
   if (k === 'x') { if (controlledId != null) swapWeapon(players[controlledId]); }   // 換槍(主↔副)
   if (k === 'c') { if (controlledId != null) useItem(players[controlledId]); }     // 道具(原 Q)
@@ -5348,8 +5416,8 @@ function update(dt) {
   if (cutscene && cutscene.lock) return;   // 演出鎖控制：只跑鏡頭/演出，不跑常規 sim
 
   const juiceDecay = (u) => { if (u.recoil > 0) u.recoil = Math.max(0, u.recoil - CONFIG.juice.recoilDecay * dt); if (u.hitFlash > 0) u.hitFlash -= dt; if (u.cardHitT > 0) u.cardHitT -= dt; if ((u.invulnT || 0) > 0) u.invulnT -= dt; if ((u.dashCd || 0) > 0) u.dashCd -= dt; if (u.dashGhosts && u.dashGhosts.length && !u.dash) { for (const g of u.dashGhosts) g.a -= dt * 4; u.dashGhosts = u.dashGhosts.filter(g => g.a > 0); } if (u.flinchX) { u.flinchX *= Math.exp(-22 * dt); u.flinchY *= Math.exp(-22 * dt); } };
-  const meleeFxDecay = (u) => { for (const k of ['parryFxT', 'poiseBreakFxT', 'guardBreakFxT', 'flinchFxT', 'noStamFxT', 'atkRestT']) if (u[k] > 0) u[k] -= dt; };
-  for (const p of players) { if (p.fireCooldown > 0) p.fireCooldown -= dt; if (p.muzzle > 0) p.muzzle -= dt; juiceDecay(p); if (p.abilityCd > 0) p.abilityCd -= dt; tickArtSlots(p, dt); tickCast(p, dt); tickAmmo(p, dt); tickMelee(p, dt); tickReactiveBlock(p, dt); tickResources(p, dt); meleeFxDecay(p); }
+  const meleeFxDecay = (u) => { for (const k of ['parryFxT', 'poiseBreakFxT', 'guardBreakFxT', 'flinchFxT', 'noWrathFxT', 'atkRestT']) if (u[k] > 0) u[k] -= dt; };
+  for (const p of players) { if (p.fireCooldown > 0) p.fireCooldown -= dt; if (p.muzzle > 0) p.muzzle -= dt; juiceDecay(p); tickCast(p, dt); tickAmmo(p, dt); tickMelee(p, dt); tickReactiveBlock(p, dt); tickResources(p, dt); meleeFxDecay(p); }
   for (const e of enemies) { if (e.dead) continue; if (e.fireCooldown > 0) e.fireCooldown -= dt; if (e.muzzle > 0) e.muzzle -= dt; if (e.flash > 0) e.flash = Math.max(0, e.flash - CONFIG.flash.decay * dt); juiceDecay(e); tickAmmo(e, dt); tickMelee(e, dt); tickReactiveBlock(e, dt); tickResources(e, dt); meleeFxDecay(e); }
   pruneAttackTokens();   // 攻擊權：過期的釋放出來給別隻
 
@@ -5381,8 +5449,8 @@ function update(dt) {
         if (Input.held('w')) fwd += 1; if (Input.held('s')) fwd -= 1;
         if (Input.held('d')) strafe += 1; if (Input.held('a')) strafe -= 1;
         const moving = !!(fwd || strafe);
-        u.sprinting = moving && Input.held('shift') && !isScoping() && !u.swing && !u.blocking && !(u.reloadT > 0) && (u.stam || 0) > 1;   // 奔跑要耐力（望遠/揮擊/舉盾/裝填時禁奔跑）
-        if (u.sprinting) spendStam(u, CONFIG.melee.stamSprintDrain * dt);
+        u.sprinting = moving && Input.held('shift') && !isScoping() && !u.swing && !u.blocking && !(u.reloadT > 0) && (u.wrath || 0) > 1;   // 奔跑燒怒火（望遠/揮擊/舉盾/裝填時禁奔跑）
+        if (u.sprinting) spendWrath(u, CONFIG.wrath.costSprint * dt);
         if (moving) {
           const fx = Math.cos(u.facing), fy = Math.sin(u.facing);
           const rx = Math.cos(u.facing + Math.PI / 2), ry = Math.sin(u.facing + Math.PI / 2);
@@ -5518,7 +5586,7 @@ function drawArenaHUD() {
     ['前搖', W.windup.toFixed(2) + 's'], ['判定', W.activeT.toFixed(2) + 's'], ['後搖', W.recover.toFixed(2) + 's'],
     ['一擊間隔', (W.windup + W.activeT + W.recover).toFixed(2) + 's'],
     ['DPS(理論)', Math.round(W.damage / (W.windup + W.activeT + W.recover))],
-    ['體幹傷害', W.poiseDmg], ['耐力消耗', W.stamCost],
+    ['體幹傷害', W.poiseDmg], ['命中回怒', CONFIG.wrath.gainHit + (W.wrathAdd || 0)],
     ['hyperArmor', W.hyperArmor ? '有(判定窗)' : '—'],
     ['cleave', W.cleave], ['擊退距離', Math.round((W.knock || 0) / CONFIG.melee.knockDecay) + 'px'],
     ['背刺', '×' + (W.backstabMul || 1)],
@@ -5570,7 +5638,7 @@ function drawArenaHUD() {
     ['上次命中距離', S.lastShotDist ? S.lastShotDist + 'px' : '—'],
     ['被格擋', S.blocked],
     ['打破敵體幹', S.brokeFoe], ['打斷敵前搖', S.interrupted],
-    ['耐力不足次數', S.noStam],
+    ['怒火不足次數', S.noWrath],
     ['—', ''],
     ['我方挨打', S.tookHits], ['我方擋下', S.tookBlocked], ['我方招架', S.tookParried],
     ['我方被打崩', S.tookBreak],
@@ -6283,7 +6351,9 @@ function edgeMarker(worldPos, color, label, filled) {
   return onScreen;
 }
 /* 騎士的兩條資源（畫面中下，交戰時掃一眼就看得到）：
-   耐力＝能不能再揮/再擋；體幹＝再挨幾下會被打崩。這兩條就是新的戰鬥語言，必須醒目。 */
+   **怒火**＝容錯的價格，也是大絕招的彈藥；**體幹**＝再挨幾下會被打崩。
+   怒火條刻意比體幹條粗：它是這套戰鬥唯一要一直盯的東西。
+   條上那道刻痕＝減傷起點（CONFIG.wrath.drStart）——玩家得看得出「掉到這裡以下就開始痛了」。 */
 function drawKnightResources() {
   const k = knight(); if (!k || k.state === 'DEAD') return;
   const w = 220, h = 9, x = cv.width / 2 - w / 2, y = cv.height - 148;
@@ -6294,10 +6364,17 @@ function drawKnightResources() {
     ctx.font = '9px Consolas'; ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(220,230,240,0.75)';
     ctx.fillText(label, x - 6, yy + h - 1); ctx.textAlign = 'left';
   };
-  const stamF = (k.stam || 0) / (k.stamMax || 1);
-  const low = stamF < 0.25;
-  // 耐力：低於 25% 轉紅並在不足時閃爍＝「你快揮不動了」
-  bar(y, stamF, (k.noStamFxT > 0 && Math.sin(simTime * 40) > 0) ? '#ffffff' : (low ? '#ff8a5c' : '#7fe3a0'), 'rgba(12,18,26,0.8)', '耐力');
+  const W = CONFIG.wrath;
+  const wf = (k.wrath || 0) / (k.wrathMax || 1);
+  const ult = (k.wrath || 0) >= W.ultCost;
+  const flash = k.noWrathFxT > 0 && Math.sin(simTime * 40) > 0;
+  // 大絕招就緒＝金色脈動／減傷區內＝橙紅／跌破 drStart＝暗紅（「開始會痛了」）
+  const wcol = flash ? '#ffffff' : ult ? `rgba(255,${200 + Math.round(40 * Math.sin(simTime * 9))},110,1)`
+             : wf < W.drStart ? '#a8402f' : '#ff7a3c';
+  bar(y, wf, wcol, 'rgba(12,18,26,0.8)', '怒火');
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x + w * W.drStart, y, 1, h);              // 減傷起點的刻痕
+  ctx.fillStyle = 'rgba(255,214,120,0.55)'; ctx.fillRect(x + w * (W.ultCost / (k.wrathMax || 1)), y, 1, h);   // 大絕招門檻的刻痕
+  if (ult) { ctx.font = 'bold 10px Consolas'; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,214,120,0.95)'; ctx.fillText('Q 聖怒', x + w + 6, y + h - 1); }
   const poiseF = (k.poise || 0) / (k.poiseMax || 1);
   bar(y + h + 3, poiseF, poiseF < 0.34 ? '#ffd24a' : 'rgba(200,160,85,0.9)', 'rgba(12,18,26,0.8)', '體幹');
   // 硬直/破防的大字提示（被打崩時要非常清楚，否則玩家不知道自己為什麼不能動）
@@ -6306,9 +6383,9 @@ function drawKnightResources() {
     ctx.fillStyle = `rgba(255,190,90,${0.55 + 0.45 * Math.sin(simTime * 22)})`;
     ctx.fillText(k.guardBreakFxT > 0 ? '破防！' : '體幹破 — 硬直中', cv.width / 2, y - 10);
     ctx.textAlign = 'left';
-  } else if (k.noStamFxT > 0) {
+  } else if (k.noWrathFxT > 0) {
     ctx.textAlign = 'center'; ctx.font = 'bold 13px Consolas';
-    ctx.fillStyle = 'rgba(255,140,90,0.9)'; ctx.fillText('耐力不足', cv.width / 2, y - 8);
+    ctx.fillStyle = 'rgba(255,140,90,0.9)'; ctx.fillText('怒火不足', cv.width / 2, y - 8);
     ctx.textAlign = 'left';
   }
 }
@@ -6518,7 +6595,7 @@ function drawCardHitFrame(p, x, y, w, h, f) {
    那些你既不能操作也不需要即時知道，放上去只會把騎士自己的資訊擠掉。 */
 /* ---- 戰鬥快捷列（PoE 風，底部中央）：各按鍵→對應招式/技能，含左右鍵。 ----
    每格＝一個「圖示位」（現在放名字，未來抽換成 icon）＋左下角鍵位徽章＋右上角狀態。
-   內容：左鍵 攻擊 / 右鍵 望遠 / 數字鍵 1~N 自由位（道具＝次數、習得＝CD）。 */
+   內容：左鍵 攻擊 / 右鍵 望遠 / 數字鍵 1~N 自由位（道具＝次數、習得＝怒火成本）。 */
 function drawHotkeyBar() {
   const kn = players[KNIGHT_ID]; if (!kn) return;
   const chips = [{ key: '左', label: '攻擊', kind: 'mouse' }, { key: '右', label: '望遠', kind: 'mouse' }];
@@ -6531,7 +6608,7 @@ function drawHotkeyBar() {
   for (let i = 0; i < chips.length; i++) {
     const c = chips[i], cx = x0 + i * (sz + gap);
     const has = c.kind !== 'free' || (c.sl && c.sl.id);
-    const ready = c.kind !== 'free' || (has && (c.sl.type === 'item' ? c.sl.count > 0 : c.sl.cd <= 0));
+    const ready = c.kind !== 'free' || (has && artReady(kn, c.sl));
     // 圖示位（未來放 icon；現在放名字）
     ctx.fillStyle = has ? 'rgba(20,26,36,0.9)' : 'rgba(15,18,24,0.65)'; ctx.fillRect(cx, y, sz, sz);
     ctx.lineWidth = 1.4; ctx.strokeStyle = (has && ready) ? 'rgba(150,180,210,0.65)' : 'rgba(85,95,108,0.45)'; ctx.strokeRect(cx, y, sz, sz);
@@ -6544,7 +6621,7 @@ function drawHotkeyBar() {
     if (c.kind === 'free' && has) {
       ctx.textAlign = 'right'; ctx.font = '8px Consolas';
       if (c.sl.type === 'item') { ctx.fillStyle = c.sl.count > 0 ? '#ffd27d' : '#6a727c'; ctx.fillText('×' + (c.sl.count || 0), cx + sz - 3, y + 11); }
-      else { ctx.fillStyle = c.sl.cd > 0 ? '#7fa8ff' : '#5fd0c0'; ctx.fillText(c.sl.cd > 0 ? Math.ceil(c.sl.cd) + '' : '✓', cx + sz - 3, y + 11); }
+      else { const cost = artWrathCost(kn, artOf(c.sl.id)); ctx.fillStyle = ready ? '#ff9b5a' : '#6a727c'; ctx.fillText(cost ? String(cost) : '✓', cx + sz - 3, y + 11); }   // 徽章＝怒火成本（無 CD）
       ctx.textAlign = 'center';
     }
   }
@@ -6736,8 +6813,8 @@ function drawKnightPanel(px, py, pw) {
   const freeCount = memberFreeSlots(KNIGHT_ID);
   for (let fi = 0; fi < freeCount; fi++) {
     if (fi === 0) { const a = r.itemId ? artOf(r.itemId) : null; oneSlot('自由 ' + (fi + 1), 'rgba(255,210,125,0.1)', ['item'], a ? (a.name + ' ×' + (r.itemCount || 0)) : '—（空）', a ? '#ffd9a0' : '#7a828c', { filled: !!r.itemId, equipFromWh: (w) => equipGearFromWarehouse(w, KNIGHT_ID, 'item', 'itemId'), unequip: () => unequipGear(KNIGHT_ID, 'item', 'itemId') }); }
-    else if (fi === 1) { const a = r.abilityId ? artOf(r.abilityId) : null; oneSlot('自由 ' + (fi + 1), 'rgba(192,160,255,0.1)', ['ability'], a ? (a.name + '（CD ' + a.cooldown + 's）') : '—（空）', a ? '#d0b8ff' : '#7a828c', { filled: !!r.abilityId, equipFromWh: (w) => equipAbilityFromWarehouse(w, KNIGHT_ID), unequip: () => unequipAbility(KNIGHT_ID) }); }
-    else { const ex = (r.freeExtra || [])[fi - 2] || null, a = (ex && ex.id) ? artOf(ex.id) : null; oneSlot('自由 ' + (fi + 1), 'rgba(150,200,170,0.1)', ['item', 'ability'], a ? (a.name + (ex.kind === 'item' ? ' ×' + (ex.count || 0) : '（CD ' + a.cooldown + 's）')) : '—（空）', a ? '#bfe6cf' : '#7a828c', { filled: !!(ex && ex.id), equipFromWh: (w) => equipFreeExtraFromWarehouse(w, KNIGHT_ID, fi - 2), unequip: () => unequipFreeExtra(KNIGHT_ID, fi - 2) }); }
+    else if (fi === 1) { const a = r.abilityId ? artOf(r.abilityId) : null; oneSlot('自由 ' + (fi + 1), 'rgba(192,160,255,0.1)', ['ability'], a ? (a.name + '（怒火 ' + a.wrathCost + '）') : '—（空）', a ? '#d0b8ff' : '#7a828c', { filled: !!r.abilityId, equipFromWh: (w) => equipAbilityFromWarehouse(w, KNIGHT_ID), unequip: () => unequipAbility(KNIGHT_ID) }); }
+    else { const ex = (r.freeExtra || [])[fi - 2] || null, a = (ex && ex.id) ? artOf(ex.id) : null; oneSlot('自由 ' + (fi + 1), 'rgba(150,200,170,0.1)', ['item', 'ability'], a ? (a.name + (ex.kind === 'item' ? ' ×' + (ex.count || 0) : '（怒火 ' + a.wrathCost + '）')) : '—（空）', a ? '#bfe6cf' : '#7a828c', { filled: !!(ex && ex.id), equipFromWh: (w) => equipFreeExtraFromWarehouse(w, KNIGHT_ID, fi - 2), unequip: () => unequipFreeExtra(KNIGHT_ID, fi - 2) }); }
   }
   return yc;
 }
@@ -6961,7 +7038,7 @@ function drawTutor() {
   });
   if (tutorMode === 'affix') { drawTutorAffix(); return; }
   ctx.fillStyle = 'rgba(205,214,224,0.7)'; ctx.font = '13px Consolas';
-  ctx.fillText('燒卷軸換永久習得：無限次使用，但要 CD、要耐力、前搖會被打斷', cv.width / 2, 132);
+  ctx.fillText('燒卷軸換永久習得：無限次使用，但要怒火、前搖會被打斷（沒有 CD）', cv.width / 2, 132);
 
   const list = tutorOffers || [];
   const bw = 520, bh = 60, gap = 9, y0 = 156;
@@ -6974,7 +7051,7 @@ function drawTutor() {
     ctx.font = 'bold 15px Consolas'; ctx.fillStyle = o.ok ? '#c0a0ff' : '#5c646f'; ctx.fillText(`[${i + 1}]`, x + 14, y + 26);
     ctx.fillStyle = o.ok ? '#e8eef5' : '#6b7580'; ctx.font = '15px Consolas'; ctx.fillText(o.name, x + 56, y + 26);
     ctx.font = '11px Consolas'; ctx.fillStyle = o.ok ? '#8b97a5' : '#5c646f';
-    ctx.fillText(`CD ${A.cooldown}s · 前搖 ${A.castTime}s · 耐力 ${A.stamCost}`, x + 56, y + 46);
+    ctx.fillText(`怒火 ${A.wrathCost} · 前搖 ${A.castTime}s`, x + 56, y + 46);
     ctx.textAlign = 'right';
     ctx.fillStyle = o.known ? '#7fffa8' : (o.ok ? '#ffd27d' : '#6b7580');
     ctx.font = 'bold 13px Consolas';
@@ -7057,7 +7134,7 @@ function drawBlacksmith() {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#e6b060'; ctx.font = 'bold 30px Consolas'; ctx.fillText('鐵匠', cv.width / 2, 78);
   ctx.fillStyle = 'rgba(205,214,224,0.7)'; ctx.font = '14px Consolas';
-  ctx.fillText('打鋒利（+傷害）或平衡（−耐力）——隨機。精良度＝還能打幾次，打完就滿了。', cv.width / 2, 104);
+  ctx.fillText('打鋒利（+傷害）或平衡（+命中回怒）——隨機。精良度＝還能打幾次，打完就滿了。', cv.width / 2, 104);
   ctx.fillStyle = 'rgba(205,214,224,0.45)'; ctx.font = '12px Consolas';
   ctx.fillText('詞條要找導師。石中劍等打滿的武器動不了。', cv.width / 2, 126);
 
