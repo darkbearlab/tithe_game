@@ -99,6 +99,13 @@ const CONFIG = {
   moveSpeed: 200,           // px/s（TITHE：DOOM 式的高基礎移速；Homeward 是 110「戰術化放慢」）
   turnSpeed: 480,           // deg/s（預設砲塔轉速；實際以各武器 turnSpeed 為準）
   mouseSensitivity: 0.0035, // FPS 式滑鼠鎖定靈敏度（rad/px）。轉速不夠快時砲塔會追不上＝轉向延遲
+  /* dash（TITHE D3）——**完全免費**的迴避。DESIGN.md §3：
+       防禦不該有成本，進攻才有回報。付費的防禦（格擋／奔跑）是你打出來之後才買得起的升級，
+       而 dash 是永遠都在的保底——尤其是進房那一刻怒火還沒累積起來的時候。
+     它同時是 B 型狙擊預告（§4.1）的正解：「在填滿前離開那條線」需要一個可靠的瞬間位移。
+     i-frame 只佔動作的前段（iframeFrac）＝**穿過攻擊**要抓時機，不是無腦按了就無敵。 */
+  dash: { dist: 200, dur: 0.15, cd: 0.8, iframeFrac: 0.75, trail: 6 },
+
   // Shift 奔跑：奔跑倍率 = base − (武器weight−1)×weightPenalty，夾在 [minMult, base]（越重跑越慢）
   sprint: { base: 1.9, weightPenalty: 0.5, minMult: 1.1 },
   // 武器數值移至下方 WEAPONS 目錄（可指派、未來可換）
@@ -1067,7 +1074,10 @@ const ENEMY_TYPES = {
   shieldman:    enemyType('shieldman',   { weaponId: 'sword',    personality: 'holder',  hue: 210, patrols: true, offId: 'shield' }),   // 持圓盾：挨一下就舉盾（反射式，不預判）＝正面硬砍最沒效率的敵人
   wolf:         enemyType('wolf',        { weaponId: 'fangs',    personality: 'rusher',  hue: 45,  coneHalfDeg: 80, senseMul: 1.5, opensDoors: false }),  // 快、脆、貼臉連咬、視野廣；動物不會開門
   archer:       enemyType('archer',      { weaponId: 'longbow',  personality: 'holder',  hue: 100, patrols: true }),   // 遠程敵：站樁放箭（holder＝幾乎不主動推進）
-  arbalest:     enemyType('arbalest',    { weaponId: 'crossbow', personality: 'holder',  hue: 260 }),                  // 破甲遠程：裝填慢、單發重（對玩家的甲也一樣）
+  arbalest:     enemyType('arbalest',    { weaponId: 'crossbow', personality: 'holder',  hue: 260 }),                  // B 狙擊型的極端：裝填慢、單發重（對玩家的甲也一樣）
+  // A 彈幕型的代表（DESIGN.md §4.1）：沒有預告窗，但投槍慢而顯眼——你躲的是投槍本身。
+  // 惡魔名冊（D8）會取代這些中世紀兵種，但**兩種原型要各有活著的樣本**，否則規則沒地方驗。
+  javelineer:   enemyType('archer',      { name: '投槍兵', weaponId: 'javelin', personality: 'rusher', hue: 30 }),
   manatarms:    enemyType('manatarms',   { weaponId: 'mace',     personality: 'rusher',  hue: 280, elite: true }),      // 重裝＋破甲鎚：慢但你砍不動、他一下就把你打崩
   serjeant:     enemyType('serjeant',    { weaponId: 'axe',      personality: 'rusher',  hue: 320, elite: true }),      // 重裝＋雙手斧：廣掃 cleave、hyperArmor 不怕打斷
   civilian:     enemyType('civilian',    { weaponId: 'knife',    personality: 'holder',  hue: 150, opensDoors: false }), // 事件演員(小男孩等)；演出鎖控制時不行動、開打才交戰
@@ -2305,6 +2315,7 @@ function makePlayer(i, cfg, pos) {
     senseRadius: CONFIG.vision.senseRadius * (cfg.strength || 1) * (fx.senseMul || 1),
     swing: null, blocking: false, blockT: null, staggerT: 0, kbx: 0, kby: 0, parryFxT: 0,   // 近接：揮斬狀態機 / 盾格 / 硬直 / 擊退速度 / 招架特效
     exec: null,                                                // 處決動作中（非 null＝鎖住輸入、免傷）
+    dash: null, dashCd: 0, dashGhosts: [],                     // dash：動作中 / 冷卻 / 殘影
     aimT: 0, aimDur: 0,   // 遠程瞄準進度／所需時間（扈從也吃；騎士手動射擊不經此）
     cast: null,   // 施法前搖狀態 { slot, artId, t, dur }；卷軸即時＝不經過這裡
     parryT: 0, parryDur: 0, parryHit: false,   // 武器招架（無盾時的防禦）：動作計時 / 總長 / 這次有沒有接到攻擊
@@ -2684,7 +2695,7 @@ const ARENA_MODES = {
   ranged: {
     label: '射擊試作場', map: 'range', weapon: 'longbow', medieval: true,
     desc: '弓弩彈道 / 射程 / 穿甲 / 掩體 / 盾擋箭',
-    detail: '上半標靶區：假人在 300–900 距離檔 · 下半對射區：弓手×2 弩手×1 會還擊',
+    detail: '上半標靶區：假人在 300–900 距離檔 · 下半對射區：弓手/弩手（B 狙擊型：有預告、朝向鎖死、近乎 hitscan）+ 投槍兵（A 彈幕型：無預告、慢而顯眼）',
     // 上半標靶區：假人列 300/500/700/900 距離檔（900 那格要隔著上側低矮牆射＝測機率擋彈）
     // 下半對射區：弓手×2 弩手×1（最下面那名弓手與你之間隔著下側低矮牆＝敵方掩體示範）
     spawn: [
@@ -2692,8 +2703,10 @@ const ARENA_MODES = {
       { t: 'dummy', x: 720, y: 130, node: 2 },
       { t: 'dummy', x: 920, y: 130, node: 3 }, { t: 'dummy_armor', x: 920, y: 210, node: 3 },
       { t: 'dummy', x: 1120, y: 130, node: 3 },
-      { t: 'archer', x: 1240, y: 430, node: 4, facing: Math.PI }, { t: 'archer', x: 1240, y: 560, node: 5, facing: Math.PI },
+      { t: 'archer', x: 1240, y: 430, node: 4, facing: Math.PI },
       { t: 'arbalest', x: 1320, y: 500, node: 5, facing: Math.PI },
+      // A 彈幕型的樣本：慢而顯眼的投槍，沒有預告窗——和上面兩隻 B 型的讀法完全不同
+      { t: 'javelineer', x: 1240, y: 560, node: 5, facing: Math.PI },
     ],
   },
 };
@@ -3899,11 +3912,48 @@ function breakPoise(t, fromAng, by) {
   spawnFloater(t.pos, '體幹破', 'poise');
   Sfx.play('block', t.pos);
 }
+/* ── dash ─────────────────────────────────────────────────────────── */
+// 方向：有移動輸入就用輸入方向（想往哪閃就往哪閃），沒有就用面向（往前突進）。
+function startDash(u) {
+  if (!u || u.state !== 'CONTROLLED') return false;
+  const D = CONFIG.dash;
+  if (u.dash || u.dashCd > 0 || u.staggerT > 0 || u.exec) return false;
+  let fwd = 0, strafe = 0;
+  if (Input.held('w')) fwd += 1; if (Input.held('s')) fwd -= 1;
+  if (Input.held('d')) strafe += 1; if (Input.held('a')) strafe -= 1;
+  let ang = u.facing;
+  if (fwd || strafe) {
+    const fx = Math.cos(u.facing), fy = Math.sin(u.facing);
+    const rx = Math.cos(u.facing + Math.PI / 2), ry = Math.sin(u.facing + Math.PI / 2);
+    ang = Math.atan2(fy * fwd + ry * strafe, fx * fwd + rx * strafe);
+  }
+  u.dash = { t: 0, dur: D.dur, ang };
+  u.dashCd = D.cd;
+  u.swing = null; u.cast = null; u.blocking = false; u.blockT = null;   // 閃避會取消當下的動作＝那是它的代價
+  u.invulnT = Math.max(u.invulnT || 0, D.dur * D.iframeFrac);
+  u.dashGhosts = [];
+  Sfx.play('swap', u.pos);
+  return true;
+}
+// 位移在這裡走，不經一般移動：dash 的速度與方向都不受輸入影響（按下去那一刻就決定了）。
+// 位移用「逐幀推進」而非瞬移，所以之後的 collideWalls 仍然接得住＝不會穿牆。
+function tickDash(u, dt) {
+  const d = u.dash; if (!d) return;
+  const D = CONFIG.dash;
+  const step = (D.dist / Math.max(0.001, d.dur)) * dt;
+  u.pos.x += Math.cos(d.ang) * step;
+  u.pos.y += Math.sin(d.ang) * step;
+  u.dashGhosts.push({ x: u.pos.x, y: u.pos.y, a: 1 });
+  if (u.dashGhosts.length > D.trail) u.dashGhosts.shift();
+  d.t += dt;
+  if (d.t >= d.dur) u.dash = null;
+}
+
 /* ── 處決 ─────────────────────────────────────────────────────────── */
 let execCount = 0;   // 本場處決次數（HUD/驗證用）
 // 可處決的目標＝踉蹌中（體幹破）且在觸及距離內的敵人，取最近的。
 function execTargetFor(u) {
-  if (!u || u.state !== 'CONTROLLED' || u.exec || u.staggerT > 0) return null;
+  if (!u || u.state !== 'CONTROLLED' || u.exec || u.dash || u.staggerT > 0) return null;
   const R = CONFIG.melee.exec.range;
   let best = null, bd = R;
   for (const e of enemies) {
@@ -3997,7 +4047,7 @@ function friendlyInSwingArc(u, aimPos) {
 
 function startSwing(u, fireRateMult) {
   const W = u.weapon;
-  if (u.swing || u.staggerT > 0 || u.swapT > 0 || u.parryT > 0 || u.cast || u.exec) return false;   // 揮擊中/硬直中/換手中/招架中/施法前搖中/處決中不能再揮
+  if (u.swing || u.staggerT > 0 || u.swapT > 0 || u.parryT > 0 || u.cast || u.exec || u.dash) return false;   // 揮擊中/硬直中/換手中/招架中/施法前搖中/處決中/dash 中不能再揮
   const cost = W.stamCost || 0;   // 耐力不足＝揮不動（攻擊有成本）
   if (u.stamMax && cost > 0 && (u.stam || 0) < cost) {
     u.noStamFxT = 0.25;
@@ -5203,7 +5253,10 @@ window.addEventListener('keydown', e => {
   if (fromEditor && k === 'backspace') { fromEditor = false; forcedMap = null; scene = 'EDITOR'; releasePointer(); editMsg = '已中止試玩，回到編輯器'; e.preventDefault(); return; }
   // 數字鍵 1~N＝施展第 N 個自由位（道具/習得）＝PoE 對齊（使用者定案）；換武器組改用滾輪/X，數字鍵不再切裝
   if (k >= '1' && k <= '9') { const kn = knight(); if (kn && kn.state === 'CONTROLLED') { const fi = parseInt(k, 10) - 1; if (fi < memberFreeSlots(KNIGHT_ID)) { useFreeSlot(kn, 2 + fi); e.preventDefault(); } } }
-  if (k === ' ') { if (controlledId != null && useOathSkill(players[controlledId])) e.preventDefault(); }   // 預留鍵：綁定誓約的主動技能（目前 no-op；未實作前不吃事件）
+  // 空白＝dash。**最常用的防禦動作配最大的鍵**（Hades 也是空白）。
+  // 大絕招因此讓位到 Q——Q 在 C1 拿掉隨從姿態切換之後就空出來了。
+  if (k === ' ') { if (knight() && startDash(knight())) e.preventDefault(); }
+  if (k === 'q') { if (controlledId != null) useOathSkill(players[controlledId]); }   // 大絕招（目前 no-op，等 D1 怒火接上）
   if (k === 'r') { if (controlledId != null) startReload(players[controlledId]); } // 換彈
   if (k === 'x') { if (controlledId != null) swapWeapon(players[controlledId]); }   // 換槍(主↔副)
   if (k === 'c') { if (controlledId != null) useItem(players[controlledId]); }     // 道具(原 Q)
@@ -5252,7 +5305,7 @@ function update(dt) {
   shakeAmt = Math.max(0, shakeAmt - CONFIG.juice.shakeDecay * dt); kickY *= Math.exp(-CONFIG.juice.shakeDecay * dt);   // 震動/相機踢衰減
   if (cutscene && cutscene.lock) return;   // 演出鎖控制：只跑鏡頭/演出，不跑常規 sim
 
-  const juiceDecay = (u) => { if (u.recoil > 0) u.recoil = Math.max(0, u.recoil - CONFIG.juice.recoilDecay * dt); if (u.hitFlash > 0) u.hitFlash -= dt; if (u.cardHitT > 0) u.cardHitT -= dt; if ((u.invulnT || 0) > 0) u.invulnT -= dt; if (u.flinchX) { u.flinchX *= Math.exp(-22 * dt); u.flinchY *= Math.exp(-22 * dt); } };
+  const juiceDecay = (u) => { if (u.recoil > 0) u.recoil = Math.max(0, u.recoil - CONFIG.juice.recoilDecay * dt); if (u.hitFlash > 0) u.hitFlash -= dt; if (u.cardHitT > 0) u.cardHitT -= dt; if ((u.invulnT || 0) > 0) u.invulnT -= dt; if ((u.dashCd || 0) > 0) u.dashCd -= dt; if (u.dashGhosts && u.dashGhosts.length && !u.dash) { for (const g of u.dashGhosts) g.a -= dt * 4; u.dashGhosts = u.dashGhosts.filter(g => g.a > 0); } if (u.flinchX) { u.flinchX *= Math.exp(-22 * dt); u.flinchY *= Math.exp(-22 * dt); } };
   const meleeFxDecay = (u) => { for (const k of ['parryFxT', 'poiseBreakFxT', 'guardBreakFxT', 'flinchFxT', 'noStamFxT', 'atkRestT']) if (u[k] > 0) u[k] -= dt; };
   for (const p of players) { if (p.fireCooldown > 0) p.fireCooldown -= dt; if (p.muzzle > 0) p.muzzle -= dt; juiceDecay(p); if (p.abilityCd > 0) p.abilityCd -= dt; tickArtSlots(p, dt); tickCast(p, dt); tickAmmo(p, dt); tickMelee(p, dt); tickReactiveBlock(p, dt); tickResources(p, dt); meleeFxDecay(p); }
   for (const e of enemies) { if (e.dead) continue; if (e.fireCooldown > 0) e.fireCooldown -= dt; if (e.muzzle > 0) e.muzzle -= dt; if (e.flash > 0) e.flash = Math.max(0, e.flash - CONFIG.flash.decay * dt); juiceDecay(e); tickAmmo(e, dt); tickMelee(e, dt); tickReactiveBlock(e, dt); tickResources(e, dt); meleeFxDecay(e); }
@@ -5275,7 +5328,8 @@ function update(dt) {
       }
       u.defendHeldPrev = wantDefend;
       // 硬直中：完全不能動、不能轉、不能攻擊（被鎚打中/招架失敗的代價）
-      if (u.exec) { u.sprinting = false; tickExecution(u, dt); }   // 處決中：鎖住移動與攻擊，只推進動作
+      if (u.dash) { u.sprinting = false; tickDash(u, dt); }         // dash 中：位移由 tickDash 接管，輸入不影響方向
+      else if (u.exec) { u.sprinting = false; tickExecution(u, dt); }   // 處決中：鎖住移動與攻擊，只推進動作
       else if (u.staggerT > 0) { u.sprinting = false; }
       else {
         // 砲塔以「武器迴轉速度」追滑鼠輸入累積的目標朝向（追不上＝轉向延遲；裝備可改迴轉）
@@ -6034,7 +6088,18 @@ function drawPlayers() {
     const low = p.hp / p.maxHp <= CONFIG.lowHpFrac;
     if (low) { const a = 0.35 + 0.35 * Math.sin(simTime * 16); ctx.strokeStyle = `rgba(255,60,60,${a})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.pos.x, p.pos.y, p.radius + 8, 0, Math.PI * 2); ctx.stroke(); }
     if (controlled) { ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.pos.x, p.pos.y, p.radius + 5, 0, Math.PI * 2); ctx.stroke(); }
+    // dash 殘影：先畫在本體之下，越舊越淡＝看得出剛剛從哪裡閃過來
+    for (const g of (p.dashGhosts || [])) {
+      ctx.globalAlpha = Math.max(0, g.a) * 0.35;
+      ctx.fillStyle = hsl(p.hue, 60, 70);
+      ctx.beginPath(); ctx.arc(g.x, g.y, p.radius * 0.9, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
     drawUnitBody(p, hsl(p.hue, 55, controlled ? 62 : 48), controlled ? '#ffffff' : hsl(p.hue, 60, 75), controlled ? 3 : 2);
+    if (controlled && (p.invulnT || 0) > 0) {   // i-frame：白色細環＝「這一刻打不到我」，讓玩家學得會抓時機
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.pos.x, p.pos.y, p.radius + 9, 0, Math.PI * 2); ctx.stroke();
+    }
     if (p.hasFile) {   // 機密檔案攜帶者：頭頂金色資料夾標記（讓玩家隨時知道檔案在誰身上）
       ctx.fillStyle = 'rgba(255,210,90,0.97)'; ctx.font = 'bold 13px Consolas'; ctx.textAlign = 'center';
       ctx.fillText('📁', p.pos.x, p.pos.y - p.radius - 6); ctx.textAlign = 'left';
@@ -6249,6 +6314,17 @@ function drawHUD() {
   // 關卡數（左上）；名冊改以底部單位卡片呈現
   ctx.textAlign = 'left'; ctx.font = 'bold 14px Consolas'; ctx.fillStyle = '#9fb3c8';
   ctx.fillText(`MISSION ${missionIndex + 1}`, 16, 24);
+  { // dash 冷卻（左上，跟著關卡數）：好了就是亮的，冷卻中畫成一條填回來的條
+    const kn = knight(), D = CONFIG.dash;
+    if (kn && kn.state === 'CONTROLLED') {
+      const ready = (kn.dashCd || 0) <= 0, f = ready ? 1 : 1 - kn.dashCd / D.cd;
+      ctx.font = '12px Consolas';
+      ctx.fillStyle = ready ? '#7fe3ff' : 'rgba(127,227,255,0.45)';
+      ctx.fillText('[空白] 閃避', 16, 42);
+      ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(16, 47, 84, 4);
+      ctx.fillStyle = ready ? '#7fe3ff' : 'rgba(127,227,255,0.6)'; ctx.fillRect(16, 47, 84 * clamp(f, 0, 1), 4);
+    }
+  }
   // 計數（右上）
   ctx.textAlign = 'right'; ctx.font = '13px Consolas'; ctx.fillStyle = '#cdd6e0';
   ctx.fillText(`ENEMIES ${enemies.filter(e => !e.dead).length}${roomCleared ? '   · 已清場' : ''}`, cv.width - 16, 22);
