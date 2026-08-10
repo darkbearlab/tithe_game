@@ -235,9 +235,6 @@ const CONFIG = {
     rusher:  { tags: { rush: 20, choke: 10, patrol: 5 },               wRush: 700, wFlank: 0,   wExpose: 5,  wSight: 25 },
     flanker: { tags: { flank: 30, vantage: 15, cover: 25, patrol: 5 }, wRush: 500, wFlank: 120, wExpose: 70, wSight: 25 },
     holder:  { tags: { vantage: 25, cover: 30, choke: 12, patrol: 5 }, wRush: 200, wFlank: 0,   wExpose: 55, wSight: 35 },  // 弩手/重裝：守點壓制、不愛推進/暴露
-    // 動搖（士氣）性格：負的 wRush ＝主動拉開距離；高 wExpose ＝極度不想被看到。
-    // 整套「崩潰行為」就是換這一筆資料——scoreNode 是資料驅動的，所以零新程式碼。
-    shaken:  { tags: { cover: 45, vantage: 15, patrol: 0 },            wRush: -260, wFlank: 0, wExpose: 130, wSight: 8 },
     exposeCheckRange: 700,   // 算「暴露」時只看這個距離內的敵對單位（省 canSee 射線）
     allySpeedMul: 1.0,       // 扈從移動速度倍率（相對 CONFIG.moveSpeed）
     closeInMinRush: 400,     // 近接扈從的站位門檻：wRush ≥ 此值＝貼到接觸；低於＝停在自己武器長度上（固守）
@@ -258,85 +255,6 @@ const CONFIG = {
    Homeward 的扈從指令層（跟隨/守住/集中攻擊/先行撤離 + 繩長 + 指令輪盤）整套拆掉：
    教廷送**一個人**進地獄，場上不會有第二個我方單位。
    若之後要做召喚物之類的東西，不要復活這一層——那是為「小隊」設計的，成本太高。 */
-/* =====================================================================
-   士氣（HOMEWARD，使用者提案）— **雙向**：扈從與敵人都有。
-   這不是「AI 自己判斷危險就後撤」（那會繞過你的指令），而是**一個失敗狀態**：
-   由看得見的事件觸發、由你的操作決定會不會發生。扈從崩潰不是「他救了自己」，
-   是「你把他逼到崩潰了」——死生仍然是指令的責任，只是後果多了一階。
-   兩段：堅定 → 動搖（換 CONFIG.ai.shaken 性格：拉開距離、躲掩體、不進攻）→ 潰逃（不接指令、跑）。
-   觸發全部沿用既有的 Hooks（hurt / poiseBroken / death / kill），引擎幾乎不用動。
-   **敵人也有士氣＝「孤騎對軍團」第一次在數學上成立**：你殺不完十個人，但可以嚇散他們。
-   ===================================================================== */
-/* ── 品質質量模型（使用者定案，見 MORALE.md）─────────────────────────────
-   一方的士氣 = 場上各單位「品質」（吃 HP）的加總 + 會衰退的震盪。
-   拉鋸線 = 質量占比 line(f) = 100 × 我方有效質量 /(我方+敵方)。單位崩潰 當 line < 50×兵種門檻%。
-   孤騎問題結構性解掉：騎士是「一份有限的高品質(2×徒步兵)」＋開戰後快速衰退的「氣勢錨點」，
-   不再是幽靈般的 100；一群人的品質加總通常大於一個騎士＝穩得住，砍出實質減員才雪崩。 */
-CONFIG.morale = {
-  max: 100,                // 拉鋸條/line 的滿刻度
-  qHpFloor: 0.4,           // 品質吃 HP：殘血仍保留這麼多比例的存在感（傷害＝士氣壓力）
-  massEngagedOnly: true,   // 清醒門檻：士氣質量只算已 ENGAGED（醒來投入戰鬥）的敵人；熟睡/未察覺的不先算＝大營不會一開戰瞬間壓垮你，壓力隨警報喚醒一波波漲
-  // 騎士錨點：大人物在場的心理安穩感，開戰(ENGAGED/曝光)後線性衰退
-  anchorAmt: 5,            // ≈1 徒步兵
-  anchorDecay: 6,          // 秒（線性衰退到 0）
-  knightAura: 260,         // 騎士光環半徑（聚攏度＝恢復）
-  ralliedBonus: 1.2,       // 聚在光環內的每名扈從＝給我方額外站定的質量（沿用「聚攏度」恢復）
-  // 震盪（momentum）：正＝鼓舞、負＝挫折，都線性衰退。**數值刻意小**＝只是結構質量上的微擾、不主導
-  //（質量 5~40 的尺度，震盪太大就會像舊版一樣砍一兩刀秒潰）。以下由 headless 模擬調到「約砍半數才潰」。
-  momentumFirstBlood: 3,   // 首殺
-  momentumElite: 6,        // 斬將（殺菁英）
-  momentumParry: 1,        // 招架
-  killMomentum: 0,         // 擊殺 → 擊殺方正震盪（0＝敵方掉質量已是回饋，不再另外膨脹我方＝避免秒潰）
-  deathShock: 3,           // 陣亡 → 該陣營負震盪（雪崩來源）
-  breakShock: 2,           // 崩潰 → 該陣營負震盪（雪崩）
-  momentumDurDefault: 6,   // 未指定時的持續秒數
-  shockDur: 5,             // 陣亡/崩潰震盪的持續秒數
-  momentumMax: 12,         // 單一陣營的震盪上限（相對結構質量＝小擾動）
-  routedMassMul: 0.3,      // 已潰逃單位對質量的貢獻打折（他們不再戰）
-  routAllLine: 8,          // 質量占比 line 低於此＝全軍潰逃（onFactionBroken）
-  // ── 崩潰 + 潰逃（沿用）──
-  breakJitterPct: 6,       // 每單位出生的門檻浮動（±pct）＝崩得有先後
-  breakHysteresis: 8,      // line 回到「門檻 + 此值」才脫離崩潰
-  breakDelayMin: 0.15, breakDelayMax: 0.6,   // 崩潰猶豫：line 跌破門檻後 steady→崩(shaken/routed) 之間的浮動延遲(秒)＝被嚇到到真的改行為有一點時間差；期間回穩則取消。每隻不同＝崩潰是波浪而非齊崩
-  routSpeedMul: 1.25,      // 潰逃移動倍率
-  fleeAwayDist: 560,       // 潰逃敵人跑這麼遠＝脫離戰場
-  // 崩潰反應（panicType，出生擲、依兵種加權）：flee＝潰逃(現況)、berserk＝捨身死戰(背水 buff＋更長連段＋不逃)、freeze＝呆立不動
-  // retreat＝後撤(轉進)：品質較高的兵種才有——不背向玩家亂跑，而是沿路網退向撤離點集結、恢復士氣、守點擋路（不離場）
-  panic: {
-    default:   { flee: 40, berserk: 30, freeze: 15, retreat: 15 },   // 徒步兵等：少數會有序後撤
-    levy:      { flee: 60, berserk: 10, freeze: 30, retreat: 0  },   // 雜兵：不會有章法
-    wolf:      { flee: 45, berserk: 55, freeze: 0,  retreat: 0  },   // 動物：不會後撤
-    archer:    { flee: 55, berserk: 15, freeze: 25, retreat: 5  },   // 遠程：多逃/愣
-    arbalest:  { flee: 55, berserk: 15, freeze: 25, retreat: 5  },
-    spearman:  { flee: 30, berserk: 25, freeze: 10, retreat: 35 },   // 受訓兵種：有序後撤機率高
-    shieldman: { flee: 30, berserk: 25, freeze: 10, retreat: 35 },
-    manatarms: { flee: 15, berserk: 55, freeze: 5,  retreat: 25 },   // 菁英：多半死戰、部分有序後撤
-    serjeant:  { flee: 15, berserk: 55, freeze: 5,  retreat: 25 },
-  },
-  berserkMoveMul: 1.15, berserkDmgMul: 1.15, berserkKeepBase: 0.8,   // 捨身：背水移速/傷害加成 + 更高的攻擊權保留(連段)機率
-  retreatSpeedMul: 1.0,    // 後撤＝有序(不像潰逃加速)；沿 waypoint 退向撤離點集結
-  rallyRadius: 80,         // 退到撤離點這麼近＝轉進完成、就地整隊
-  rallyDuration: 6,        // 轉進後守點免疫再潰的秒數（穩住阻擋玩家）；之後再崩就真的潰逃
-  // ── 跨關（質量是活的，這些現在多半 moot；保留欄位）──
-  restRestore: 1.0, interMissionRestore: 0.5,
-};
-/* 崩潰門檻＝**純兵種**（使用者定案：不吃 HP/被圍等局部修正），寫成**「佔自己那半的 %」**：
-     100% ＝ 只要開始落後就崩　50% ＝ 撐到剩四分之一才崩
-   實際門檻 = 50 × 此值/100（拉鋸條上直接畫成刻度）。
-   因為門檻不同，戰意下滑會產生**序列**：農兵先垮 → 垮掉又壓低士氣 → 徒步兵跟著垮 …＝雪崩。 */
-const BREAK_PCT = {
-  civilian: 90, levy: 85, wolf: 72, archer: 70, arbalest: 62,   // civ/農兵基準比原本低 5：留給 ±breakJitterPct 的浮動頂端不至於逼近上限（＝一挨打就崩）
-  footman: 55, footman_flank: 55, spearman: 50,
-  manatarms: 20, serjeant: 20,
-};
-// 我方扈從的崩潰門檻直接沿用上表（按**兵種**）：農兵最脆、披甲士最硬。
-// 早期版本另有一張 ARCH_BREAK_PCT（按待機原型 磐石/先鋒/遊獵）——原型系統移除後一併收掉，
-// 「有人硬有人脆」的分層改掛在兵種這條更直覺的軸上（見 breakPctOf）。
-const breakLevelOf = (pct) => CONFIG.morale.max * 0.5 * (pct / 100);   // % → 實際門檻（0..50）
-// 單位品質（質量模型）：按兵種一張表（徒步兵＝5 基準；騎士＝10＝2×徒步兵）。敵人用 typeId、扈從/騎士用 classId。
-const QBASE = { civilian: 2, levy: 3, wolf: 3, archer: 4, footman: 5, arbalest: 5, spearman: 6, shieldman: 6, manatarms: 10, serjeant: 12, knight: 10 };
-const qBaseOf = (u) => { const key = u.faction === 'player' ? u.classId : u.typeId; return QBASE[key] != null ? QBASE[key] : 5; };
-const MORALE_STATE = { steady: '堅定', shaken: '動搖', routed: '潰逃' };
 const SPECIAL_TAGS = ['flank', 'vantage', 'choke'];
 
 /* =====================================================================
@@ -430,13 +348,13 @@ const WEAPON_QUALITY = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 
 const qualityOf = (id) => WEAPON_QUALITY[(WEAPONS[id] || {}).rarity] || 1;
 CONFIG.enhance = { sharpMin: 3, sharpMax: 8, balanceMin: 2, balanceMax: 5,             // 鋒利/平衡的隨機值域
   qualityWeights: { 1: 55, 2: 26, 3: 12, 4: 5, 5: 2 } };                               // 掉落武器的精良度分佈（大多粗製，偶爾精良/上乘＝強化次數更多）
-// 詞條池（迷你聖物）：純數值走 delta；有效果走 hook（poiseAdd 等）；momentum 走 S1；source 限定來源
+// 詞條池（迷你聖物）：純數值走 delta；有效果走 hook（poiseAdd 等）；source 限定來源
 const AFFIXES = {
   piercing: { name: '破甲', charges: 2, delta: { pierceAdd: 0.30 } },
   keen:     { name: '鋒棱', charges: 1, delta: { dmgAdd: 6 } },
   flame:    { name: '烈焰', charges: 2, poiseAdd: 12 },                                 // 命中額外體幹傷（Hooks：attackHit）
-  rally:    { name: '戰意', charges: 2, source: 'stone', momentum: { amount: 30, lifetime: 'whileEquipped' } },   // 石中劍專屬（預打滿，非導師可給）
-  hex:      { name: '巫紋', charges: 3, source: 'witch', delta: { pierceAdd: 0.5 }, momentum: { amount: 15, lifetime: 'whileEquipped' } },   // 女巫專屬
+  rally:    { name: '戰意', charges: 2, source: 'stone' },   // 石中劍專屬。⚠️ 原效果是士氣氣勢，C2 後已無效果——待 C8 連同事件內容一起處理
+  hex:      { name: '巫紋', charges: 3, source: 'witch', delta: { pierceAdd: 0.5 } },   // 女巫專屬（氣勢部分已隨士氣移除）
 };
 const AFFIX_IDS = Object.keys(AFFIXES);
 // 導師可給的詞條＝無來源限定的那些（rally/hex 是事件專屬）
@@ -485,11 +403,6 @@ function effWeapon(inst) {
   return w;
 }
 // 這把武器的 whileEquipped 氣勢量（rally/hex 等詞條）——之後在 startMission 掃裝著的武器接 S1
-function weaponAffixMomentum(inst) {
-  let amt = 0;
-  for (const e of (inst && inst.enh || [])) if (e.kind === 'affix') { const A = AFFIXES[e.affix]; if (A && A.momentum) amt += A.momentum.amount; }
-  return amt;
-}
 // 石中劍：預先打滿的實例（4 格全用：鋒利+平衡+rally）＝拿到就是這樣、不能再打
 function stoneSwordInst() {
   return weaponInst('stonesword', { quality: 4, enh: [
@@ -675,7 +588,7 @@ function applyRelicHooks() {    // 重掛（撿到/失去聖物後呼叫）
   }
 }
 
-CONFIG.oath = { baseSlots: 2, plunderHonor: 0.1, guardianBreak: 8, vengeanceBuffT: 4, vengeanceMove: 1.15, vengeanceFire: 1.15 };   // 誓約系統參數（自由槽基礎數、各自選誓約的數值）
+CONFIG.oath = { baseSlots: 2, plunderHonor: 0.1, vengeanceBuffT: 4, vengeanceMove: 1.15, vengeanceFire: 1.15 };   // 誓約系統參數（自由槽基礎數、各自選誓約的數值）
 // 自由位（道具/習得載具）數：騎士基礎 2、可解鎖到 max。引擎支援任意數＝要再多改 max 即可。
 // slot 0/1＝舊 itemId/abilityId（不動）；slot 2+＝roster 的 freeExtra[]（通用載具）。只有騎士的數量會變，扈從恆 base。
 CONFIG.freeSlots = { base: 2, max: 4 };
@@ -882,10 +795,8 @@ CONFIG.finale = { revealWins: 3, linePace: 1.7 };   // 揭示門檻（通關數�
 // restEvery＝每隔幾欄放一道「休息牆」（整欄 REST）＝不管走哪條路，都在相同深度必經休息（見 genRoadmap）。
 // siteWeights＝休息節點裡實際是什麼（**進入才知道**）：營地整補 / 導師 / 未來的鐵匠・商人・情報販子・營地事件。
 // 女巫獻祭：詛咒的氣勢量、額外離隊機率、石中劍的榮譽門檻
-CONFIG.witch = { curse: -35, desertChance: 0.25 };
+CONFIG.witch = { desertChance: 0.25 };
 CONFIG.stoneswordHonor = 120;   // 拔石中劍需要的累積榮譽
-// S3 護送（走散男孩）：抵達團聚＝次戰氣勢+，改道錯過＝次戰氣勢−（皆 oneBattle，使用者定案「輕量插曲」）
-CONFIG.escort = { reuniteMomentum: 18, missMomentum: -12 };
 // B面「救援落難騎士」（使用者定案）：接觸(F)招他入伍＝騎士級（貴氣名、披甲重裝 manatarms + 板甲）＋他身邊僅剩的幾名普通士兵；
 // 沿用俘虜規則——打完活著撤離才永久入隊（餵步驟3「兵力軸」）。raiders＝圍攻他的劫掠隊（＝正規敵軍）人數。
 CONFIG.rescue = { knightClass: 'manatarms', soldiers: 2, soldierClasses: ['footman', 'spearman'], raiders: 3 };
@@ -2376,7 +2287,7 @@ function makeWeaponSlot(weaponId, reserve, fx, enhRec) {
   const W = effWeapon(inst), mag = Math.round(W.magazine * ((fx && fx.magMul) || 1));
   return { weaponId, weapon: W, quality: inst.quality, enh: inst.enh, magazine: mag, ammoInMag: mag, ammoReserve: isInfiniteAmmo(weaponId) ? 9999 : (reserve || 0), reloadT: 0, reloadDur: 0, bloom: 0 };
 }
-// 從 slot 的 main 取回武器實例（強化狀態）；用於 rosterFromPlayer / weaponAffixMomentum
+// 從 slot 的 main 取回武器實例（強化狀態）；用於 rosterFromPlayer
 const instOfSlotMain = (m) => (m ? { id: m.weaponId, quality: m.quality, enh: m.enh || [] } : null);
 // 自由位載具工廠：從 roster 的 freeExtra 條目 {kind,id,count} 造一個 slot（空＝item 型空位，放東西時再定型）。
 function makeFreeSlot(e) {
@@ -2437,7 +2348,6 @@ function makePlayer(i, cfg, pos) {
     cmd: { mode: 'follow', pos: null, target: null },   // 指令層：預設跟隨騎士
     personality: CONFIG.ai[KNIGHT_IDLE.aiPersonality],
     basePersonality: CONFIG.ai[KNIGHT_IDLE.aiPersonality],
-    moraleState: 'steady', moraleFxT: 0,   // 士氣本身在陣營層級（factionMorale）；單位只持有門檻與狀態
     currentNode: null, targetNode: null,                       // 節點導航（與敵人同一套）
     // 以下是「當前主手」的鏡像（既有戰鬥碼只認得這些欄位；換 set 由 equipActiveSet 重寫）
     weaponId: mainSlot.weaponId, weapon: mainSlot.weapon, quality: mainSlot.quality, enh: mainSlot.enh, magazine: mainSlot.magazine, ammoInMag: mainSlot.ammoInMag, ammoReserve: mainSlot.ammoReserve, reloadT: 0, reloadDur: 0, bloom: 0,
@@ -2488,8 +2398,6 @@ function makeEnemy(nodeId, personalityName, isReinforce = false, facing = Math.P
     senseRadius: CONFIG.vision.senseRadius * CONFIG.enemy.strength * (TYPE.senseMul || 1),
     coneHalfDeg: TYPE.coneHalfDeg || CONFIG.vision.coneHalfDeg,   // 逐單位視錐（警犬更寬）
     moveSpeed: TYPE.moveSpeed, armor: TYPE.armor || 0, attack: TYPE.attack || 'ranged', dummy: !!TYPE.dummy,
-    moraleState: 'steady', moraleFxT: 0,   // 士氣在陣營層級；門檻見 BREAK_AT[typeId]
-    panicType: pickPanic(typeId),          // 崩潰反應（出生擲、依兵種）：flee / berserk(捨身) / freeze(呆立)
     basePersonality: CONFIG.ai[personalityName],   // 士氣恢復時換回來的那一組
     burstLeft: (W.burst ? W.burst.size : 0), burstCd: 0,   // 重機槍點放節奏
     currentNode: nodeId, targetNode: nodeId, reservedNode: null,
@@ -2643,7 +2551,7 @@ function initRun() {
   arenaMode = false;   // 離開近戰試作場
   knightRelics = new Set(); applyRelicHooks();         // roguelite：聖物 run 中撿、開新 run 清空
   srandSeed(Math.floor(Math.random() * 0xFFFFFFFF));   // 本局非戰鬥 RNG 種子（之後全部可重現）
-  runFlags = {}; pendingEvents = []; eventSeen = []; runMomentumMods = [];   // 戰役旗標/事件佇列/已見事件/跨戰鬥氣勢修正重置
+  runFlags = {}; pendingEvents = []; eventSeen = [];   // 戰役旗標/事件佇列/已見事件重置
   runEscort = null; escortMsg = ''; missionMsg = ''; runAct = 1; actMsg = ''; pendingRescueKnight = false;   // S3 護送 + 戰後橫幅 + A/B 幕別 + 救援旗標重置
   runStats = freshRunStats();                          // 本局榮譽累計（事件/陣亡/擊殺/斬將）重置
   // **開局只有騎士一個人**（使用者定案）：敗騎孤身上路，人手要在旅途中招募（事件/俘虜/潰兵）。
@@ -2700,15 +2608,13 @@ function escortReunite() {   // 抵達團聚點：物資 + 次戰氣勢+（使�
   const label = (runEscort && runEscort.label) || '同行的人', mercy = (runEscort && runEscort.mercy) || 0;
   runEscort = null;
   const got = applyEventOutcome({ type: 'loot', n: 1 });
-  addRunMomentumMod({ source: '護送團聚', amount: CONFIG.escort.reuniteMomentum, lifetime: 'oneBattle' });
   if (mercy) runFlags.mercy = (runFlags.mercy || 0) + mercy;   // 義名軸（步驟3 結局象限的來源，與 ralliedKnight 的兵力軸並列）
-  escortMsg = `${label}在約定的會合點與你們重逢，平安無事，還留下些物資（${got}）。全隊士氣為之一振。`;
+  escortMsg = `${label}在約定的會合點與你們重逢，平安無事，還留下些物資（${got}）。`;
 }
 function escortMissed() {     // 改道越過團聚點：次戰氣勢−（一次性打擊）
   const label = (runEscort && runEscort.label) || '同行的人';
   runEscort = null;
-  addRunMomentumMod({ source: '護送失散', amount: CONFIG.escort.missMomentum, lifetime: 'oneBattle' });
-  escortMsg = `你們走了另一條路。${label}沒能等到你們……愧疚讓全隊在下一戰前都提不起勁。`;
+  escortMsg = `你們走了另一條路。${label}沒能等到你們。`;
 }
 function checkEscort() {
   if (!runEscort) return;
@@ -2755,7 +2661,6 @@ function startMission() {
   controlledId = 0;
   enemies = []; bullets = []; grenades = []; smokes = []; flashFx = []; particles = []; corpses = []; decals = []; soundPings = []; shakeAmt = 0; kickY = 0; hitstopT = 0;
   reservations = new Map(); patrolClaims = new Map(); attackTokens = new Map(); enemyIdSeq = 1; drops = []; fileDrop = null;
-  resetFactionMorale();   // 每場開局：兩邊士氣滿（跨關的損耗由 enterRest/結算處理）
   cacheGround = (MAP.caches || []).map(c => ({ x: c.x, y: c.y }));   // 密封容器：本場地圖配置的（撿走撤離才開封）
   for (const p of players) p.caches = 0;
   if (CONFIG.relicEnabled && !fromSandbox && !fromEditor && !finaleActive) {   // 遺物：本場由 roster 指定的攜帶者背上（保底＝沒人標記就給騎士，遺物不能憑空消失）
@@ -2779,8 +2684,6 @@ function startMission() {
     if (!MAP.eventMap) for (let k = 0; k < missionIndex; k++) { const sp = MAP.enemySpawns[k % MAP.enemySpawns.length]; enemies.push(makeEnemy(sp.nodeId, 'rusher')); }   // 事件地圖不加難度遞增兵
   }
   if (pendingRescueKnight) { injectKnightRescue(); pendingRescueKnight = false; }   // B面「救援落難騎士」：注入接觸點 + 圍攻他的劫掠隊（一次性）
-  snapshotFactionForce();             // 陣營戰力快照（士氣扣分的分母）
-  if (!introActive) applyRunMomentum();   // S1：帶著跨戰鬥的氣勢修正進場（序章不套）
   patrolPool = computePatrolPool();   // 本場巡邏點池（IDLE grunt 巡邏用）
   searchFocusNode = null; searchSet = null; searchCleared = null; searchConsumedT = -Infinity;   // 重置交戰後搜索
   simTime = 0; reinforceTimer = 0;
@@ -2927,7 +2830,6 @@ function enterArena(modeKey) {
   roster = arenaRoster();
   startMission();          // 沿用一般開場流程（建地圖衍生表/我方單位/相機），試作場地圖的 enemySpawns 為空
   arenaSpawn();            // 再放測試對象
-  resetFactionMorale(); snapshotFactionForce();   // 測試對象是 startMission 之後才放的 → 戰力快照要重來
   forcedMap = null;
   arenaStats = { swings: 0, hits: 0, blocked: 0, parried: 0, dmg: 0, lastHits: 0, lastDmg: 0, tookHits: 0, tookBlocked: 0, tookParried: 0, brokeFoe: 0, interrupted: 0, noStam: 0, tookBreak: 0, lastShotDist: 0 };
 }
@@ -3000,7 +2902,6 @@ function arenaSetWeapon(i) {
 function arenaResetFight() {
   Hooks.mission = {};   // 每場一次的旗標（不屈等）重置＝每次重來都是新的一場
   arenaSpawn();
-  resetFactionMorale(); snapshotFactionForce();
   players.forEach((p, i) => {
     p.hp = p.maxHp; p.dead = false;
     p.state = (p.id === KNIGHT_ID) ? 'CONTROLLED' : 'IDLE';
@@ -3032,51 +2933,6 @@ let missionMsg = '';    // 戰後獎勵的橫幅（打贏當下設、drawRoadmap
 const setFlag = (k, v) => { runFlags[k] = (v === undefined ? true : v); };
 const flag = (k) => runFlags[k];
 
-/* ── S1 · 跨戰鬥氣勢修正層（事件池的骨幹，使用者定案）─────────────────────
-   `grantMomentum` 只作用於**單場**且會衰退；事件想要的氣勢是**跨戰鬥**的（團聚給暫時氣勢、
-   女巫詛咒持續到人走光、石中劍裝著就一直加）。這一層把那些修正存成 run 狀態，
-   每場 `startMission` 加總後餵一發 `grantMomentum('player', 總量)`＝開場就帶著這個氣勢進場。
-
-   lifetime 三型涵蓋所有需求：
-     'oneBattle'    下一場套一次就消（食物/團聚/錯過的一次性打擊；先前講的 N1 就是這個特例）
-     'untilGone'    綁一組見證者 id，直到他們全部離開/死亡才解（女巫詛咒）
-     'whileEquipped' 綁「騎士裝著某武器」才生效（石中劍）
-   amount 可正可負。runMomentumMods 在 initRun 重置。 */
-let runMomentumMods = [];   // [{ id, source, amount, lifetime, witnesses?, weaponId? }]
-function addRunMomentumMod(mod) {
-  if (!mod || !mod.amount) return;
-  runMomentumMods.push(Object.assign({ id: 'mm' + (runMomentumMods.length), lifetime: 'oneBattle' }, mod));
-}
-function removeRunMomentumMod(id) { runMomentumMods = runMomentumMods.filter(m => m.id !== id); }
-// 某修正此刻是否仍有效（whileEquipped/untilGone 的條件在這裡判定）
-function momentumModActive(m) {
-  if (m.lifetime === 'whileEquipped') {
-    // 場上有騎士就看場上的（applyRunMomentum 在 players 建好後才跑）；否則看 roster（配裝畫面/事件當下）
-    const k = knight() || (roster && roster[KNIGHT_ID]);
-    if (!k) return false;
-    return k.weaponId === m.weaponId ||
-           (k.slots || []).some(sl => sl && sl.main && sl.main.weaponId === m.weaponId) ||
-           k.weaponId2 === m.weaponId;
-  }
-  if (m.lifetime === 'untilGone') {
-    // 見證者還有任何一人在隊上＝詛咒仍在。**用 uid 不用 name**——名字會被離隊者的後繼重用。
-    const alive = new Set((roster || []).map(r => r && r.uid));
-    return (m.witnesses || []).some(w => alive.has(w));
-  }
-  return true;   // oneBattle：進場即有效（用完在 consume 清掉）
-}
-// 開戰時：加總所有仍有效的修正，餵一發 grantMomentum；並清掉用過的 oneBattle 與已失效的條件型
-function applyRunMomentum() {
-  let total = 0;
-  for (const m of runMomentumMods) if (momentumModActive(m)) total += m.amount;
-  // S2×S1：騎士當前主手武器的氣勢詞條（rally/巫紋…）＝一種隱含的 whileEquipped。石中劍靠這條自動生效，不用特例。
-  const k = knight();
-  if (k && k.enh) total += weaponAffixMomentum({ id: k.weaponId, quality: k.quality, enh: k.enh });
-  if (total) grantMomentum('player', total, CONFIG.morale.momentumDurDefault);
-  // oneBattle 進過一場就消；untilGone 見證者走光就自然清掉（下面統一過濾）
-  runMomentumMods = runMomentumMods.filter(m => m.lifetime !== 'oneBattle' && !(m.lifetime === 'untilGone' && !momentumModActive(m)));
-  return total;
-}
 const rmaxhp = (r) => rosterClass(r).hp + (r.bonusMaxHp || 0) + ((r.equipId && EQUIPMENT[r.equipId] && EQUIPMENT[r.equipId].fx.maxHpAdd) || 0);
 const hasGear = () => warehouse.some(it => it.kind === 'equip' || it.kind === 'item');
 function takeGear() { const i = warehouse.findIndex(it => it.kind === 'equip' || it.kind === 'item'); if (i >= 0) { const it = warehouse[i]; warehouse.splice(i, 1); return (it.kind === 'equip' ? EQUIPMENT : ITEMS)[it.id].name; } return null; }
@@ -3131,7 +2987,7 @@ const EVENTS = [
   // ── 簡單隨機事件（純換皮：組合現有結果，零新機制；隱藏傾向走 gamble 免掉 onEnter）───────
   { id: 'food', title: '路旁的糧食', text: '一輛翻覆的補給車，散落著看不出新鮮與否的糧食。',
     choices: [
-      { label: '飽餐一頓', hint: '70% 次戰士氣高昂 / 否則吃壞肚子(次戰士氣低落)', outcome: { type: 'gamble', p: 0.7, win: { type: 'momentum', amount: 12, lifetime: 'oneBattle', source: '飽餐' }, lose: { type: 'momentum', amount: -8, lifetime: 'oneBattle', source: '食物腐壞' } } },
+      { label: '飽餐一頓', hint: '70% 恢復體力 / 否則吃壞肚子', outcome: { type: 'gamble', p: 0.7, win: { type: 'heal', amt: 12 }, lose: { type: 'damage', amt: 6 } } },
       { label: '不碰，繼續趕路', outcome: { type: 'nothing' } },
     ] },
   { id: 'peasantsRaided', title: '農民被劫掠', text: '前方一夥盜匪正在劫掠村民，村民向你哀求。',
@@ -3147,7 +3003,7 @@ const EVENTS = [
     ] },
   { id: 'shrine', title: '荒野神龕', text: '一座傾頹的路旁神龕，香案上積著厚灰。',
     choices: [
-      { label: '駐足禱告', hint: '次戰獲得開場氣勢', outcome: { type: 'momentum', amount: 15, lifetime: 'oneBattle', source: '禱告' } },
+      { label: '駐足禱告', hint: '稍事歇息', outcome: { type: 'heal', amt: 10 } },
       { label: '不驚擾亡者', outcome: { type: 'nothing' } },
     ] },
   { id: 'ferry', title: '渡口', text: '一名船夫守著唯一的渡口：「要過河？先付買路財。」',
@@ -3175,7 +3031,7 @@ const EVENTS = [
   { id: 'woundedComrade', title: '重傷的同袍', text: '隊中一人傷重難行，拖著會拖慢全隊的腳程。',
     choices: [
       { label: '全力救治（付一件裝備 → 全隊回血）', req: 'gear', outcome: { type: 'trade', cost: 'gear', gain: { type: 'heal', amt: 25 } } },
-      { label: '帶著他慢行（次戰士氣低落）', outcome: { type: 'momentum', amount: -10, lifetime: 'oneBattle', source: '拖行傷員' } },
+      { label: '帶著他慢行', outcome: { type: 'nothing' } },
       { label: '狠心拋下（指定一員離隊）', need: 'target', outcome: { type: 'leave' } },
     ] },
   // 迷途難民：護送＝queue 一個報恩事件到後段（延遲後果的正面版，走 boy→ambush 同一條 queue 機制）
@@ -3187,7 +3043,7 @@ const EVENTS = [
   { id: 'refugeeReward', title: '難民的回報', text: '先前你護送的難民捎來消息——他們湊了些物資答謝你。', scripted: true,   // scripted＝只由 refugees 的 queue 觸發，不進隨機池
     choices: [
       { label: '收下謝禮', outcome: { type: 'loot', n: 1 } },
-      { label: '婉謝（義名遠播，次戰士氣一振）', outcome: { type: 'momentum', amount: 12, lifetime: 'oneBattle', source: '義名遠播' } },
+      { label: '婉謝', outcome: { type: 'nothing' } },
     ] },
   // 走散的男孩（S3 護送）：帶上他＝在路線圖前方打一個團聚點；抵達＝物資＋次戰氣勢+，改道越過＝次戰氣勢−。
   { id: 'lostBoy', title: '走散的男孩', text: '一個隨軍的男孩與家人失散，怯生生地問能不能跟著你們，直到前方安全的落腳處。',
@@ -3287,7 +3143,6 @@ function applyEventOutcome(o, mi) {
       if (!hit && upgVal('luck') > 0 && srand() < upgVal('luck')) hit = srand() < (o.p || 0.5);   // meta 升級「運氣」：失敗時有機率重擲一次（不改機率、給第二次機會）
       const inner = applyEventOutcome(hit ? o.win : o.lose, mi); return inner == null ? null : (hit ? '成功！' : '失手！') + inner;   // inner 為 null（combat/rest 換場）＝整條也回 null，讓 eventPick 乾淨離場（不會拼成「失手！null」）
     }
-    case 'momentum': { addRunMomentumMod({ source: o.source || 'event', amount: o.amount || 0, lifetime: o.lifetime || 'oneBattle', witnesses: o.witnesses, weaponId: o.weaponId }); return o.amount >= 0 ? '士氣為之一振' : '士氣蒙上陰影'; }   // S1：事件掛一條跨戰鬥氣勢修正
     case 'witchPact': {   // 女巫的交易：獻祭一名手下（mi）→ 巫紋強化騎士主手 + untilGone 詛咒 + 有些人憤而離去
       if (mi == null || mi === KNIGHT_ID || !roster[mi]) return '沒有可獻祭的人';
       const victim = roster.splice(mi, 1)[0];
@@ -3295,7 +3150,6 @@ function applyEventOutcome(o, mi) {
       if (!Array.isArray(k.enh)) k.enh = [];
       if (k.quality == null) k.quality = qualityOf(k.weaponId);
       const aff = applyAffix({ id: k.weaponId, quality: k.quality, enh: k.enh }, 'hex', { source: 'witch', force: true });   // 超凡＝不受格數限制
-      addRunMomentumMod({ source: '女巫詛咒', amount: CONFIG.witch.curse, lifetime: 'untilGone', witnesses: roster.map(r => r.uid) });
       const gone = [];
       for (let i = roster.length - 1; i >= 1; i--) if (srand() < CONFIG.witch.desertChance) gone.push(roster.splice(i, 1)[0].name);
       return `${victim.name} 化作巫火，你的兵刃染上巫紋（${aff ? aff.name : '？'}）` + (gone.length ? `；${gone.join('、')} 憤而離去` : '') + '。從此軍心蒙塵，直到見證此事的人盡數散去。';
@@ -4186,7 +4040,7 @@ function tickMelee(u, dt) {
     u.swing = null;
     // 敵人揮完一刀：有機率保留攻擊權續攻（機率隨連刀數衰減），否則交還攻擊權並退開休息換別隻上
     if (u.faction !== 'player') {
-      const keepBase = isBerserk(u) ? CONFIG.morale.berserkKeepBase : CONFIG.melee.tokenKeepBase;   // 捨身＝更高續攻機率＝更長連段
+      const keepBase = CONFIG.melee.tokenKeepBase;
       const keepP = keepBase - (u.tokenChain || 0) * CONFIG.melee.tokenKeepDecay;
       if (Math.random() < keepP) u.tokenChain = (u.tokenChain || 0) + 1;         // 續攻：留權、不休息 → 直接接下一刀
       else { u.atkRestT = CONFIG.melee.tokenRest; releaseAttackToken(u); }        // 收手：releaseAttackToken 內會歸零 tokenChain
@@ -4195,7 +4049,7 @@ function tickMelee(u, dt) {
   return true;
 }
 // 輸出傷害倍率＝meta 升級「鋒銳」(dmgMul) × 誓約「無畏」(低血背水)；近接與遠程同一把尺。
-const outDmgMul = (u) => (u.dmgMul || 1) * ((u.berserk && u.hp < u.maxHp * u.berserk.frac) ? u.berserk.mul : 1) * (isBerserk(u) ? CONFIG.morale.berserkDmgMul : 1);   // 末項＝崩潰後的捨身背水傷害（與誓約「無畏」u.berserk 不同物）
+const outDmgMul = (u) => (u.dmgMul || 1) * ((u.berserk && u.hp < u.maxHp * u.berserk.frac) ? u.berserk.mul : 1);   // u.berserk＝誓約「無畏」（低血輸出↑），與已移除的士氣「捨身」無關
 // 刀刃掃過的角度帶判定：只有「上一幀→本幀」之間掃過的角度算命中（再各放寬 bladeHalfDeg＝刀刃厚度）。
 // 距離吃 reach × 當下刀尖伸出比例；視線被牆擋則打不到。同一目標每次揮擊只吃一下。
 function meleeHitTest(u, s) {
@@ -4655,24 +4509,6 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
 }
 /* 潰逃脫離戰場：**不是擊殺**——不觸發 death/kill、不掉落、不計 KIA、不給士氣回饋。
    「把敵人嚇跑」與「把敵人殺光」是兩種不同的解決方式，統計上也不該混為一談。 */
-function fleeUnit(e) {
-  if (e.dead) return;
-  e.dead = true; e.fled = true;
-  releaseReservation(e); releasePatrol(e); releaseAttackToken(e);
-  Hooks.fire('flee', { u: e });
-}
-// 轉進：後撤退到集結點(撤離點)＝「大幅恢復自己的士氣、守住阻擋玩家」，不離場。rallyT 內免疫再潰＝穩得住；
-// 之後 panicType 轉 flee＝再崩就真的逃(不會無限轉進)。＝打崩精兵不等於清掉，他們會退去堵你的出口再戰。
-function rallyUnit(e) {
-  if (e.dead) return;
-  e.moraleState = 'steady';
-  e.rallyT = CONFIG.morale.rallyDuration;         // 這段時間免疫再潰＝穩得住
-  e.panicType = 'flee';                           // 轉進只用一次：再崩就真的潰逃
-  e.personality = e.basePersonality || e.personality;   // 回復原本戰鬥性格＝重整後「重新出擊」（不是龜守）
-  e.moraleFxT = 1.0;
-  releaseAttackToken(e);
-  Hooks.fire('morale', { u: e, state: 'rallied', prev: 'routed' });
-}
 function killUnit(u, killer) {
   // beforeDeath＝可攔截的死亡（roguelite 復活通道）：handler 設 prevented=true → 以 reviveHp 保命
   const bd = Hooks.fire('beforeDeath', { u, killer: killer || null, prevented: false, reviveHp: 1 });
@@ -4917,214 +4753,16 @@ function updateBullets(dt) {
      崩潰本身又扣陣營士氣 → **正回饋＝雪崩**（農兵先垮 → 徒步兵跟著垮 → 連披甲士都崩）
      陣營士氣歸零 → 該陣營**全軍潰逃**；若是敵方＝本關已勝（保留掃蕩時間）
    騎士本人免疫崩潰（玩家的決心是玩家的事）；訓練假人免疫。 */
-let fieldBrokenFor = null;      // 已被擊潰的陣營 id（＝我方獲勝，進入掃蕩時間）
-let moraleFirstBlood = false;   // 本場是否已有首殺
-let playerEngagedT = -Infinity; // 我方曝光/交戰的時刻（騎士錨點衰退的計時起點）
-// 單位品質（吃 HP；已潰逃者打折＝不再戰）
-function quality(u) {
-  const M = CONFIG.morale, hp = u.maxHp ? clamp((u.hp || 0) / u.maxHp, 0, 1) : 1;
-  let q = qBaseOf(u) * (M.qHpFloor + (1 - M.qHpFloor) * hp);
-  if (u.moraleState === 'routed') q *= M.routedMassMul;
-  return q;
-}
-// 陣營結構質量＝存活單位品質加總
-function structMass(fid) {
-  if (globalThis.__massOverride && globalThis.__massOverride[fid] != null) return globalThis.__massOverride[fid];   // 測試用覆寫（生產環境恆 undefined＝跳過）
-  let m = 0;
-  for (const u of (players || [])) if (u && u.faction === fid && !u.dummy && u.state !== 'DEAD' && u.state !== 'EXTRACTED') m += quality(u);   // 我方恆計（單位都在陣中）
-  // 清醒門檻：只算已 ENGAGED 的敵人＝營裡熟睡/未察覺的兵不先算，壓力隨警報級聯一波波漲（massEngagedOnly 可關）
-  for (const e of (enemies || [])) if (e && e.faction === fid && !e.dead && !e.dummy && (!CONFIG.morale.massEngagedOnly || e.state === 'ENGAGED')) m += quality(e);
-  return m;
-}
-// 騎士錨點（只我方、騎士在場）：開戰(曝光)後線性衰退＝大人物在場的安穩感開戰即散
-function knightAnchor() {
-  const k = knight(); if (!k || k.state === 'DEAD' || k.state === 'EXTRACTED') return 0;
-  const M = CONFIG.morale, t = squadRevealed ? Math.max(0, simTime - playerEngagedT) : 0;
-  return M.anchorAmt * Math.max(0, 1 - t / Math.max(0.001, M.anchorDecay));
-}
-// 聚攏度恢復：光環內的扈從＝額外站定質量
-function ralliedMass() {
-  const k = knight(); if (!k) return 0;
-  const M = CONFIG.morale; let n = 0;
-  for (const u of (players || [])) if (u && u.id !== KNIGHT_ID && u.faction === 'player' && u.state !== 'DEAD' && u.state !== 'EXTRACTED' && dist(u.pos, k.pos) <= M.knightAura) n++;
-  return n * M.ralliedBonus;
-}
-// 有效質量＝結構 + 震盪 (+我方 錨點/聚攏)。這是這版的「士氣」量（moraleOf 回傳它）。
-function effMass(fid) {
-  let m = structMass(fid) + momentumOf(fid);
-  if (fid === 'player') m += knightAnchor() + ralliedMass();
-  return Math.max(0, m);
-}
-const moraleOf = (fid) => effMass(fid);
-function resetFactionMorale() {
-  fieldBrokenFor = null; factionMomentum = {}; moraleFirstBlood = false;
-  playerEngagedT = (typeof simTime === 'number' ? simTime : 0);
-}
-function snapshotFactionForce() { /* 質量模型不用靜態快照＝空 stub（保留既有呼叫點） */ }
-// 陣營被擊潰：全軍潰逃。敵對陣營被擊潰 → 本關已勝（場景不結束＝掃蕩時間）
-function onFactionBroken(fid) {
-  if (fieldBrokenFor === fid) return;
-  Hooks.fire('factionBroken', { faction: fid });
-  if (fid !== 'player' && !fieldBrokenFor) fieldBrokenFor = fid;
-}
-// 單位的崩潰門檻＝純兵種（不吃 HP/被圍等局部修正）。回傳「佔自己那半的 %」。
-// 敵我同一張表 BREAK_PCT：敵人用 typeId、扈從用 classId（同兵種＝同門檻）。
-// **每個單位出生時另擲一次固定浮動**（±CONFIG.morale.breakJitterPct）：同兵種也不會在同一瞬間一起崩，
-// 崩得有先後、更像真人。惰性 stamp——門檻每幀都被讀，只在第一次擲、之後固定（每幀重擲會讓門檻抖動）。
-// 測試要決定論時把 u.breakJitter 設 0 即可拿到純基準值。
-function breakPctOf(u) {
-  const key = u.faction === 'player' ? u.classId : u.typeId;
-  let base = BREAK_PCT[key] != null ? BREAK_PCT[key] : 55;
-  if (u.faction === 'player' && hasOath('guardian')) base -= CONFIG.oath.guardianBreak;   // 誓約「守護」：扈從崩潰門檻更低＝更難潰逃
-  if (u.breakJitter == null) u.breakJitter = (Math.random() * 2 - 1) * CONFIG.morale.breakJitterPct;
-  return clamp(base + u.breakJitter, 5, 98);
-}
-const breakAtOf = (u) => breakLevelOf(breakPctOf(u));   // 實際門檻（與有效戰意同一把尺）
+/* ── 士氣系統已移除（TITHE C2）────────────────────────────────────────
+   Homeward 的「品質質量士氣模型」（MORALE.md 整章）整套拆掉：拉鋸線、崩潰門檻、
+   震盪 momentum、騎士錨點、聚攏度、panicType（潰逃／捨身／呆立／轉進）全數移除。
 
-/* ── 氣勢（momentum）：暫時、會衰退、**只推相對線**（絕對士氣不受影響）───
-   來源＝事件（伏擊/奇襲/敘事選擇）與戰鬥中的關鍵時刻（首殺/斬將/招架）。
-   `grantMomentum` 是開放給事件系統的接縫——Phase 4 的敘事選擇可以直接呼叫它。 */
-let factionMomentum = {};      // fid → [{ amt, t0, dur }]
-function grantMomentum(fid, amt, dur) {
-  if (!fid || !amt) return;
-  if (!factionMomentum[fid]) factionMomentum[fid] = [];
-  factionMomentum[fid].push({ amt, t0: simTime, dur: dur || CONFIG.morale.momentumDurDefault });
-  Hooks.fire('momentum', { faction: fid, amt, dur });
-}
-function momentumOf(fid) {
-  const list = factionMomentum[fid]; if (!list || !list.length) return 0;
-  let sum = 0;
-  for (const m of list) {
-    const k = 1 - (simTime - m.t0) / Math.max(0.001, m.dur);   // 線性衰退到 0（不做反撲）
-    if (k > 0) sum += m.amt * k;
-  }
-  return clamp(sum, -CONFIG.morale.momentumMax, CONFIG.morale.momentumMax);   // 正震盪+負震盪都有上限
-}
-function pruneMomentum() {
-  for (const fid of Object.keys(factionMomentum)) {
-    const list = factionMomentum[fid].filter(m => simTime - m.t0 < m.dur);
-    if (list.length) factionMomentum[fid] = list; else delete factionMomentum[fid];
-  }
-}
-// 有效士氣＝有效質量（結構+震盪+錨點）。moraleOf 已含之，這裡只是別名（給 topFoeFaction/HUD 用）
-const effMoraleOf = (fid) => moraleOf(fid);
-// 場上實際有活單位的陣營（**缺席的陣營不該影響戰局**——FACTIONS 是登錄表，
-// 裡面可能有這張圖根本沒出現的勢力，算進去會讓拉鋸線莫名其妙地歪掉）
-function presentFactions() {
-  const set = new Set();
-  for (const p of activePlayers()) set.add(p.faction);
-  for (const e of enemies) if (!e.dead && !e.dummy) set.add(e.faction);
-  return set;
-}
-// 對某陣營而言「最強的敵對陣營」（FFA 相容：拉鋸線只跟當前最大威脅比）
-function topFoeFaction(fid) {
-  const present = presentFactions();
-  let best = null, bv = -1;
-  for (const f of present) {
-    if (!hostile(fid, f)) continue;
-    const v = effMoraleOf(f);
-    if (v > bv) { bv = v; best = f; }
-  }
-  return best;
-}
-// 拉鋸線＝質量占比：100 × 我方有效質量 /(我方+最強敵對)。0..100，50＝質量均勢。
-function moraleLine(fid) {
-  const foe = topFoeFaction(fid);
-  if (!foe) return CONFIG.morale.max;
-  const a = effMass(fid), b = effMass(foe);
-  return (a + b) <= 0 ? 50 : clamp(100 * a / (a + b), 0, CONFIG.morale.max);
-}
-// 這版「有效戰意」＝拉鋸線本身（HP 已進質量，不再乘剩餘實力）。單位拿它跟自己的門檻比。
-const resolveOf = (fid) => moraleLine(fid);
-const hasMorale = (u) => !u.dummy && !u.moraleImmune && !(u.faction === 'player' && u.id === KNIGHT_ID);   // moraleImmune＝測量靶/腳本單位免疫士氣
-const isShaken = (u) => u.moraleState === 'shaken' || u.moraleState === 'routed';
-const isRouted = (u) => u.moraleState === 'routed';
-// 崩潰反應：出生擲一個 panicType（依兵種加權），崩潰(shaken/routed)時才顯現行為。berserk＝捨身、freeze＝呆立。
-function pickPanic(typeId) {
-  const P = CONFIG.morale.panic, w = P[typeId] || P.default, keys = ['flee', 'berserk', 'freeze', 'retreat'];
-  let tot = 0; for (const k of keys) tot += w[k] || 0;
-  let r = srand() * tot; for (const k of keys) { r -= w[k] || 0; if (r <= 0) return k; } return 'flee';
-}
-const isBerserk = (u) => u.panicType === 'berserk' && isShaken(u);   // 崩潰後的捨身死戰
-const isFrozen  = (u) => u.panicType === 'freeze'  && isShaken(u);   // 崩潰後的呆立不動
-const isRetreat = (u) => u.panicType === 'retreat' && isRouted(u);   // 潰逃時的有序後撤（退向撤離點）
-// 依「陣營士氣 vs 自己的門檻」決定狀態；換性格與潰逃都在這裡收斂
-/* 單位是否已進入戰鬥＝崩潰判定的前提（使用者定案）。**未必要見血**，看到對方進入交戰即算。
-   否則在「不是剛開場就交戰」的地圖上，敵人什麼都還沒看到就因別處的士氣下滑而潰散。
-   敵方＝ENGAGED（狀態機的 latch，看到/聽到/被打→永不取消）；我方＝squadRevealed（全隊曝光）。 */
-function moraleEligible(u) {
-  return u.faction === 'player' ? squadRevealed : u.state === 'ENGAGED';
-}
-function refreshMoraleState(u) {
-  if (!hasMorale(u)) return;
-  if (u.rallyT > 0) return;         // 轉進後守點免疫：一段時間內不再判崩潰＝穩得住、擋你的路
-  if (!moraleEligible(u)) return;   // 還沒交戰＝不判崩潰（維持 steady）
-  const M = CONFIG.morale, prev = u.moraleState;
-  const res = resolveOf(u.faction), th = breakAtOf(u);
-  let target = u.moraleState;
-  if (res < M.routAllLine) target = 'routed';                             // 質量占比極低＝全軍潰逃（比崩潰更慘）
-  else if (res < th) target = 'shaken';                                   // 質量占比低於門檻＝崩潰
-  else if (u.moraleState !== 'steady' && res >= th + M.breakHysteresis) target = 'steady';
-  // 崩潰猶豫：被嚇到(steady→崩)到真的改行為之間有一段浮動延遲（每隻不同＝波浪式崩），期間回穩則取消。
-  if (prev === 'steady' && (target === 'shaken' || target === 'routed')) {
-    if (u.breakPendingT == null) u.breakPendingT = simTime + M.breakDelayMin + Math.random() * Math.max(0, M.breakDelayMax - M.breakDelayMin);
-    if (simTime < u.breakPendingT) return;   // 還在愣＝維持 steady
-  }
-  u.breakPendingT = null;
-  u.moraleState = target;
-  if (u.moraleState !== prev) {
-    u.moraleFxT = 1.0;
-    u.personality = isShaken(u) ? (u.panicType === 'berserk' ? CONFIG.ai.rusher : CONFIG.ai.shaken) : (u.basePersonality || u.personality);   // 捨身＝切 rusher 猛衝；潰逃/呆立＝shaken(躲/拉開)，呆立另在 enemyTick 站定
-    if (isRouted(u)) { u.swing = null; u.blocking = false; u.blockT = null; releaseAttackToken(u); }
-    // 崩潰本身給該陣營一發負震盪＝連鎖/雪崩（只在「變成崩潰」那一刻算一次）
-    if (prev === 'steady' && isShaken(u)) grantMomentum(u.faction, -M.breakShock, M.shockDur);
-    Hooks.fire('morale', { u, state: u.moraleState, prev });
-  }
-}
-// 每幀（單位）：只做狀態同步與潰逃脫離；士氣本身是陣營層級的
-function tickMorale(u, dt) {
-  if (!hasMorale(u)) return;
-  refreshMoraleState(u);
-  if (isRouted(u) && u.faction !== 'player' && !u.dead) {   // 捨身/呆立不離場
-    const pt = u.panicType || 'flee';
-    if (pt === 'flee') {   // 潰逃：跑離玩家夠遠＝脫離戰場
-      let nearest = Infinity;
-      for (const o of activePlayers()) nearest = Math.min(nearest, dist(o.pos, u.pos));
-      if (nearest > CONFIG.morale.fleeAwayDist) fleeUnit(u);
-    } else if (pt === 'retreat') {   // 後撤：退到集結點＝轉進完成＝原地恢復士氣、守點擋路（不離場）
-      const g = EXTRACT || ENTRY;
-      if (g && dist(u.pos, g) < CONFIG.morale.rallyRadius) rallyUnit(u);
-    }
-  }
-  if (u.rallyT > 0) u.rallyT -= dt;
-  if (u.moraleFxT > 0) u.moraleFxT -= dt;
-}
-// 每幀（陣營）：衰退舊震盪（＝恢復）+ 偵測敵對陣營全潰（質量占比跌破 routAllLine ＝我方勝、進掃蕩）。
-// 「恢復」在質量模型裡＝負震盪自然衰退 + 錨點/聚攏度（都在 effMass 內），這裡不再手動回士氣。
-function tickFactionMorale(dt) {
-  pruneMomentum();
-  if (fieldBrokenFor) return;
-  for (const fid of presentFactions()) {
-    if (fid === 'player' || !hostile('player', fid)) continue;   // 只偵測敵對陣營全潰
-    const engaged = enemies.some(e => !e.dead && !e.dummy && e.faction === fid && e.state === 'ENGAGED');
-    if (engaged && moraleLine(fid) < CONFIG.morale.routAllLine) { onFactionBroken(fid); break; }
-  }
-}
-/* 士氣事件掛在既有 Hooks 上。傷害→士氣壓力已由「品質吃 HP」自動處理（不需 hurt hook）；
-   陣亡＝結構質量少一份 + 給該陣營一發負震盪（雪崩），擊殺方得一發正震盪。 */
-Hooks.on('death', 'morale', (c) => {
-  const M = CONFIG.morale;
-  grantMomentum(c.u.faction, -M.deathShock, M.shockDur);
-  if (c.killer && hostile(c.killer.faction, c.u.faction)) grantMomentum(c.killer.faction, M.killMomentum, M.shockDur);
-});
-/* 氣勢的戰鬥中來源：讓「被伏擊 → 殺出一條路 → 把氣勢奪回來」是可操作的，
-   而不是只能等它自然消退。 */
-Hooks.on('kill', 'momentum', (c) => {
-  const M = CONFIG.morale; if (!c.killer) return;
-  if (!moraleFirstBlood) { moraleFirstBlood = true; grantMomentum(c.killer.faction, M.momentumFirstBlood); }   // 首殺
-  if (c.elite || c.boss) grantMomentum(c.killer.faction, M.momentumElite);                                     // 斬將
-});
-Hooks.on('parry', 'momentum', (c) => { if (c.u) grantMomentum(c.u.faction, CONFIG.morale.momentumParry); });
+   理由（DESIGN.md §11）：那套系統的成果是**敵人會潰逃而不是死掉**，那既反 loot
+   也反資源迴圈——TITHE 的聖血與怒火只能從屍體上拿回來，跑掉的敵人等於偷走你的補給。
+   地獄的爪牙不投降，牠們戰到死。
+
+   ⚠️ 不要因為「戰鬥感覺太順」就把它加回來。要調張力請走 DESIGN.md §2.8 的四條推論
+   （威脅來自傷害與速度、變難靠組合而非數值膨脹），不要走士氣。 */
 
 /* ── 全隊靜默／曝光（使用者定案，取代舊的逐人 E/Q stance）─────────────────
    維持靜默的條件很單純：**還沒有人知道我們在這**。所以扈從在「跟隨/守住」時只會
@@ -5137,7 +4775,7 @@ Hooks.on('parry', 'momentum', (c) => { if (c.u) grantMomentum(c.u.faction, CONFI
      2. 任何我方單位**造成或承受傷害**（見血）——見於 damageUnit 的 Hooks
    「集中攻擊」指令永遠無視靜默（你明確指了目標＝當然打）。 */
 let squadRevealed = false;
-function revealSquad() { if (!squadRevealed) playerEngagedT = simTime; squadRevealed = true; }   // 曝光那刻起算騎士錨點衰退
+function revealSquad() { squadRevealed = true; }
 let lastEncounter = null;   // 本場抽到的遭遇 id（HUD 可顯示「攔路賊」等；null＝烤死的 spawn 或王）
 /* 扈從節點導航：直線可達＝直接走（開闊地）；否則走 waypoint 圖 BFS 最短路徑（比照敵人接近方式，
    避免直線卡牆）。使用者定案：取代舊的「跟隨直線 + 交戰 scoreNode 選點」。
@@ -5419,21 +5057,6 @@ function enemyTick(e, dt) {
   if (e.state === 'ENGAGED' && !e.calledHelp && !e.dead) { e.calledHelp = true; alertEnemiesNear(e.pos, CONFIG.hearing.callHelp); }
   if (e.staggerT > 0) return;   // 硬直（被戰鎚打中/招架失敗）：完全不行動
   if (e.dummy) return;          // 訓練假人（近戰試作場）：只挨打，不思考
-  if (isFrozen(e)) { e.swing = null; e.aimT = 0; releaseAttackToken(e); return; }   // 呆立：崩潰後當場愣住＝不動不打（白送擊殺，但擋路占數）；士氣回穩會解除
-  // 崩潰撤退：潰逃(flee)＝慌亂背向玩家直線跑；後撤(retreat)＝有章法、沿路網退向撤離點。**這是「孤騎對軍團」的解**——
-  // 你殺不完十個人，但砍倒兩個雜兵、再殺掉他們的菁英，剩下的就散了。berserk 型即使 routed 也不撤＝往下走正常交戰（捨身衝殺）。
-  if (isRouted(e) && (e.panicType || 'flee') !== 'berserk') {
-    releaseAttackToken(e);
-    const retreat = e.panicType === 'retreat';
-    let goal;
-    if (retreat) { goal = EXTRACT || ENTRY || { x: e.pos.x, y: e.pos.y }; }   // 後撤：奔向撤離點
-    else { const f0 = nearestFriendly(e.pos); goal = f0 ? { x: e.pos.x + (e.pos.x - f0.pos.x), y: e.pos.y + (e.pos.y - f0.pos.y) } : (ENTRY || { x: e.pos.x, y: e.pos.y }); }   // 潰逃：背向最近的敵人
-    const step = e.moveSpeed / CONFIG.tempo * (retreat ? CONFIG.morale.retreatSpeedMul : CONFIG.morale.routSpeedMul) * dt;
-    if (retreat) navMoveTo(e, goal, step); else moveToward(e, goal, step);   // 後撤走 waypoint 尋路(繞牆、有章法)、潰逃直線背離(慌亂)
-    e.facing = rotToward(e.facing, angTo(e.pos, goal), e.weapon.turnSpeed * Math.PI / 180 * dt);
-    openDoorsNear(e, false);
-    return;
-  }
   const f = nearestFriendly(e.pos);
   const aiFoe = nearestHostileAI(e);   // 多陣營：看得到的他陣營 AI
   // 識別空窗（潛行）：IDLE 時看到玩家不立刻交戰，先累積 detect；滿才 ENGAGED。快速閃過＝累不滿。
@@ -5497,7 +5120,7 @@ function enemyTick(e, dt) {
     if (!token) releaseAttackToken(e);
   } else if (melee) { releaseAttackToken(e); }
   let goalPos = (seen && (melee || e.weapon.range <= CONFIG.enemy.meleeApproach)) ? aimPos : tn.pos;
-  let spd = e.moveSpeed / CONFIG.tempo * flashMoveMul(e) * rangedActionMoveMul(e) * (isBerserk(e) ? CONFIG.morale.berserkMoveMul : 1);   // 遠程：瞄準預告中放慢/定身、裝填中放慢（弩＝定身）；捨身＝背水加速
+  let spd = e.moveSpeed / CONFIG.tempo * flashMoveMul(e) * rangedActionMoveMul(e);   // 遠程：瞄準預告中放慢/定身、裝填中放慢（弩＝定身）
   if (melee && seen && !token) {
     // 繞行：保持 ringDist，並沿切線橫移（以自己的 id 決定繞哪一邊＝不會全部擠同一側）
     const R = CONFIG.melee.ringDist, d = dist(e.pos, aimPos), a = angTo(aimPos, e.pos);
@@ -5952,9 +5575,8 @@ function update(dt) {
 
   const juiceDecay = (u) => { if (u.recoil > 0) u.recoil = Math.max(0, u.recoil - CONFIG.juice.recoilDecay * dt); if (u.hitFlash > 0) u.hitFlash -= dt; if (u.cardHitT > 0) u.cardHitT -= dt; if ((u.invulnT || 0) > 0) u.invulnT -= dt; if (u.flinchX) { u.flinchX *= Math.exp(-22 * dt); u.flinchY *= Math.exp(-22 * dt); } };
   const meleeFxDecay = (u) => { for (const k of ['parryFxT', 'poiseBreakFxT', 'guardBreakFxT', 'flinchFxT', 'noStamFxT', 'atkRestT']) if (u[k] > 0) u[k] -= dt; };
-  for (const p of players) { if (p.fireCooldown > 0) p.fireCooldown -= dt; if (p.muzzle > 0) p.muzzle -= dt; juiceDecay(p); if (p.abilityCd > 0) p.abilityCd -= dt; tickArtSlots(p, dt); tickCast(p, dt); tickAmmo(p, dt); tickMelee(p, dt); tickReactiveBlock(p, dt); tickResources(p, dt); tickMorale(p, dt); meleeFxDecay(p); }
-  for (const e of enemies) { if (e.dead) continue; if (e.fireCooldown > 0) e.fireCooldown -= dt; if (e.muzzle > 0) e.muzzle -= dt; if (e.revealT > 0) e.revealT -= dt; if (e.flash > 0) e.flash = Math.max(0, e.flash - CONFIG.flash.decay * dt); juiceDecay(e); tickAmmo(e, dt); tickMelee(e, dt); tickReactiveBlock(e, dt); tickResources(e, dt); tickMorale(e, dt); meleeFxDecay(e); }
-  tickFactionMorale(dt); pruneMomentum();   // 陣營士氣的恢復 + 氣勢衰退
+  for (const p of players) { if (p.fireCooldown > 0) p.fireCooldown -= dt; if (p.muzzle > 0) p.muzzle -= dt; juiceDecay(p); if (p.abilityCd > 0) p.abilityCd -= dt; tickArtSlots(p, dt); tickCast(p, dt); tickAmmo(p, dt); tickMelee(p, dt); tickReactiveBlock(p, dt); tickResources(p, dt); meleeFxDecay(p); }
+  for (const e of enemies) { if (e.dead) continue; if (e.fireCooldown > 0) e.fireCooldown -= dt; if (e.muzzle > 0) e.muzzle -= dt; if (e.revealT > 0) e.revealT -= dt; if (e.flash > 0) e.flash = Math.max(0, e.flash - CONFIG.flash.decay * dt); juiceDecay(e); tickAmmo(e, dt); tickMelee(e, dt); tickReactiveBlock(e, dt); tickResources(e, dt); meleeFxDecay(e); }
   pruneAttackTokens();   // 攻擊權：過期的釋放出來給別隻
 
   // 0) 自走撤離 seize：騎士自走撤離時，移動或開火 → 奪回手動、撤離中斷（滑鼠轉視野不算）
@@ -6018,7 +5640,7 @@ function update(dt) {
   for (const e of enemies) if (!e.dead) enemyTick(e, dt);
 
   // 4) 軟計時 → 追兵（事件地圖不召追兵）
-  if (CONFIG.reinforce.enabled && !MAP.eventMap && !fieldBrokenFor && simTime > curTimeBudget) {   // 敵軍已潰＝不再召追兵（掃蕩時間）
+  if (CONFIG.reinforce.enabled && !MAP.eventMap && simTime > curTimeBudget) {
     reinforceTimer -= dt;
     if (reinforceTimer <= 0) {
       const e = makeEnemy(nearestNode(ENTRY, false), 'rusher', true);
@@ -6937,83 +6559,9 @@ function drawKnightResources() {
    選項以滑鼠左右轉動切換（沿用 aimDir 的相對累積，不需要額外的滑鼠狀態）。 */
 /* 士氣旗標（使用者要的「旗標點亮」）：動搖＝琥珀色搖晃的旗、潰逃＝紅旗+「潰逃」。
    士氣是**看得見的失敗狀態**，玩家必須讀得出來，否則行為突然改變會像是遊戲在耍你。 */
-function drawMoraleFlag(u, s) {
-  if (!hasMorale(u) || u.moraleState === 'steady') return;
-  if (u.dead || u.state === 'DEAD' || u.state === 'EXTRACTED') return;
-  const routed = isRouted(u), berserk = isBerserk(u), frozen = isFrozen(u), retreat = isRetreat(u);
-  // 依崩潰反應決定旗色/文字：捨身＝亮紅、呆立＝灰、後撤＝冷藍(有序)、潰逃＝紅、動搖(flee)＝琥珀
-  let label = null, rgb, flashCol;
-  if (berserk)      { label = '捨身'; rgb = '255,70,50';   flashCol = '#ff6b4a'; }
-  else if (frozen)  { label = '呆立'; rgb = '150,162,174'; flashCol = '#aeb6c0'; }
-  else if (retreat) { label = '後撤'; rgb = '120,175,255'; flashCol = '#7ab0ff'; }   // 有序後撤＝冷藍、抖得少
-  else if (routed)  { label = '潰逃'; rgb = '255,80,80';   flashCol = '#ff8080'; }
-  else              {                 rgb = '255,190,80';  flashCol = '#ffd27a'; }   // 動搖(flee)：只有旗、無常駐字（同現況）
-  const big = berserk || (routed && !retreat);
-  const y = s.y - u.radius * cam.scale - 16;
-  const wob = Math.sin(simTime * (big ? 16 : 9)) * (frozen ? 0 : big ? 3 : 1.6);   // 呆立＝不抖（愣住）
-  ctx.textAlign = 'center';
-  ctx.font = `bold ${big ? 15 : 13}px Consolas`;
-  const a = 0.6 + 0.4 * Math.sin(simTime * (frozen ? 3 : big ? 14 : 7));
-  ctx.fillStyle = `rgba(${rgb},${a})`;
-  ctx.fillText(frozen ? '❆' : '⚑', s.x + wob, y);   // 呆立＝雪花(凍住)、其餘＝旗
-  if (label) { ctx.font = 'bold 10px Consolas'; ctx.fillStyle = `rgba(${rgb},${a})`; ctx.fillText(label, s.x, y - 12); }
-  // 剛切換狀態時的強調（短暫放大提示）
-  if (u.moraleFxT > 0) {
-    ctx.font = 'bold 12px Consolas';
-    ctx.globalAlpha = Math.min(1, u.moraleFxT);
-    ctx.fillStyle = flashCol;
-    ctx.fillText(label || MORALE_STATE[u.moraleState], s.x, y - (label ? 26 : 14));
-    ctx.globalAlpha = 1;
-  }
-  ctx.textAlign = 'left';
-}
 /* 拉鋸條（畫面正上方）＝這場仗的戰局。一條、一個中線，往哪邊推一眼就知道。
    刻度＝各兵種的崩潰門檻（「佔自己那半的 %」直接畫在自己那半上）。
    氣勢畫成半透明的推擠段＝看得出「這段是暫時的、會退回去」，而不是以為自己真的掉了那麼多。 */
-function drawFactionMorale() {
-  if (scene !== 'COMBAT') return;
-  const M = CONFIG.morale;
-  const W = 620, h = 14, x = cv.width / 2 - W / 2, y = 16;
-  const foe0 = topFoeFaction('player') || 'enemy';
-  const linePos = moraleLine('player');            // 0..100 質量占比（含震盪/錨點）
-  const sp = structMass('player'), sf = structMass(foe0);   // 純結構質量占比（不含震盪/錨點）＝虛線位置
-  const absPos = (sp + sf) <= 0 ? 50 : clamp(100 * sp / (sp + sf), 0, 100);
-  const px = (v) => x + W * (v / 100);
-
-  ctx.fillStyle = 'rgba(120,40,40,0.55)'; ctx.fillRect(x, y, W, h);                    // 敵方底
-  ctx.fillStyle = 'rgba(45,80,150,0.75)'; ctx.fillRect(x, y, W * (linePos / 100), h);  // 我方佔的段
-  // 氣勢造成的推擠：實線位置與「純絕對」位置之間，畫成半透明斜紋段
-  if (Math.abs(linePos - absPos) > 0.5) {
-    const a = Math.min(linePos, absPos), b = Math.max(linePos, absPos);
-    const gain = linePos > absPos;   // 往我方推＝我方有氣勢
-    ctx.fillStyle = gain ? 'rgba(160,210,255,0.35)' : 'rgba(255,170,150,0.35)';
-    ctx.fillRect(px(a), y, px(b) - px(a), h);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(px(absPos), y); ctx.lineTo(px(absPos), y + h); ctx.stroke(); ctx.setLineDash([]);
-  }
-  // 崩潰門檻刻度：我方的畫在左半（從左緣量起）、敵方的鏡射在右半
-  const mark = (v, col) => { ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(px(v), y); ctx.lineTo(px(v), y + h); ctx.stroke(); };
-  for (const p of [...new Set(activePlayers().filter(u => u.id !== KNIGHT_ID).map(breakPctOf))]) mark(50 * p / 100, 'rgba(180,215,255,0.75)');
-  for (const p of [...new Set(enemies.filter(e => !e.dead && !e.dummy).map(breakPctOf))]) mark(100 - 50 * p / 100, 'rgba(255,190,180,0.75)');
-  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5;                                    // 中線（現在的戰局）
-  ctx.beginPath(); ctx.moveTo(px(linePos), y - 3); ctx.lineTo(px(linePos), y + h + 3); ctx.stroke();
-  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, W - 1, h - 1);
-
-  ctx.font = '10px Consolas'; ctx.textAlign = 'left';
-  const delta = (fid) => { const d = moraleOf(fid) - structMass(fid); return Math.abs(d) > 0.5 ? (d > 0 ? '  氣勢+' : '  挫−') + Math.round(Math.abs(d)) : ''; };
-  ctx.fillStyle = '#9fc4ff'; ctx.fillText('我方質量 ' + Math.round(structMass('player')) + delta('player'), x, y + h + 12);
-  ctx.textAlign = 'right';
-  const foe = foe0;
-  ctx.fillStyle = '#ffb0a8'; ctx.fillText('敵方質量 ' + Math.round(structMass(foe)) + delta(foe), x + W, y + h + 12);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(215,228,240,0.6)'; ctx.fillText('戰局 ' + Math.round(linePos) + ' / 100', cv.width / 2, y + h + 12);
-  if (fieldBrokenFor) {   // 掃蕩時間：已勝，但場景還沒結束
-    ctx.font = 'bold 20px Consolas';
-    ctx.fillStyle = `rgba(127,255,168,${0.7 + 0.3 * Math.sin(simTime * 3)})`;
-    ctx.fillText('敵軍已潰散 — 掃蕩後從撤離點離開', cv.width / 2, y + h + 38);
-  }
-  ctx.textAlign = 'left';
-}
 function drawScreenOverlays() {
   // 區域標記（永遠正立、離場時夾到邊緣）
   const reinforcing = simTime > curTimeBudget;
@@ -7040,7 +6588,6 @@ function drawScreenOverlays() {
       ctx.fillStyle = `rgba(255,90,90,${0.55 + 0.45 * Math.sin(simTime * 12)})`;
       ctx.fillText('⚠ 重傷', s.x, s.y - p.radius * cam.scale - 26);
     }
-    drawMoraleFlag(p, s);
     ctx.textAlign = 'left';
     // 離場(畫面外)的我方 → 邊緣箭頭
     edgeMarker(p.pos, hsl(p.hue, 60, 65), null, true);
@@ -7056,10 +6603,8 @@ function drawScreenOverlays() {
       const f = clamp((e.poise || 0) / e.poiseMax, 0, 1);
       screenBar(s, f, f < 0.34 ? '#ffd24a' : 'rgba(210,170,90,0.85)', -e.radius * cam.scale - 5);
     }
-    drawMoraleFlag(e, s);
   }
   drawKnightResources();
-  drawFactionMorale();
   // 砲塔準星（沿騎士 facing；另畫一條較淡的目標朝向線顯示轉向延遲）
   if (controlledId != null && players[controlledId].state === 'CONTROLLED') {
     const u = players[controlledId], s = w2s(u.pos);
@@ -7179,7 +6724,6 @@ function drawHUD() {
    騎士一張完整（武器/彈藥/術的 CD），扈從各一張精簡的——你對扈從真正需要知道的只有
    「還活著嗎、血多少、崩了沒」，其餘都是雜訊。
    挨打時整張卡紅框＋震動（`cardHitT`，比單位本體的閃白久，掃一眼才不會漏看）。 */
-const MORALE_TAG = { shaken: { t: '動搖', c: '#ffb347' }, routed: { t: '潰逃', c: '#ff6b6b' } };
 function drawCards() {   // TITHE C1：場上只有騎士，所以只有一張卡
   const k = players[KNIGHT_ID];
   if (k) drawCard(k, 12, 96, 208, 68, KNIGHT_ID);

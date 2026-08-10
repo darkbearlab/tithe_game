@@ -197,9 +197,9 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened] },
-  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened] },
-  { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened] },
+  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, noMorale] },
+  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, noMorale] },
+  { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
   { name: 'armory',          frames: 60,  enter: () => { bootCampaignToMap(); T.enterArmory(); } },
@@ -221,7 +221,7 @@ for (const k of Object.keys(T.MAPS)) {
   SCENARIOS.push({
     name: 'map-' + k, frames: 240,
     enter: () => { bootCampaignToMap(); T.forceMap(k); T.startMission(); },
-    poke: pokeCombat, invariants: [soloKnight],
+    poke: pokeCombat, invariants: [soloKnight, noMorale],
   });
 }
 
@@ -229,6 +229,16 @@ for (const k of Object.keys(T.MAPS)) {
 function soloKnight() {
   const n = (T.players || []).length;
   return n === 1 ? null : `場上有 ${n} 個我方單位，應該只有騎士`;
+}
+
+// TITHE C2 的回歸守門員：士氣整套移除，任何單位都不該再帶著士氣欄位。
+// （擋的是「因為戰鬥感覺太順」而把潰逃/崩潰偷偷加回來——見 DESIGN.md §11 的警語）
+const MORALE_FIELDS = ['moraleState', 'panicType', 'moraleFxT', 'rallyT', 'breakJitter'];
+function noMorale() {
+  for (const u of [...(T.players || []), ...(T.enemies || [])]) {
+    for (const f of MORALE_FIELDS) if (u && u[f] !== undefined) return `單位帶著已移除的士氣欄位 ${f}`;
+  }
+  return null;
 }
 
 // 把最近的敵人拖到騎士刀口前（正面、觸及距離內）並叫醒它。

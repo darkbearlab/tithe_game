@@ -70,7 +70,7 @@
 | # | 系統 | 位置 | 為什麼 |
 |---|---|---|---|
 | 1 | ✅ **扈從 / 指令層** | ~~`CONFIG.command`／`CMD_LIST`／`CMD_META`／`RETAINER_BEHAVIOR`／`anchorOf`／`issueCommand`／`allyMoveTick`／`spaceOutAllies`／`cmdWheel`＋`wheelAimTarget`＋`commitWheelCommand`／`drawCommandWheel`／`drawAllyCard`／`extractAll`／`arenaAllies`~~ | 教廷送**一個人**進地獄。**已完成**：`startMission` 現在只生成騎士一人，Q/G/Shift+H/B 熱鍵移除，`idleTick` 縮成「自走撤離時的自動還擊」，`scoreNode` 的繩長懲罰移除。`navMoveTo` **保留**（敵人的有序後撤 `retreat` 還在用）。harness 加了 `soloKnight` 不變式當回歸守門員。 |
-| 2 | **士氣質量模型** | ~4941–5174（`quality`/`structMass`/`effMass`/`moraleLine`/`tickMorale`/`tickFactionMorale`/`fleeUnit`/`rallyUnit`/`drawFactionMorale`/`drawMoraleFlag`）、`CONFIG.morale` ~281、`BREAK_PCT` ~333、`QBASE` ~343 | 敵人會潰逃而不是死掉＝反 loot、反資源迴圈。**最大的一塊** |
+| 2 | ✅ **士氣質量模型** | ~~`CONFIG.morale`／`BREAK_PCT`／`QBASE`／`MORALE_STATE`／28 個函式（`quality`／`structMass`／`knightAnchor`／`ralliedMass`／`effMass`／`moraleLine`／`refreshMoraleState`／`tickMorale`／`tickFactionMorale`／`fleeUnit`／`rallyUnit`／`drawFactionMorale`／`drawMoraleFlag`／momentum 全套）～~ | 敵人會潰逃而不是死掉＝反 loot、反資源迴圈。**已完成**：拉鋸線、崩潰門檻、震盪、騎士錨點、聚攏度、`panicType`（潰逃／捨身／呆立／轉進）全數移除；敵人現在戰到死。連帶處理跨戰鬥氣勢層（S1 `runMomentumMods`）與它在護送／女巫／事件的四個消費點。harness 加了 `noMorale` 不變式。 |
 | 3 | **潛行 / 警覺 / 識別** | `CONFIG.stealth` ~164、`isRevealed` ~2254、`inBush`/`inSmoke`/`concealAt` ~2238 | 房間是亮的、門是鎖的。⚠️ **只砍潛行判定，不砍視錐/迷霧本身**（那個移到 B 表） |
 | 4 | **聽覺 / 聲音漣漪** | `CONFIG.hearing` ~131、`CONFIG.soundRipple` ~181、`pingSound` ~5770、`drawSoundEdges` ~6564、`drawSoundRipples` ~6698、`alertEnemiesNear` ~4365 | 潛行的配套。（視覺化的漣漪日後若要給暗房用可回收） |
 | 5 | **waypoint 戰術 AI** | `scoreNode` ~5313、`watchPoint` ~5346、`reservations`/`commitReservation` ~5309、`patrolStep` ~5407、`claimPatrolPoint` ~5387、`huntStep` ~5498、`searchMoveTo` ~5485、`updateThreatKnowledge` ~5449、`bfsPath` ~5399、`buildNextHop` ~2193、`CONFIG.ai` ~234、`CONFIG.hunt` ~170、`CONFIG.patrol` ~167 | 封閉房間用不上。**換成直接操舵**，順便解鎖程序生成房間 |
@@ -108,13 +108,13 @@
 ## E. 建議的動刀順序
 
 > **進度**：✅ = 已完成。動工前先看這裡，別重做。
-> 目前完成到 **1（扈從）**；下一項是 **2（士氣）**。
+> 目前完成到 **2（士氣）**；下一項是 **3+4（潛行＋聽覺）**。
 
 一次砍一塊、每塊砍完都要能跑起來。沿用 Homeward 的守則：**改完一定要跑 headless 驗證**
 （逐幀跑遍所有場景的 `update()` + `draw()`，不只在戰鬥跑）。
 
 1. ✅ **C1 扈從** — 最獨立，砍完立刻少掉一堆交互
-2. **C2 士氣** — 最大一塊，但邊界清楚（`hasMorale`/`moraleEligible` 是總開關）
+2. ✅ **C2 士氣** — 最大一塊，但邊界清楚（`hasMorale`/`moraleEligible` 是總開關）
 3. **C3+C4 潛行 + 聽覺** — ⚠️ 小心別把視錐/迷霧一起帶走（那個要留）
 4. **C6 進出點 / 撤離** — 場景流程要先改成「清場開洞」才好接後面
 5. **C5 waypoint AI → 直接操舵**（D7）— **砍與寫同時發生**，這批裡最需要小心的一塊
