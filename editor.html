@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HOMEWARD — 地圖編輯器</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#06080d;color:#cdd6e0;font:12px Consolas,"Courier New",monospace;overflow:hidden}
+  #app{display:grid;grid-template-rows:auto 1fr auto;height:100%}
+  header{display:flex;gap:8px;align-items:center;padding:6px 10px;background:#0b0f15;border-bottom:1px solid #1f2733;flex-wrap:wrap}
+  header .title{color:#7fe3ff;font-size:14px;font-weight:bold;margin-right:4px}
+  .tabbtn{padding:4px 12px;border:1px solid #2a3442;border-radius:5px;background:#121823;color:#9fb3c8;cursor:pointer}
+  .tabbtn.on{background:#1d3247;color:#bfe6ff;border-color:#3a6b8f}
+  header input,header select,header button{background:#0f141c;border:1px solid #2a3442;color:#cdd6e0;border-radius:4px;padding:3px 6px;font:inherit}
+  header button{cursor:pointer}
+  header button:hover{background:#15202c}
+  #btnbar{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;align-items:center}
+  .muted{color:#5a6470}
+  #btnbar .grp{display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 6px;border:1px solid #1c2430;border-radius:6px;background:#0c1119}
+  #btnbar .gl{color:#6b7686;font-size:10px;letter-spacing:1px;margin-right:1px;align-self:center}
+  main{display:grid;grid-template-columns:128px 1fr 248px;min-height:0;position:relative}
+  #tools{background:#0a0e14;border-right:1px solid #1f2733;padding:8px 6px;display:flex;flex-direction:column;gap:5px;overflow:auto}
+  #tools .hd{color:#5a6470;margin:4px 2px 0;font-size:11px}
+  .tool{padding:5px 7px;border:1px solid #2a3442;border-radius:4px;background:#121823;color:#9fb3c8;cursor:pointer;text-align:left;white-space:nowrap}
+  .tool.on{background:#243a2a;color:#bfe6cf;border-color:#3a8f5a}
+  #cvwrap{position:relative;min-width:0;background:#06080d}
+  canvas{display:block;width:100%;height:100%;cursor:crosshair}
+  #inspector{background:#0a0e14;border-left:1px solid #1f2733;padding:8px;overflow:auto}
+  #inspector h3{margin:0 0 6px;color:#7fe3ff;font-size:13px}
+  #inspector .muted{color:#5a6470}
+  .row{display:flex;align-items:center;gap:6px;margin:3px 0}
+  .row label{flex:0 0 74px;color:#9fb3c8}
+  .row input,.row select{flex:1;background:#0f141c;border:1px solid #2a3442;color:#e0e8f0;border-radius:3px;padding:2px 4px;min-width:0;font:inherit}
+  .row button{background:#15202c;border:1px solid #2a3442;color:#bfe6ff;border-radius:4px;cursor:pointer;padding:3px 6px}
+  .tagbtn{display:inline-block;padding:2px 6px;margin:2px;border:1px solid #2a3442;border-radius:3px;background:#121823;color:#9fb3c8;cursor:pointer}
+  .tagbtn.on{background:#3a3320;color:#ffd27a;border-color:#7a6a3a}
+  /* ⑤ 地圖管理分頁：蓋在整個 main 上的面板（顯示由 JS 直接控制 .style.display）*/
+  #managePanel{display:none;position:absolute;inset:0;z-index:6;background:#0a0e14;padding:16px 22px;overflow:auto}
+  #managePanel .inner{max-width:620px}
+  #managePanel h4{margin:16px 0 4px;color:#7fe3ff;font-size:14px;border-bottom:1px solid #1c2430;padding-bottom:4px}
+  #managePanel h4:first-child{margin-top:0}
+  #managePanel .exp{color:#7a8696;font-size:11px;line-height:1.6;margin:2px 0 10px}
+  #managePanel .mrow{display:flex;align-items:center;gap:6px;margin:6px 0;flex-wrap:wrap}
+  #managePanel .mrow label{flex:0 0 48px;color:#9fb3c8}
+  #managePanel input,#managePanel select{background:#0f141c;border:1px solid #2a3442;color:#e0e8f0;border-radius:4px;padding:5px 7px;font:inherit}
+  #managePanel select{flex:1;min-width:120px}
+  #managePanel button{background:#15202c;border:1px solid #2a3442;color:#bfe6ff;border-radius:4px;cursor:pointer;padding:6px 12px;font:inherit}
+  #managePanel button:hover{background:#1b2a3a}
+  footer{padding:5px 10px;background:#0b0f15;border-top:1px solid #1f2733;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ok{color:#5fd06b}.warn{color:#ff9b6b}
+  #overlay{position:fixed;inset:0;background:rgba(0,0,0,0.66);display:none;align-items:center;justify-content:center;z-index:10}
+  #overlay.on{display:flex}
+  #overlay .box{width:680px;max-width:92%;background:#0d1219;border:1px solid #2a3442;border-radius:8px;padding:12px}
+  #overlay h3{margin:0 0 8px;color:#7fe3ff}
+  #overlay textarea{width:100%;height:340px;background:#0f141c;border:1px solid #2a3442;color:#cdd6e0;font:11px Consolas;border-radius:4px}
+  #overlay .bar{display:flex;gap:8px;justify-content:flex-end;margin-top:8px;align-items:center}
+  #overlay button{background:#15202c;border:1px solid #2a3442;color:#bfe6ff;border-radius:4px;cursor:pointer;padding:5px 12px;font:inherit}
+  #ovmsg{margin-right:auto;color:#9fb3c8}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <span class="title">地圖編輯器</span>
+    <span class="tabbtn on" data-tab="objects">① 地圖物件</span>
+    <span class="tabbtn" data-tab="waypoints">② Waypoint/連線</span>
+    <span class="tabbtn" data-tab="enemies">③ 敵人配置</span>
+    <span class="tabbtn" data-tab="underlay">④ 底圖</span>
+    <span class="tabbtn" data-tab="manage">⑤ 地圖管理</span>
+    <span id="btnbar">
+      <span class="grp"><span class="gl">檢視</span>
+        <button id="btnGrid" title="格線吸附開關">格線:開</button>
+        <button id="btnFit" title="縮放置中、看到整張地圖">適配</button>
+        <button id="btnUndo" title="復原 Ctrl+Z">↶</button>
+        <button id="btnRedo" title="重做 Ctrl+Y">↷</button>
+      </span>
+      <button id="btnHelp" title="使用說明" style="align-self:center">？</button>
+    </span>
+  </header>
+  <main>
+    <aside id="tools"></aside>
+    <div id="cvwrap"><canvas id="cv"></canvas></div>
+    <aside id="inspector"></aside>
+    <aside id="managePanel"><div class="inner">
+      <h4>地圖庫（maps.json）</h4>
+      <div class="exp">一個 maps.json 檔可裝多張地圖。在這裡切換要編輯哪一張、新增/刪除、或讀入/下載整份檔案。</div>
+      <div class="mrow"><label>目前圖</label><select id="mapPick" title="切換要編輯的地圖（maps.json 內的一張）"></select></div>
+      <div class="mrow"><label>鍵名</label><input id="mapKey" placeholder="英數/底線" title="此地圖在 maps.json 的鍵名"><button id="btnMapAdd" title="新增一張空白地圖到庫">＋ 新增</button><button id="btnMapDel" title="從庫刪除目前地圖">🗑 刪除</button></div>
+      <div class="exp">鍵名＝這張在檔案裡的識別字（即時套用）。</div>
+      <div class="mrow"><button id="btnLibLoad" title="讀入一個 maps.json（取代整個庫）">讀入 maps.json…</button><button id="btnLibSave" title="下載整個庫成 maps.json">下載 maps.json</button></div>
+      <div class="exp">讀入會取代整個庫；下載把目前所有地圖存成一份 maps.json（開頭含 _index 目錄）。</div>
+
+      <h4>本圖（目前這一張）</h4>
+      <div class="mrow"><label>名稱</label><input id="mapLabel" placeholder="顯示名稱" title="此地圖的顯示名稱 label"></div>
+      <div class="mrow"><label>類型</label><select id="mapArch" title="地圖 archetype（類型）＝roadmap 變化/避免連續同類"></select><label style="margin-left:8px">難度</label><select id="mapTier" title="難度階 1~3：roadmap 依進度抽（前段易→後段難）"><option value="1">1 易</option><option value="2">2 中</option><option value="3">3 難</option></select></div>
+      <div class="mrow"><label>用途</label><label class="muted" style="font-weight:400"><input type="checkbox" id="mapRoleN"> 一般</label><label class="muted" style="font-weight:400;margin-left:10px"><input type="checkbox" id="mapRoleB"> 王戰</label><span class="muted" title="進哪個 roadmap 抽選池">＝進哪個池</span></div>
+      <div class="mrow"><label>開新</label><select id="tplSel" title="以範本/現有地圖開新的一張（會覆蓋目前這張）"></select><button id="btnNew" title="清成空白地圖（覆蓋目前這張）">空白</button></div>
+      <div class="exp">從範本或空白覆蓋「目前這張」（不是新增；要保留舊的請先在上面「＋新增」）。</div>
+      <div class="mrow"><label>尺寸</label><input id="mapW" type="number" style="width:66px" title="地圖寬 (px)"><span class="muted">×</span><input id="mapH" type="number" style="width:66px" title="地圖高 (px)"><button id="btnWall" title="依目前尺寸重建邊界外牆">重建外牆</button></div>
+      <div class="mrow"><label>鏡像</label><button id="btnMirH" title="左右翻成庫裡新的一張（保留原圖；做變體的起點）">⇄ 水平</button><button id="btnMirV" title="上下翻成庫裡新的一張（保留原圖）">⇅ 垂直</button></div>
+      <div class="exp">鏡像會把目前這張翻轉、存成庫裡「新的一張」（原圖保留）＝做變體的起點。</div>
+
+      <h4>單張匯入 / 匯出・測試</h4>
+      <div class="mrow"><button id="btnImport" title="貼上單張地圖 JSON 載入（覆蓋目前這張）">匯入單張 JSON…</button><button id="btnExport" title="匯出目前這張：純 JSON 或 MAPS 片段">匯出單張…</button></div>
+      <div class="exp">匯入會覆蓋目前這張；匯出可選純 JSON 或可貼進 index.html 的 MAPS 片段。</div>
+      <div class="mrow"><button id="btnPlaytest" title="把目前這張帶進遊戲的自由戰鬥試打（結束/離開回編輯器）">▶ 測試戰鬥</button></div>
+      <div class="exp">把目前這張帶進遊戲的自由戰鬥試打，結束/離開會自動回到編輯器（工作區會還原）。</div>
+    </div></aside>
+  </main>
+  <footer id="status">—</footer>
+</div>
+<input id="libFile" type="file" accept="application/json,.json" style="display:none">
+<div id="overlay"><div class="box">
+  <h3 id="ovtitle">匯入 / 匯出</h3>
+  <textarea id="ovtext" spellcheck="false"></textarea>
+  <div class="bar"><span id="ovmsg"></span><span id="ovbtns"></span><button id="ovclose">關閉</button></div>
+</div></div>
+<script>
+"use strict";
+/* =====================================================================
+   HOMEWARD 地圖編輯器（獨立工具）— 與遊戲 index.html 的 MAPS 結構完全一致，
+   可雙向匯出/匯入 JSON。三分頁：① 地圖物件 ② waypoint+連線 ③ 敵人配置。
+   重點：waypoint 在遊戲中以「陣列索引」當 id（wp=id=>MAP.waypoints[id]），
+   故刪點必須重編號並同步 edges / enemySpawns。
+   ===================================================================== */
+
+/* ---- 與 index.html 同步的小常數（編輯器自帶一份；數量少、變動低）---- */
+const WORLD = { w: 1280, h: 720 };
+const PX_PER_M = 40;   // 比例尺參考：1 公尺＝40px（單位半徑12px≈肩寬0.6m、門口~3m、本圖約 32×18m）。僅編輯器視覺參考，遊戲不強制。
+const EDITOR_HELP = [
+  '地圖編輯器 — 使用說明',
+  '',
+  '【分頁】',
+  '① 地圖物件：牆 / 門 / 低矮牆 / 可破壞物 / 草叢 / 區域 / 按鈕 / 進撤點 / ★特徵庫(整組房間長廊等)',
+  '② Waypoint/連線：敵人與撤離走的路網。刪點會自動重編號(遊戲以陣列索引當 id)',
+  '③ 敵人配置：在 waypoint 上放敵人類型 / 個性 / 朝向',
+  '④ 底圖：墊一張真實平面圖描著畫，只供參考、不會匯出',
+  '⑤ 地圖管理：地圖庫(maps.json)讀入/下載/切換、本圖名稱/尺寸/外牆/鏡像、單張匯入匯出、▶測試戰鬥——都在這分頁的左側面板(空間大、附說明)。檢視(格線/適配/復原/重做)留在右上、各分頁都能用。',
+  '',
+  '【門/窗嵌牆】門、或破壞物(落地窗/有矮牆窗/可破壞牆段)畫在牆上會自動把該段牆切出缺口、嵌進去；移動後可用屬性面板「切出牆缺口」重切。',
+  '【畫布】左鍵放置/拖曳 · 右鍵刪除 · 中鍵或空白+拖曳=平移 · 滾輪=縮放(繞游標)',
+  '左側工具列依分頁切換；右側屬性面板編輯選取物的精確數值。',
+  '',
+  '【地圖庫 maps.json】一個檔裝多張地圖：讀入整份 → 下拉切換 / ＋新增 / 🗑刪除 / 改鍵名 → 下載整份。檔案開頭有 _index 目錄(鍵→地圖名)方便閱讀，讀取時自動略過、不影響地圖。',
+  '【本圖】名稱=顯示用 label；可從範本或單張 JSON 開新的一張(會覆蓋目前這張)。',
+  '【⇄ ⇅ 鏡像】把目前這張左右/上下翻成「庫裡新的一張」(保留原圖)＝做變體的起點：',
+  '         鏡像後在新圖上改進/撤點、重配敵人，存成不同地圖＝同一基底多重利用。',
+  '【▶ 測試戰鬥】把目前這張帶進遊戲自由戰鬥試打，結束/離開回編輯器(工作區會自動還原)。',
+  '',
+  '【比例尺】地圖左下角的方框＝1 公尺(長×寬)，供比例參考。牆寬＝20cm(8px)；承重牆平行畫兩條即可。',
+  '【區域地形】拖框放置有面積的地形，材質＝移動/視線/射線三軸組合：',
+  '         實體(柱/建築,全擋) · 大型掩體(車輛,擋視+機率擋彈) · 壕溝/欄杆(走不過但看穿打穿) · 矮掩體叢(可越看越射+減速) · 煙幕(走得過打得過但看不穿)。',
+  '【踩雷】低矮牆/擋移動的破壞物/擋移動的區域別壓在 waypoint 連線上——敵人無真尋路會卡牆(會以紅線標示)。',
+].join('\n');
+// 中世紀正規 key（與 index.html 的 ENEMY_TYPES 同步；改一邊要改另一邊）。
+// **編輯器只提供這組**——舊的 grunt/dog/heavy_* 仍能載入舊地圖（index 的 LEGACY_ENEMY_ALIAS 會轉），
+// 但放置工具選不到，新地圖自然只會用到中世紀 key。
+const ENEMY_TYPE_IDS = ['levy', 'footman', 'footman_flank', 'spearman', 'shieldman', 'wolf', 'archer', 'arbalest', 'manatarms', 'serjeant', 'civilian'];
+const ENEMY_META = {
+  levy:          { name: '農兵',        hue: 40,  cone: 45, range: 54 },
+  footman:       { name: '徒步兵',      hue: 12,  cone: 45, range: 66 },
+  footman_flank: { name: '徒步兵(包抄)', hue: 26,  cone: 45, range: 66 },
+  spearman:      { name: '槍兵',        hue: 190, cone: 45, range: 104 },
+  shieldman:     { name: '盾兵',        hue: 210, cone: 45, range: 66 },
+  wolf:          { name: '戰狼',        hue: 45,  cone: 80, range: 34 },
+  archer:        { name: '弓手',        hue: 100, cone: 45, range: 1200 },
+  arbalest:      { name: '弩手',        hue: 260, cone: 45, range: 1300 },
+  manatarms:     { name: '披甲士',      hue: 280, cone: 45, range: 58 },
+  serjeant:      { name: '軍士',        hue: 320, cone: 45, range: 62 },
+  civilian:      { name: '平民',        hue: 150, cone: 45, range: 38 },
+  // 舊 key：只為了讓既有地圖載入後畫得出來（工具列不提供）
+  grunt:       { name: '徒步兵(舊key)', hue: 12,  cone: 45, range: 66 },
+  grunt_flank: { name: '徒步兵包抄(舊key)', hue: 26, cone: 45, range: 66 },
+  dog:         { name: '戰狼(舊key)',   hue: 45,  cone: 80, range: 34 },
+  heavy_lmg:   { name: '軍士(舊key)',   hue: 320, cone: 45, range: 62 },
+  heavy_shot:  { name: '披甲士(舊key)', hue: 280, cone: 45, range: 58 },
+  civ:         { name: '平民(舊key)',   hue: 150, cone: 45, range: 38 },
+};
+const PERSONALITIES = ['(預設)', 'rusher', 'flanker', 'holder'];
+const WP_TAGS = ['patrol', 'cover', 'flank', 'vantage', 'rush', 'choke', 'spawn'];
+// 地圖 archetype（類型）清單＝設計待辦＋本圖下拉。與 index.html 的 MAP_ARCHETYPES 同步（改一邊要改另一邊）。
+const MAP_ARCHETYPES = [
+  { id: 'open', name: '開闊庭院' }, { id: 'facility', name: '門禁設施' }, { id: 'corridor', name: '雙線哨廊' },
+  { id: 'outpost', name: '前哨站' }, { id: 'urban', name: '街區' }, { id: 'vault', name: '金庫/保險庫' },
+  { id: 'cqb', name: '狹巷/CQB' }, { id: 'warehouse', name: '倉儲' }, { id: 'field', name: '郊野' },
+  { id: 'compound', name: '聚落/院落' }, { id: 'choke', name: '隘口/橋' },
+];
+const MAP_ARCHETYPE_IDS = MAP_ARCHETYPES.map(a => a.id);
+const DESTRUCT_PRESETS = [
+  { name: '木箱',     intact: 'lowwall', broken: 'flat',    hp: 30 },
+  { name: '落地窗',   intact: 'glass',   broken: 'flat',    hp: 40 },
+  { name: '有矮牆窗', intact: 'glass',   broken: 'lowwall', hp: 40 },
+  { name: '全遮蔽',   intact: 'wall',    broken: 'lowwall', hp: 60 },
+  { name: '鐵絲網',   intact: 'fence',   broken: 'fence',   hp: 9999 },
+];
+const DFORM_MOVE = { wall: true, glass: true, lowwall: 'slow', fence: true, flat: false };  // 擋移動的形態(非 flat)＝邊穿越＝AI 卡牆風險
+const blocksMove = (form) => DFORM_MOVE[form] !== false;
+// 區域地形材質（與 index.html 的 MATERIALS 同步；move/los/bullet 三軸）
+const MATERIALS = {
+  solid:    { name: '實體',     move: true,   los: true,  bullet: 'block', col: '74,85,102' },
+  cover:    { name: '大型掩體', move: true,   los: true,  bullet: 'prob',  col: '96,84,68' },
+  barrier:  { name: '壕溝/欄杆', move: true,  los: false, bullet: 'pass',  col: '120,128,140' },
+  lowcover: { name: '矮掩體叢', move: 'slow', los: false, bullet: 'prob',  col: '120,104,72' },
+  smoke:    { name: '煙幕',     move: false,  los: true,  bullet: 'pass',  col: '150,150,158' },
+};
+const MATERIAL_IDS = Object.keys(MATERIALS);
+const blocksMoveArea = (mat) => (MATERIALS[mat] || MATERIALS.solid).move !== false;   // 擋移動的區域＝邊穿越＝AI 卡牆風險
+function segHitsRect(a, b, r) {   // 線段是否打到矩形（端點在內 或 與任一邊相交）
+  const x2 = r.x + r.w, y2 = r.y + r.h;
+  if ((a.x >= r.x && a.x <= x2 && a.y >= r.y && a.y <= y2) || (b.x >= r.x && b.x <= x2 && b.y >= r.y && b.y <= y2)) return true;
+  const c0 = { x: r.x, y: r.y }, c1 = { x: x2, y: r.y }, c2 = { x: x2, y: y2 }, c3 = { x: r.x, y: y2 };
+  return segIntersect(a, b, c0, c1) || segIntersect(a, b, c1, c2) || segIntersect(a, b, c2, c3) || segIntersect(a, b, c3, c0);
+}
+let areaMat = 'solid';   // 區域工具目前材質
+function matDesc(mat) {   // 材質三軸的人讀說明
+  const m = MATERIALS[mat] || MATERIALS.solid;
+  const mv = m.move === true ? '擋移動' : m.move === 'slow' ? '減速(敵繞行)' : '可穿越';
+  const lo = m.los ? '擋視線' : '可看穿';
+  const bu = m.bullet === 'block' ? '擋子彈' : m.bullet === 'prob' ? '機率擋彈' : '穿子彈';
+  return mv + ' · ' + lo + ' · ' + bu;
+}
+
+/* 範本（現有地圖快照，可載入再編輯；來源 index.html 的 MAPS）。 */
+const TEMPLATES = JSON.parse('{"alpha":{"label":"開闊庭院","walls":[{"x1":40,"y1":40,"x2":1240,"y2":40},{"x1":1240,"y1":40,"x2":1240,"y2":680},{"x1":1240,"y1":680,"x2":40,"y2":680},{"x1":40,"y1":680,"x2":40,"y2":40},{"x1":420,"y1":240,"x2":480,"y2":240},{"x1":480,"y1":240,"x2":480,"y2":300},{"x1":480,"y1":300,"x2":420,"y2":300},{"x1":420,"y1":300,"x2":420,"y2":240},{"x1":420,"y1":420,"x2":480,"y2":420},{"x1":480,"y1":420,"x2":480,"y2":480},{"x1":480,"y1":480,"x2":420,"y2":480},{"x1":420,"y1":480,"x2":420,"y2":420},{"x1":640,"y1":240,"x2":700,"y2":240},{"x1":700,"y1":240,"x2":700,"y2":300},{"x1":700,"y1":300,"x2":640,"y2":300},{"x1":640,"y1":300,"x2":640,"y2":240},{"x1":640,"y1":420,"x2":700,"y2":420},{"x1":700,"y1":420,"x2":700,"y2":480},{"x1":700,"y1":480,"x2":640,"y2":480},{"x1":640,"y1":480,"x2":640,"y2":420},{"x1":820,"y1":240,"x2":880,"y2":240},{"x1":880,"y1":240,"x2":880,"y2":300},{"x1":880,"y1":300,"x2":820,"y2":300},{"x1":820,"y1":300,"x2":820,"y2":240},{"x1":820,"y1":420,"x2":880,"y2":420},{"x1":880,"y1":420,"x2":880,"y2":480},{"x1":880,"y1":480,"x2":820,"y2":480},{"x1":820,"y1":480,"x2":820,"y2":420}],"doors":[],"lowWalls":[],"buttons":[],"bushes":[{"x":200,"y":300,"w":170,"h":130},{"x":480,"y":120,"w":160,"h":130},{"x":480,"y":470,"w":160,"h":130},{"x":880,"y":300,"w":170,"h":130}],"destructibles":[{"x1":500,"y1":220,"x2":500,"y2":340,"hp":30,"intact":"lowwall","broken":"flat"},{"x1":720,"y1":380,"x2":720,"y2":500,"hp":40,"intact":"glass","broken":"lowwall"},{"x1":800,"y1":220,"x2":800,"y2":340,"hp":60,"intact":"wall","broken":"lowwall"},{"x1":1040,"y1":220,"x2":1040,"y2":340,"hp":9999,"intact":"fence","broken":"fence"}],"areas":[{"x":980,"y":90,"w":120,"h":80,"mat":"lowcover"},{"x":1090,"y":220,"w":70,"h":90,"mat":"cover"},{"x":980,"y":420,"w":110,"h":100,"mat":"smoke"},{"x":980,"y":560,"w":160,"h":60,"mat":"barrier"}],"waypoints":[{"id":0,"pos":{"x":130,"y":360},"tags":["patrol","spawn"]},{"id":1,"pos":{"x":340,"y":180},"tags":["cover"]},{"id":2,"pos":{"x":340,"y":360},"tags":["patrol"]},{"id":3,"pos":{"x":340,"y":540},"tags":["cover"]},{"id":4,"pos":{"x":560,"y":180},"tags":["flank"]},{"id":5,"pos":{"x":560,"y":360},"tags":["choke"]},{"id":6,"pos":{"x":560,"y":540},"tags":["flank"]},{"id":7,"pos":{"x":760,"y":180},"tags":["flank","vantage"]},{"id":8,"pos":{"x":760,"y":360},"tags":["choke"]},{"id":9,"pos":{"x":760,"y":540},"tags":["flank","vantage"]},{"id":10,"pos":{"x":960,"y":180},"tags":["vantage"]},{"id":11,"pos":{"x":960,"y":360},"tags":["patrol"]},{"id":12,"pos":{"x":960,"y":540},"tags":["vantage"]},{"id":13,"pos":{"x":1140,"y":360},"tags":["patrol"]}],"edges":[[0,2],[1,2],[2,3],[4,5],[5,6],[7,8],[8,9],[10,11],[11,12],[1,4],[4,7],[7,10],[2,5],[5,8],[8,11],[3,6],[6,9],[9,12],[11,13]],"entryPoints":[{"x":110,"y":360}],"extractionPoints":[{"x":1190,"y":360}],"enemySpawns":[{"nodeId":5,"personality":"flanker","facing":3.141592653589793},{"nodeId":8,"personality":"rusher","facing":3.141592653589793},{"nodeId":7,"personality":"flanker","facing":3.141592653589793},{"nodeId":12,"type":"heavy_shot","facing":3.141592653589793}]},"bravo":{"label":"門禁設施","walls":[{"x1":40,"y1":40,"x2":1240,"y2":40},{"x1":1240,"y1":40,"x2":1240,"y2":680},{"x1":1240,"y1":680,"x2":40,"y2":680},{"x1":40,"y1":680,"x2":40,"y2":40},{"x1":460,"y1":40,"x2":460,"y2":300},{"x1":460,"y1":420,"x2":460,"y2":680},{"x1":820,"y1":40,"x2":820,"y2":300},{"x1":820,"y1":420,"x2":820,"y2":680}],"doors":[{"id":"d1","x1":460,"y1":300,"x2":460,"y2":420,"open":false},{"id":"d2","x1":820,"y1":300,"x2":820,"y2":420,"open":false}],"lowWalls":[{"x1":600,"y1":360,"x2":700,"y2":360},{"x1":1000,"y1":420,"x2":1000,"y2":520}],"buttons":[{"id":"b1","x":640,"y":150,"doorId":"d2"}],"waypoints":[{"id":0,"pos":{"x":150,"y":360},"tags":["patrol","spawn"]},{"id":1,"pos":{"x":360,"y":360},"tags":["patrol"]},{"id":2,"pos":{"x":560,"y":360},"tags":["choke"]},{"id":3,"pos":{"x":640,"y":200},"tags":["cover","flank"]},{"id":4,"pos":{"x":640,"y":520},"tags":["cover","flank"]},{"id":5,"pos":{"x":740,"y":360},"tags":["choke"]},{"id":6,"pos":{"x":940,"y":360},"tags":["vantage"]},{"id":7,"pos":{"x":1180,"y":360},"tags":["patrol"]}],"edges":[[0,1],[1,2],[2,3],[2,4],[3,5],[4,5],[5,6],[6,7]],"entryPoints":[{"x":110,"y":360}],"extractionPoints":[{"x":1190,"y":360}],"enemySpawns":[{"nodeId":2,"personality":"flanker"},{"nodeId":3,"type":"dog"},{"nodeId":4,"type":"heavy_lmg"},{"nodeId":6,"type":"heavy_shot"}],"prisoners":[{"x":980,"y":480}]},"outpost":{"label":"前哨站","walls":[{"x1":40,"y1":40,"x2":1240,"y2":40},{"x1":1240,"y1":40,"x2":1240,"y2":680},{"x1":1240,"y1":680,"x2":40,"y2":680},{"x1":40,"y1":680,"x2":40,"y2":40},{"x1":460,"y1":300,"x2":460,"y2":420},{"x1":880,"y1":300,"x2":880,"y2":420},{"x1":380,"y1":180,"x2":440,"y2":180},{"x1":440,"y1":180,"x2":440,"y2":240},{"x1":440,"y1":240,"x2":380,"y2":240},{"x1":380,"y1":240,"x2":380,"y2":180},{"x1":380,"y1":480,"x2":440,"y2":480},{"x1":440,"y1":480,"x2":440,"y2":540},{"x1":440,"y1":540,"x2":380,"y2":540},{"x1":380,"y1":540,"x2":380,"y2":480},{"x1":800,"y1":180,"x2":860,"y2":180},{"x1":860,"y1":180,"x2":860,"y2":240},{"x1":860,"y1":240,"x2":800,"y2":240},{"x1":800,"y1":240,"x2":800,"y2":180},{"x1":800,"y1":480,"x2":860,"y2":480},{"x1":860,"y1":480,"x2":860,"y2":540},{"x1":860,"y1":540,"x2":800,"y2":540},{"x1":800,"y1":540,"x2":800,"y2":480}],"doors":[],"lowWalls":[],"buttons":[],"bushes":[{"x":300,"y":300,"w":140,"h":120},{"x":600,"y":170,"w":160,"h":130},{"x":600,"y":430,"w":160,"h":130},{"x":900,"y":300,"w":160,"h":120}],"waypoints":[{"id":0,"pos":{"x":130,"y":360},"tags":["patrol","spawn"]},{"id":1,"pos":{"x":340,"y":360},"tags":["patrol"]},{"id":2,"pos":{"x":560,"y":180},"tags":["cover","flank"]},{"id":3,"pos":{"x":560,"y":540},"tags":["cover","flank"]},{"id":4,"pos":{"x":560,"y":360},"tags":["choke"]},{"id":5,"pos":{"x":760,"y":360},"tags":["patrol"]},{"id":6,"pos":{"x":980,"y":180},"tags":["cover","flank"]},{"id":7,"pos":{"x":980,"y":540},"tags":["cover","flank"]},{"id":8,"pos":{"x":980,"y":360},"tags":["choke"]},{"id":9,"pos":{"x":1140,"y":360},"tags":["patrol"]}],"edges":[[0,1],[1,2],[1,3],[2,4],[3,4],[4,5],[5,6],[5,7],[6,8],[7,8],[8,9]],"entryPoints":[{"x":110,"y":360}],"extractionPoints":[{"x":1190,"y":360}],"enemySpawns":[{"nodeId":4,"personality":"flanker","facing":3.141592653589793},{"nodeId":3,"personality":"rusher","facing":3.141592653589793},{"nodeId":8,"type":"heavy_lmg","facing":3.141592653589793},{"nodeId":7,"type":"heavy_shot","facing":3.141592653589793}],"prisoners":[]},"lanes":{"label":"雙線哨廊","walls":[{"x1":40,"y1":40,"x2":1240,"y2":40},{"x1":1240,"y1":40,"x2":1240,"y2":680},{"x1":1240,"y1":680,"x2":40,"y2":680},{"x1":40,"y1":680,"x2":40,"y2":40}],"doors":[],"buttons":[],"lowWalls":[{"x1":60,"y1":270,"x2":300,"y2":270},{"x1":380,"y1":270,"x2":520,"y2":270},{"x1":600,"y1":270,"x2":720,"y2":270},{"x1":800,"y1":270,"x2":920,"y2":270},{"x1":1000,"y1":270,"x2":1220,"y2":270},{"x1":60,"y1":450,"x2":300,"y2":450},{"x1":380,"y1":450,"x2":520,"y2":450},{"x1":600,"y1":450,"x2":720,"y2":450},{"x1":800,"y1":450,"x2":920,"y2":450},{"x1":1000,"y1":450,"x2":1220,"y2":450}],"bushes":[{"x":200,"y":120,"w":150,"h":120},{"x":600,"y":300,"w":160,"h":120},{"x":820,"y":470,"w":160,"h":120}],"waypoints":[{"id":0,"pos":{"x":130,"y":360},"tags":["patrol","spawn"]},{"id":1,"pos":{"x":340,"y":180},"tags":["cover"]},{"id":2,"pos":{"x":340,"y":360},"tags":["patrol"]},{"id":3,"pos":{"x":340,"y":540},"tags":["cover"]},{"id":4,"pos":{"x":560,"y":180},"tags":["flank"]},{"id":5,"pos":{"x":560,"y":360},"tags":["patrol"]},{"id":6,"pos":{"x":560,"y":540},"tags":["flank"]},{"id":7,"pos":{"x":760,"y":180},"tags":["flank"]},{"id":8,"pos":{"x":760,"y":360},"tags":["choke"]},{"id":9,"pos":{"x":760,"y":540},"tags":["flank"]},{"id":10,"pos":{"x":960,"y":180},"tags":["vantage"]},{"id":11,"pos":{"x":960,"y":360},"tags":["patrol"]},{"id":12,"pos":{"x":960,"y":540},"tags":["vantage"]},{"id":13,"pos":{"x":1140,"y":360},"tags":["patrol"]}],"edges":[[0,2],[1,2],[2,3],[4,5],[5,6],[7,8],[8,9],[10,11],[11,12],[1,4],[4,7],[7,10],[2,5],[5,8],[8,11],[3,6],[6,9],[9,12],[11,13]],"entryPoints":[{"x":110,"y":360}],"extractionPoints":[{"x":1190,"y":360}],"enemySpawns":[{"nodeId":2,"personality":"rusher","facing":3.141592653589793},{"nodeId":1,"personality":"flanker","facing":3.141592653589793},{"nodeId":8,"type":"heavy_lmg","facing":3.141592653589793},{"nodeId":12,"type":"heavy_shot","facing":3.141592653589793}]}}');
+
+/* ---- 幾何 ---- */
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function closestOnSeg(p, a, b) {
+  const abx = b.x - a.x, aby = b.y - a.y, len2 = abx * abx + aby * aby || 1;
+  const t = clamp(((p.x - a.x) * abx + (p.y - a.y) * aby) / len2, 0, 1);
+  return { x: a.x + abx * t, y: a.y + aby * t };
+}
+const distToSeg = (p, a, b) => dist(p, closestOnSeg(p, a, b));
+function segIntersect(a, b, c, d) {
+  const rx = b.x - a.x, ry = b.y - a.y, sx = d.x - c.x, sy = d.y - c.y, rxs = rx * sy - ry * sx;
+  if (Math.abs(rxs) < 1e-9) return false;
+  const qpx = c.x - a.x, qpy = c.y - a.y;
+  const t = (qpx * sy - qpy * sx) / rxs, u = (qpx * ry - qpy * rx) / rxs;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+const ptInRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+const SEG2 = (s) => [{ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }];
+const rectWalls = (x1, y1, x2, y2) => [
+  { layer: 'walls', x1, y1, x2, y2: y1 }, { layer: 'walls', x1: x2, y1, x2, y2 },
+  { layer: 'walls', x1: x2, y1: y2, x2: x1, y2 }, { layer: 'walls', x1, y1: y2, x2: x1, y2: y1 },
+];
+
+/* =====================================================================
+   地圖特徵（prefab）— build(box, opt) → 一批基本物件描述（{layer,…}）。
+   box = {x,y,w,h}（已吸附）；opt = 整數，循環特徵的子選項（門側/方向/角落…）。
+   產出皆為扁平基本物件（牆/低矮牆/門/破壞物），放下後即一般物件；
+   要事後整組縮放＝框選它們成暫時群組（不存持久 _gid）。
+   ===================================================================== */
+const FEATURES = [
+  { id: 'pillar', name: '柱子', opts: 0, build: (b) => rectWalls(b.x, b.y, b.x + b.w, b.y + b.h) },
+  { id: 'room', name: '簡易房間', opts: 4, optName: ['缺口:上', '缺口:右', '缺口:下', '缺口:左'], build: (b, o) => roomWalls(b, o, false) },
+  { id: 'roomdoor', name: '房間+真門', opts: 4, optName: ['門:上', '門:右', '門:下', '門:左'], build: (b, o) => roomWalls(b, o, true) },
+  { id: 'corridor', name: '長廊', opts: 2, optName: ['水平', '垂直'], build: (b, o) => o % 2 === 0
+      ? [{ layer: 'walls', x1: b.x, y1: b.y, x2: b.x + b.w, y2: b.y }, { layer: 'walls', x1: b.x, y1: b.y + b.h, x2: b.x + b.w, y2: b.y + b.h }]
+      : [{ layer: 'walls', x1: b.x, y1: b.y, x2: b.x, y2: b.y + b.h }, { layer: 'walls', x1: b.x + b.w, y1: b.y, x2: b.x + b.w, y2: b.y + b.h }] },
+  { id: 'corner', name: '轉角', opts: 4, optName: ['左上', '右上', '右下', '左下'], build: (b, o) => cornerWalls(b, o) },
+  { id: 'window', name: '窗牆', opts: 2, optName: ['水平', '垂直'], build: (b, o) => windowWall(b, o) },
+  { id: 'covers', name: '掩體叢', opts: 0, build: (b) => coverCluster(b) },
+  { id: 'cross', name: '十字路口', opts: 0, build: (b) => crossRoads(b) },
+];
+function roomWalls(b, o, realDoor) {
+  const x1 = b.x, y1 = b.y, x2 = b.x + b.w, y2 = b.y + b.h, side = o % 4;
+  const gw = Math.max(40, Math.min(side % 2 === 0 ? b.w : b.h, 120) * 0.5);  // 缺口寬
+  const out = [];
+  const sideSeg = (sx1, sy1, sx2, sy2, gapped) => {
+    if (!gapped) { out.push({ layer: 'walls', x1: sx1, y1: sy1, x2: sx2, y2: sy2 }); return; }
+    const mx = (sx1 + sx2) / 2, my = (sy1 + sy2) / 2, horiz = Math.abs(sx2 - sx1) > Math.abs(sy2 - sy1);
+    if (horiz) { out.push({ layer: 'walls', x1: sx1, y1: sy1, x2: mx - gw / 2, y2: sy1 }); out.push({ layer: 'walls', x1: mx + gw / 2, y1: sy1, x2: sx2, y2: sy2 }); if (realDoor) out.push({ layer: 'doors', x1: mx - gw / 2, y1: sy1, x2: mx + gw / 2, y2: sy1 }); }
+    else { out.push({ layer: 'walls', x1: sx1, y1: sy1, x2: sx1, y2: my - gw / 2 }); out.push({ layer: 'walls', x1: sx1, y1: my + gw / 2, x2: sx2, y2: sy2 }); if (realDoor) out.push({ layer: 'doors', x1: sx1, y1: my - gw / 2, x2: sx1, y2: my + gw / 2 }); }
+  };
+  sideSeg(x1, y1, x2, y1, side === 0); // 上
+  sideSeg(x2, y1, x2, y2, side === 1); // 右
+  sideSeg(x1, y2, x2, y2, side === 2); // 下
+  sideSeg(x1, y1, x1, y2, side === 3); // 左
+  return out;
+}
+function cornerWalls(b, o) {
+  const x1 = b.x, y1 = b.y, x2 = b.x + b.w, y2 = b.y + b.h;
+  const c = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]][o % 4];   // 角落座標
+  const hEnd = (o % 4 === 1 || o % 4 === 2) ? x1 : x2;          // 水平段往對側
+  const vEnd = (o % 4 === 2 || o % 4 === 3) ? y1 : y2;          // 垂直段往對側
+  return [{ layer: 'walls', x1: c[0], y1: c[1], x2: hEnd, y2: c[1] }, { layer: 'walls', x1: c[0], y1: c[1], x2: c[0], y2: vEnd }];
+}
+function windowWall(b, o) {
+  const horiz = o % 2 === 0;
+  if (horiz) { const y = b.y + b.h / 2, a = b.x + b.w / 3, c = b.x + 2 * b.w / 3; return [
+    { layer: 'walls', x1: b.x, y1: y, x2: a, y2: y }, { layer: 'destructibles', x1: a, y1: y, x2: c, y2: y, intact: 'glass', broken: 'flat', hp: 40 }, { layer: 'walls', x1: c, y1: y, x2: b.x + b.w, y2: y }]; }
+  const x = b.x + b.w / 2, a = b.y + b.h / 3, c = b.y + 2 * b.h / 3; return [
+    { layer: 'walls', x1: x, y1: b.y, x2: x, y2: a }, { layer: 'destructibles', x1: x, y1: a, x2: x, y2: c, intact: 'glass', broken: 'flat', hp: 40 }, { layer: 'walls', x1: x, y1: c, x2: x, y2: b.y + b.h }];
+}
+function coverCluster(b) {                                  // 3 段短低矮牆掩體（依 box 推算、無隨機）
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, u = Math.min(b.w, b.h) * 0.28;
+  return [
+    { layer: 'lowWalls', x1: b.x + b.w * 0.2, y1: cy, x2: b.x + b.w * 0.2 + u, y2: cy },
+    { layer: 'lowWalls', x1: cx, y1: b.y + b.h * 0.25, x2: cx, y2: b.y + b.h * 0.25 + u },
+    { layer: 'lowWalls', x1: b.x + b.w * 0.7, y1: b.y + b.h * 0.7, x2: b.x + b.w * 0.7 + u, y2: b.y + b.h * 0.7 },
+  ];
+}
+function crossRoads(b) {                                    // 四邊各留中央缺口＝十字通道
+  const x1 = b.x, y1 = b.y, x2 = b.x + b.w, y2 = b.y + b.h, gw = Math.min(b.w, b.h) * 0.34;
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, out = [];
+  out.push({ layer: 'walls', x1, y1, x2: mx - gw / 2, y2: y1 }, { layer: 'walls', x1: mx + gw / 2, y1, x2, y2: y1 });   // 上
+  out.push({ layer: 'walls', x1, y1: y2, x2: mx - gw / 2, y2 }, { layer: 'walls', x1: mx + gw / 2, y1: y2, x2, y2 });   // 下
+  out.push({ layer: 'walls', x1, y1, x2: x1, y2: my - gw / 2 }, { layer: 'walls', x1, y1: my + gw / 2, x2: x1, y2 });   // 左
+  out.push({ layer: 'walls', x1: x2, y1, x2, y2: my - gw / 2 }, { layer: 'walls', x1: x2, y1: my + gw / 2, x2, y2 });   // 右
+  return out;
+}
+
+/* =====================================================================
+   模型（＝遊戲地圖物件）。waypoint 索引即 id；刪點重編號。
+   ===================================================================== */
+function blankMap() {
+  return { label: '新地圖', category: 'open', tier: 1, roles: ['normal'], width: WORLD.w, height: WORLD.h, walls: [], doors: [], lowWalls: [], bushes: [], destructibles: [], areas: [],
+    buttons: [], waypoints: [], edges: [], entryPoints: [], extractionPoints: [], accessPoints: [], enemySpawns: [], prisoners: [] };
+}
+let map = blankMap();
+
+function contentExtent(m) {                               // 內容最大座標（推估缺尺寸的舊地圖用）
+  let mx = 0, my = 0; const ck = (x, y) => { if (x > mx) mx = x; if (y > my) my = y; };
+  for (const s of m.walls.concat(m.lowWalls, m.doors, m.destructibles)) { ck(s.x1, s.y1); ck(s.x2, s.y2); }
+  for (const b of m.bushes) ck(b.x + b.w, b.y + b.h);
+  for (const z of (m.areas || [])) ck(z.x + z.w, z.y + z.h);
+  for (const w of m.waypoints) if (w.pos) ck(w.pos.x, w.pos.y);
+  for (const arr of [m.entryPoints, m.extractionPoints, m.accessPoints || [], m.buttons, m.prisoners]) for (const p of arr) ck(p.x, p.y);
+  return { mx, my };
+}
+function normalize(m) {                                   // 確保所有陣列存在 + id 連續 + 清掉壞邊/壞 spawn
+  const A = ['walls', 'doors', 'lowWalls', 'bushes', 'destructibles', 'areas', 'buttons', 'waypoints', 'edges', 'entryPoints', 'extractionPoints', 'accessPoints', 'enemySpawns', 'prisoners'];
+  for (const k of A) if (!Array.isArray(m[k])) m[k] = [];
+  m.areas.forEach(z => { if (!MATERIALS[z.mat]) z.mat = 'solid'; });
+  if (typeof m.label !== 'string') m.label = '新地圖';
+  if (!MAP_ARCHETYPE_IDS.includes(m.category)) m.category = 'open';   // 地圖類型(archetype)
+  if (!(m.tier >= 1 && m.tier <= 3)) m.tier = 1;                       // 難度階 1~3（roadmap 依進度抽）
+  if (!Array.isArray(m.roles) || !m.roles.length) m.roles = ['normal']; else m.roles = m.roles.filter(r => r === 'normal' || r === 'boss');   // 進哪個池
+  if (!(m.width > 0) || !(m.height > 0)) { const e = contentExtent(m); m.width = Math.max(WORLD.w, Math.ceil((e.mx + 40) / 20) * 20); m.height = Math.max(WORLD.h, Math.ceil((e.my + 40) / 20) * 20); }   // 舊地圖無尺寸→由內容推估
+  m.width = Math.max(200, Math.round(m.width)); m.height = Math.max(200, Math.round(m.height));
+  m.waypoints.forEach((w, i) => { w.id = i; if (!w.pos) w.pos = { x: 0, y: 0 }; if (!Array.isArray(w.tags)) w.tags = []; });
+  const N = m.waypoints.length;
+  m.edges = m.edges.filter(e => Array.isArray(e) && e.length === 2 && e[0] !== e[1] && e[0] >= 0 && e[1] >= 0 && e[0] < N && e[1] < N)
+    .map(e => (e[0] < e[1] ? [e[0], e[1]] : [e[1], e[0]]));
+  // 去重邊
+  const seen = new Set(); m.edges = m.edges.filter(e => { const k = e[0] + '-' + e[1]; if (seen.has(k)) return false; seen.add(k); return true; });
+  m.enemySpawns = m.enemySpawns.filter(s => s && s.nodeId >= 0 && s.nodeId < N);
+  return m;
+}
+function loadMap(obj, keepView) {
+  map = normalize(JSON.parse(JSON.stringify(obj)));
+  sel = null; linkFrom = null; undoStack = []; redoStack = [];
+  if (!keepView && typeof fitView === 'function') fitView();
+  if (typeof rebuildUI === 'function') rebuildUI();
+}
+
+/* ---- 撤銷/重做 ---- */
+let undoStack = [], redoStack = [];
+const snapshot = () => JSON.stringify(map);
+function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 60) undoStack.shift(); redoStack.length = 0; }
+function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); map = normalize(JSON.parse(undoStack.pop())); sel = null; linkFrom = null; rebuildUI(); }
+function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); map = normalize(JSON.parse(redoStack.pop())); sel = null; linkFrom = null; rebuildUI(); }
+
+/* ---- id 產生 ---- */
+function nextId(arr, prefix) {
+  let n = 1; const ids = new Set(arr.map(o => o.id));
+  while (ids.has(prefix + n)) n++;
+  return prefix + n;
+}
+
+/* =====================================================================
+   模型操作（handlers 與 headless 測試共用）
+   ===================================================================== */
+const SEG_LAYERS = { wall: 'walls', door: 'doors', lowwall: 'lowWalls', destruct: 'destructibles' };
+function addSegment(layerKey, x1, y1, x2, y2) {
+  pushUndo();
+  const seg = { x1, y1, x2, y2 };
+  if (layerKey === 'door') { seg.id = nextId(map.doors, 'd'); seg.open = false; map.doors.push(seg); }
+  else if (layerKey === 'destruct') { const p = DESTRUCT_PRESETS[destructPreset]; seg.hp = p.hp; seg.intact = p.intact; seg.broken = p.broken; map.destructibles.push(seg); }
+  else map[SEG_LAYERS[layerKey]].push(seg);
+  return seg;
+}
+function addBush(x, y, w, h) { pushUndo(); const r = { x: Math.min(x, x + w), y: Math.min(y, y + h), w: Math.abs(w), h: Math.abs(h) }; map.bushes.push(r); return r; }
+function addArea(x, y, w, h) { pushUndo(); const r = { x: Math.min(x, x + w), y: Math.min(y, y + h), w: Math.abs(w), h: Math.abs(h), mat: areaMat }; map.areas.push(r); return r; }
+function addButton(x, y) { pushUndo(); const b = { id: nextId(map.buttons, 'b'), x, y, doorId: (map.doors[0] && map.doors[0].id) || null }; map.buttons.push(b); return b; }
+function addPoint(layerKey, x, y) { pushUndo(); const p = { x, y }; map[ARR_OF[layerKey]].push(p); return p; }
+function addPrisoner(x, y) { pushUndo(); const p = { x, y }; map.prisoners.push(p); return p; }
+
+function addWaypoint(x, y) { pushUndo(); const w = { id: map.waypoints.length, pos: { x, y }, tags: [] }; map.waypoints.push(w); return w; }
+function moveWaypoint(i, x, y) { const w = map.waypoints[i]; if (w) { w.pos.x = x; w.pos.y = y; } }
+function removeWaypoint(i) {                              // 刪點 + 重編號 edges/spawns
+  if (i < 0 || i >= map.waypoints.length) return;
+  pushUndo();
+  map.waypoints.splice(i, 1);
+  map.waypoints.forEach((w, k) => w.id = k);
+  map.edges = map.edges.filter(e => e[0] !== i && e[1] !== i).map(e => [e[0] > i ? e[0] - 1 : e[0], e[1] > i ? e[1] - 1 : e[1]]);
+  map.enemySpawns = map.enemySpawns.filter(s => s.nodeId !== i).map(s => (s.nodeId > i ? Object.assign(s, { nodeId: s.nodeId - 1 }) : s));
+}
+const hasEdge = (a, b) => map.edges.some(e => (e[0] === a && e[1] === b) || (e[0] === b && e[1] === a));
+function toggleEdge(a, b) {
+  if (a === b) return;
+  pushUndo();
+  const lo = Math.min(a, b), hi = Math.max(a, b), idx = map.edges.findIndex(e => e[0] === lo && e[1] === hi);
+  if (idx >= 0) map.edges.splice(idx, 1); else map.edges.push([lo, hi]);
+}
+function removeEdgeNear(p, r) {
+  let bi = -1, bd = r;
+  map.edges.forEach((e, i) => { const d = distToSeg(p, map.waypoints[e[0]].pos, map.waypoints[e[1]].pos); if (d < bd) { bd = d; bi = i; } });
+  if (bi >= 0) { pushUndo(); map.edges.splice(bi, 1); return true; }
+  return false;
+}
+function autoLinkWaypoint(i) {                              // 連到所有「中間無阻隔(牆/低矮牆/擋移動破壞物/擋移動區域)」的點
+  const A = map.waypoints[i]; if (!A) return 0;
+  let added = 0;
+  for (let j = 0; j < map.waypoints.length; j++) {
+    if (j === i) continue; const B = map.waypoints[j].pos;
+    if (edgeBlocked(A.pos, B)) continue;
+    const lo = Math.min(i, j), hi = Math.max(i, j);
+    if (!map.edges.some(e => e[0] === lo && e[1] === hi)) { map.edges.push([lo, hi]); added++; }
+  }
+  return added;
+}
+const MESH_K = 5, GRID_STEP = 150, GRID_WP_PAD = 32;   // 整理鄰居數 / 鋪點網格間距 / 鋪點離障礙的最小淨空
+// 核心（不 pushUndo）：清掉舊邊，依「中間無阻隔候選邊」重建一張乾淨網格——K 最近鄰局部連線 + 保證全圖連通。
+function buildMesh() {
+  const W = map.waypoints, N = W.length;
+  if (N < 2) { map.edges = []; return 0; }
+  const cand = [];   // 所有中間無阻隔的候選邊，依長度排序（短優先）
+  for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) if (!edgeBlocked(W[i].pos, W[j].pos)) cand.push([i, j, dist(W[i].pos, W[j].pos)]);
+  cand.sort((a, b) => a[2] - b[2]);
+  const es = new Set(), deg = new Array(N).fill(0), key = (i, j) => Math.min(i, j) + '-' + Math.max(i, j);
+  for (const [i, j] of cand) if (deg[i] < MESH_K && deg[j] < MESH_K) { const k = key(i, j); if (!es.has(k)) { es.add(k); deg[i]++; deg[j]++; } }   // ① K 最近鄰局部網格
+  const uf = W.map((_, i) => i), find = x => { while (uf[x] !== x) { uf[x] = uf[uf[x]]; x = uf[x]; } return x; };
+  for (const k of es) { const [a, b] = k.split('-').map(Number); uf[find(a)] = find(b); }
+  for (const [i, j] of cand) if (find(i) !== find(j)) { es.add(key(i, j)); uf[find(i)] = find(j); }   // ② 保證連通：最短無阻隔邊接起各連通塊（隔著牆完全不通的區域接不了＝設計問題）
+  map.edges = [...es].map(k => k.split('-').map(Number));
+  return map.edges.length;
+}
+function autoMeshEdges() { pushUndo(); return buildMesh(); }               // 一鍵整理連線
+function clearAllEdges() { if (!map.edges.length) return; pushUndo(); map.edges = []; }
+function pointBlocked(p, pad) {                                            // 點是否落在障礙上/太靠近（不宜放 waypoint）
+  for (const s of moveBlockers()) if (distToSeg(p, { x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }) < pad) return true;
+  for (const z of moveBlockAreas()) if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) return true;
+  return false;
+}
+// 一鍵鋪滿：清掉現有 waypoint/連線，每隔 GRID_STEP 鋪一個點（避開障礙），再自動連成網格。
+// 用法：拉完牆/障礙後按這個＝整張圖一鍵鋪好、保證連通的路網（開放大圖用）。
+function fillGridWaypoints() {
+  pushUndo();
+  map.waypoints = []; map.edges = [];
+  const step = GRID_STEP, pad = GRID_WP_PAD;
+  for (let y = step / 2; y < map.height; y += step)
+    for (let x = step / 2; x < map.width; x += step)
+      if (!pointBlocked({ x, y }, pad)) map.waypoints.push({ id: map.waypoints.length, pos: { x, y }, tags: [] });
+  buildMesh();
+  return map.waypoints.length;
+}
+function findBoundaryWalls() {                              // 貼著外框、且夠長的牆＝邊界外牆
+  if (!map.walls.length) return [];
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const w of map.walls) { minx = Math.min(minx, w.x1, w.x2); miny = Math.min(miny, w.y1, w.y2); maxx = Math.max(maxx, w.x1, w.x2); maxy = Math.max(maxy, w.y1, w.y2); }
+  const near = (a, b) => Math.abs(a - b) <= 2, spanX = (maxx - minx) || 1, spanY = (maxy - miny) || 1;
+  return map.walls.filter(w => {
+    const vert = near(w.x1, w.x2), horiz = near(w.y1, w.y2);
+    if (vert && (near(w.x1, minx) || near(w.x1, maxx)) && Math.abs(w.y2 - w.y1) >= spanY * 0.5) return true;
+    if (horiz && (near(w.y1, miny) || near(w.y1, maxy)) && Math.abs(w.x2 - w.x1) >= spanX * 0.5) return true;
+    return false;
+  });
+}
+function rebuildBoundary() {                                // 依目前尺寸重建邊界外牆（替換舊框）
+  pushUndo();
+  const bw = findBoundaryWalls(); map.walls = map.walls.filter(w => !bw.includes(w));
+  const m = 40; for (const s of rectWalls(m, m, map.width - m, map.height - m)) map.walls.push({ x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2 });
+  clearSel();
+}
+
+const spawnAt = (nodeId) => map.enemySpawns.find(s => s.nodeId === nodeId);
+function setSpawn(nodeId, patch) {
+  pushUndo();
+  let s = spawnAt(nodeId);
+  if (!s) { s = { nodeId, type: 'grunt', facing: Math.PI }; map.enemySpawns.push(s); }
+  Object.assign(s, patch);
+  if (s.personality === '(預設)' || s.personality == null) delete s.personality;
+  return s;
+}
+function removeSpawn(nodeId) { const i = map.enemySpawns.findIndex(s => s.nodeId === nodeId); if (i >= 0) { pushUndo(); map.enemySpawns.splice(i, 1); } }
+
+/* 通用刪除：依 selection 物件移除（群組則整批） */
+function removeSelected() {
+  if (selRefs.length > 1) { removeRefs(selRefs); sel = null; selRefs = []; return; }
+  if (!sel) return;
+  const k = sel.kind;
+  if (k === 'waypoint') { removeWaypoint(sel.i); sel = null; return; }
+  if (k === 'edge') { pushUndo(); const e = sel.e; const idx = map.edges.findIndex(x => x[0] === e[0] && x[1] === e[1]); if (idx >= 0) map.edges.splice(idx, 1); sel = null; return; }
+  if (k === 'spawn') { removeSpawn(sel.nodeId); sel = null; return; }
+  const arrName = ARR_OF[k];
+  if (arrName) { pushUndo(); const arr = map[arrName]; const idx = arr.indexOf(sel.ref); if (idx >= 0) arr.splice(idx, 1); sel = null; }
+}
+const ARR_OF = { wall: 'walls', door: 'doors', lowwall: 'lowWalls', destruct: 'destructibles', bush: 'bushes', area: 'areas', button: 'buttons', entry: 'entryPoints', extract: 'extractionPoints', access: 'accessPoints', prisoner: 'prisoners' };
+function removeRefs(refs) {                                  // 刪除一批物件（群組刪除）
+  if (!refs.length) return; pushUndo();
+  for (const r of refs) { const arr = map[ARR_OF[r.kind]]; if (!arr) continue; const i = arr.indexOf(r.ref); if (i >= 0) arr.splice(i, 1); }
+}
+
+/* ---- 門切牆缺口（門與某牆共線重疊→把牆從門兩端切斷留缺口）---- */
+function cutWallsForDoor(door) {
+  const C = { x: door.x1, y: door.y1 }, D = { x: door.x2, y: door.y2 };
+  if (dist(C, D) < 1) return false;
+  const onLine = (A, B, P) => { const ablen = Math.hypot(B.x - A.x, B.y - A.y) || 1; return Math.abs((B.x - A.x) * (P.y - A.y) - (B.y - A.y) * (P.x - A.x)) / ablen <= 2; };
+  const out = []; let cut = false;
+  for (const w of map.walls) {
+    const A = { x: w.x1, y: w.y1 }, B = { x: w.x2, y: w.y2 }, abx = B.x - A.x, aby = B.y - A.y, ab2 = abx * abx + aby * aby || 1;
+    if (!(onLine(A, B, C) && onLine(A, B, D))) { out.push(w); continue; }   // 非共線→保留
+    let tc = ((C.x - A.x) * abx + (C.y - A.y) * aby) / ab2, td = ((D.x - A.x) * abx + (D.y - A.y) * aby) / ab2;
+    let t0 = clamp(Math.min(tc, td), 0, 1), t1 = clamp(Math.max(tc, td), 0, 1);
+    if (t1 - t0 <= 1e-3) { out.push(w); continue; }                          // 在此牆內無實際重疊
+    cut = true;
+    if (t0 > 1e-3) out.push({ x1: A.x, y1: A.y, x2: A.x + abx * t0, y2: A.y + aby * t0 });
+    if (t1 < 1 - 1e-3) out.push({ x1: A.x + abx * t1, y1: A.y + aby * t1, x2: B.x, y2: B.y });
+    // 中段（門所在）移除
+  }
+  if (cut) map.walls = out;
+  return cut;
+}
+
+/* ---- 放置特徵：build → 推入各陣列 → 回傳建立的 refs（供框選整組）---- */
+function stampFeature(idx, box) {
+  const f = FEATURES[idx]; if (!f) return [];
+  pushUndo();
+  const items = f.build(box, featureOpt), refs = [], doors = [];
+  for (const it of items) {
+    let o, kind;
+    if (it.layer === 'doors') { o = { x1: it.x1, y1: it.y1, x2: it.x2, y2: it.y2, id: nextId(map.doors, 'd'), open: false }; map.doors.push(o); doors.push(o); kind = 'door'; }
+    else if (it.layer === 'destructibles') { o = { x1: it.x1, y1: it.y1, x2: it.x2, y2: it.y2, hp: it.hp, intact: it.intact, broken: it.broken }; map.destructibles.push(o); kind = 'destruct'; }
+    else if (it.layer === 'lowWalls') { o = { x1: it.x1, y1: it.y1, x2: it.x2, y2: it.y2 }; map.lowWalls.push(o); kind = 'lowwall'; }
+    else { o = { x1: it.x1, y1: it.y1, x2: it.x2, y2: it.y2 }; map.walls.push(o); kind = 'wall'; }
+    refs.push({ kind, ref: o });
+  }
+  for (const d of doors) cutWallsForDoor(d);   // 房間+真門：門在缺口、無重疊牆故不切；疊到既有牆才切
+  return refs;
+}
+
+/* ---- 群組（框選的選取集）變換：bbox / 位移 / 縮放 ---- */
+function refBounds(r) {
+  const o = r.ref;
+  if (o.x1 != null) return { minx: Math.min(o.x1, o.x2), miny: Math.min(o.y1, o.y2), maxx: Math.max(o.x1, o.x2), maxy: Math.max(o.y1, o.y2) };
+  if (o.w != null) return { minx: o.x, miny: o.y, maxx: o.x + o.w, maxy: o.y + o.h };
+  return { minx: o.x, miny: o.y, maxx: o.x, maxy: o.y };
+}
+function bboxOfRefs(refs) {
+  if (!refs.length) return null;
+  let b = { minx: Infinity, miny: Infinity, maxx: -Infinity, maxy: -Infinity };
+  for (const r of refs) { const rb = refBounds(r); b.minx = Math.min(b.minx, rb.minx); b.miny = Math.min(b.miny, rb.miny); b.maxx = Math.max(b.maxx, rb.maxx); b.maxy = Math.max(b.maxy, rb.maxy); }
+  return b;
+}
+const refCoords = (r) => { const o = r.ref; return o.x1 != null ? { x1: o.x1, y1: o.y1, x2: o.x2, y2: o.y2 } : o.w != null ? { x: o.x, y: o.y, w: o.w, h: o.h } : { x: o.x, y: o.y }; };
+const setRefCoords = (r, c) => Object.assign(r.ref, c);
+function moveRef(r, dx, dy) { const o = r.ref; if (o.x1 != null) { o.x1 += dx; o.y1 += dy; o.x2 += dx; o.y2 += dy; } else { o.x += dx; o.y += dy; } }
+function scaleRefFrom(r, base, ax, ay, sx, sy) {
+  const o = r.ref, fx = x => ax + (x - ax) * sx, fy = y => ay + (y - ay) * sy;
+  if (base.x1 != null) { o.x1 = fx(base.x1); o.y1 = fy(base.y1); o.x2 = fx(base.x2); o.y2 = fy(base.y2); }
+  else if (base.w != null) { o.x = fx(base.x); o.y = fy(base.y); o.w = Math.max(4, base.w * sx); o.h = Math.max(4, base.h * sy); }
+  else { o.x = fx(base.x); o.y = fy(base.y); }
+}
+
+/* =====================================================================
+   參考底圖（editor-only；不在 map、不匯出；自己的 localStorage 鍵）
+   ===================================================================== */
+const UNDERLAY_KEY = 'homeward_editor_underlay';
+function loadUnderlaySrc(src) {
+  if (typeof Image === 'undefined') return;               // headless：無 Image，略過
+  const img = new Image();
+  img.onload = () => { underlay.img = img; underlay.w = img.width || 1; underlay.h = img.height || 1; underlay.src = src; persistUnderlay(); if (domReady) rebuildInspector(); };
+  img.src = src;
+}
+function loadUnderlayFile(file) {
+  if (!file || typeof FileReader === 'undefined') return;
+  const fr = new FileReader(); fr.onload = () => loadUnderlaySrc(fr.result); fr.readAsDataURL(file);
+}
+function clearUnderlay() { underlay.img = null; underlay.src = null; underlay.w = underlay.h = 0; persistUnderlay(); }
+function persistUnderlay() {
+  try { localStorage.setItem(UNDERLAY_KEY, JSON.stringify({ src: underlay.src, x: underlay.x, y: underlay.y, scale: underlay.scale, rot: underlay.rot, opacity: underlay.opacity, visible: underlay.visible })); } catch (e) { /* 配額不足：底圖不持久化，無妨 */ }
+}
+function restoreUnderlay() {
+  let r = null; try { r = JSON.parse(localStorage.getItem(UNDERLAY_KEY) || 'null'); } catch (e) { return; }
+  if (!r) return;
+  underlay.x = r.x || 0; underlay.y = r.y || 0; underlay.scale = r.scale || 1; underlay.rot = r.rot || 0; underlay.opacity = r.opacity != null ? r.opacity : 0.5; underlay.visible = r.visible !== false;
+  if (r.src) loadUnderlaySrc(r.src);
+}
+const UCORNERS = [[0, 0], [1, 0], [1, 1], [0, 1]];          // TL,TR,BR,BL
+const uWH = () => ({ W: underlay.w * underlay.scale, H: underlay.h * underlay.scale });
+const uCenter = () => { const { W, H } = uWH(); return { x: underlay.x + W / 2, y: underlay.y + H / 2 }; };
+function uHandleWorld(hx, hy) {                              // 旋轉後角點世界座標
+  const { W, H } = uWH(), C = uCenter(), r = underlay.rot || 0, lx = hx * W - W / 2, ly = hy * H - H / 2, c = Math.cos(r), s = Math.sin(r);
+  return { x: C.x + lx * c - ly * s, y: C.y + lx * s + ly * c };
+}
+function uRotHandleWorld() {                                 // 旋轉把手（上方中央外側）
+  const { W, H } = uWH(), C = uCenter(), r = underlay.rot || 0, ly = -H / 2 - wr(28), c = Math.cos(r), s = Math.sin(r);
+  return { x: C.x - ly * s, y: C.y + ly * c };
+}
+function uInside(p) {                                        // 游標是否在（旋轉後的）圖內
+  const { W, H } = uWH(), C = uCenter(), r = -(underlay.rot || 0), dx = p.x - C.x, dy = p.y - C.y, c = Math.cos(r), s = Math.sin(r);
+  const lx = dx * c - dy * s, ly = dx * s + dy * c; return Math.abs(lx) <= W / 2 && Math.abs(ly) <= H / 2;
+}
+function underlayScale(w) {                                  // 等比，錨定對角；旋轉感知
+  const b = drag.base, r = b.rot, hx = drag.h.hx, hy = drag.h.hy, W0 = underlay.w * b.scale, H0 = underlay.h * b.scale;
+  const C0 = { x: b.x + W0 / 2, y: b.y + H0 / 2 }, c = Math.cos(r), s = Math.sin(r);
+  const aLx = (1 - hx) * W0 - W0 / 2, aLy = (1 - hy) * H0 - H0 / 2;
+  const anchor = { x: C0.x + aLx * c - aLy * s, y: C0.y + aLx * s + aLy * c };   // 對角錨點（固定）
+  const dx = w.x - anchor.x, dy = w.y - anchor.y, localX = dx * Math.cos(-r) - dy * Math.sin(-r);  // 沿圖寬軸投影
+  const ns = Math.max(0.02, Math.abs(localX) / (underlay.w || 1));
+  underlay.scale = ns; const newW = underlay.w * ns, newH = underlay.h * ns;
+  const fLx = (1 - hx) * newW - newW / 2, fLy = (1 - hy) * newH - newH / 2;       // 新尺寸下錨角相對中心
+  const Cx = anchor.x - (fLx * c - fLy * s), Cy = anchor.y - (fLx * s + fLy * c);
+  underlay.x = Cx - newW / 2; underlay.y = Cy - newH / 2;
+}
+
+/* =====================================================================
+   匯出 / 匯入
+   ===================================================================== */
+function cleanOf(src) {                                   // 清理任一地圖物件（不動到輸入）：正規化 + waypoint id 連續 + 去執行期欄位
+  const m = normalize(JSON.parse(JSON.stringify(src)));
+  m.waypoints.forEach((w, i) => { w.id = i; });
+  (m.destructibles || []).forEach(d => { delete d.cur; delete d.curHp; });   // 破壞物 cur/curHp、門 open 保留
+  return m;
+}
+function exportClean() { return cleanOf(map); }
+const exportJSON = () => JSON.stringify(exportClean(), null, 2);
+function exportMAPS(key) {
+  const k = (key || 'newmap').replace(/[^a-zA-Z0-9_]/g, '') || 'newmap';
+  return '// 貼進 index.html 的 const MAPS = { … } 內：\n' + k + ': ' + JSON.stringify(exportClean(), null, 2) + ',';
+}
+function importJSON(text) {
+  const obj = JSON.parse(text);            // 接受純 JSON（編輯器自身匯出）
+  const m = obj.waypoints ? obj : (obj.label || obj.walls ? obj : null);
+  if (!m) throw new Error('看起來不是地圖物件');
+  loadMap(m);
+  return true;
+}
+function loadTemplate(name) {
+  if (name === '__blank') { loadMap(blankMap()); map.label = '新地圖'; rebuildUI(); return; }
+  if (TEMPLATES[name]) loadMap(TEMPLATES[name]);
+}
+
+/* =====================================================================
+   地圖庫（maps.json＝{鍵: 地圖}）— 多地圖管理（model 層，與 DOM 分離、可 headless 測）
+   目前編輯中的那張＝ mapLib[curKey] 的工作副本(`map`)；切換/新增/刪除/下載前先 syncCurrentToLib 寫回。
+   index.html 完全不動：maps.json 只裝自訂地圖，遊戲端怎麼吃是之後的事。
+   ===================================================================== */
+let mapLib = {}, curKey = null;
+const mapKeys = () => Object.keys(mapLib);
+const isMapObj = (o) => !!o && typeof o === 'object' && (Array.isArray(o.waypoints) || Array.isArray(o.walls) || typeof o.label === 'string');
+function syncCurrentToLib() { if (curKey != null) mapLib[curKey] = exportClean(); }   // 把目前編輯內容寫回庫
+function nextMapKey() { let n = 1; while (mapLib['map' + n]) n++; return 'map' + n; }
+function uniqKey(k, lib) { k = String(k || '').replace(/[^a-zA-Z0-9_]/g, '').replace(/^_+/, '') || 'map'; if (lib[k]) { let n = 2; while (lib[k + n]) n++; k = k + n; } return k; }   // 去頭底線：保留 _index 給目錄區塊
+function refreshLib() { if (typeof rebuildLibUI === 'function') rebuildLibUI(); }
+function selectMap(key, keepView) {
+  if (!mapLib[key]) return;
+  if (key !== curKey) syncCurrentToLib();
+  curKey = key; loadMap(mapLib[key], keepView); refreshLib();
+}
+function addMap(seed) {   // 新增一張（預設空白；可給 seed 物件）→ 切過去
+  syncCurrentToLib();
+  const key = nextMapKey();
+  mapLib[key] = cleanOf(seed || blankMap());
+  curKey = key; loadMap(mapLib[key]); refreshLib();
+  return key;
+}
+function deleteMap(key) {
+  key = key || curKey; if (!mapLib[key]) return;
+  delete mapLib[key]; if (key === curKey) curKey = null;
+  const ks = mapKeys();
+  if (ks.length === 0) addMap();          // 庫空了→補一張空白，永遠有一張可編輯
+  else selectMap(ks[0]);
+  refreshLib();
+}
+function renameCurKey(newKey) {
+  if (curKey == null) return curKey;
+  const lib2 = Object.assign({}, mapLib); delete lib2[curKey];
+  const k = uniqKey(newKey, lib2);
+  if (k !== curKey) { mapLib[k] = mapLib[curKey]; delete mapLib[curKey]; curKey = k; }
+  refreshLib(); return curKey;
+}
+function libImportObj(obj) {   // 接受 {鍵: 地圖}（整庫）或單張地圖（包成一個鍵）；取代整個庫
+  const lib = {};
+  const vals = (obj && typeof obj === 'object') ? Object.values(obj) : [];
+  if (vals.some(isMapObj)) { for (const k of Object.keys(obj)) if (!k.startsWith('_') && isMapObj(obj[k])) lib[uniqKey(k, lib)] = obj[k]; }   // 略過 _index 等開頭目錄/meta 區塊
+  else if (isMapObj(obj)) { lib['map1'] = obj; }
+  if (!Object.keys(lib).length) throw new Error('JSON 內找不到任何地圖');
+  mapLib = {}; for (const k of Object.keys(lib)) mapLib[k] = cleanOf(lib[k]);
+  curKey = null; selectMap(mapKeys()[0]);
+  return mapKeys();
+}
+const libImportText = (text) => libImportObj(JSON.parse(text));
+function libExportObj() {   // 開頭放 _index 目錄(鍵→地圖名)方便閱讀；讀取端略過 _ 開頭的 meta 鍵
+  syncCurrentToLib();
+  const keys = mapKeys(), out = {}, idx = {};
+  for (const k of keys) idx[k] = (mapLib[k] && mapLib[k].label) || '';
+  out._index = idx;
+  for (const k of keys) out[k] = cleanOf(mapLib[k]);
+  return out;
+}
+const libExportText = () => JSON.stringify(libExportObj(), null, 2);
+
+/* ---- 鏡像翻轉（做變體的起點）：剛性座標變換，所有物件一起翻 ---- */
+const mirrorPt = (p, axis, W, H) => axis === 'h' ? { x: W - p.x, y: p.y } : { x: p.x, y: H - p.y };
+function mirrorMap(m, axis) {
+  const W = m.width, H = m.height;
+  const seg = s => { const a = mirrorPt({ x: s.x1, y: s.y1 }, axis, W, H), b = mirrorPt({ x: s.x2, y: s.y2 }, axis, W, H); s.x1 = a.x; s.y1 = a.y; s.x2 = b.x; s.y2 = b.y; };
+  (m.walls || []).forEach(seg); (m.doors || []).forEach(seg); (m.lowWalls || []).forEach(seg); (m.destructibles || []).forEach(seg);
+  const pt = o => { const q = mirrorPt(o, axis, W, H); o.x = q.x; o.y = q.y; };
+  (m.buttons || []).forEach(pt); (m.entryPoints || []).forEach(pt); (m.extractionPoints || []).forEach(pt); (m.prisoners || []).forEach(pt);
+  (m.waypoints || []).forEach(w => { const q = mirrorPt(w.pos, axis, W, H); w.pos.x = q.x; w.pos.y = q.y; });
+  (m.bushes || []).forEach(b => { if (axis === 'h') b.x = W - b.x - b.w; else b.y = H - b.y - b.h; });   // 矩形：左上角翻、寬高不變
+  (m.areas || []).forEach(z => { if (axis === 'h') z.x = W - z.x - z.w; else z.y = H - z.y - z.h; });   // 區域矩形同草叢
+  (m.enemySpawns || []).forEach(s => { if (s.facing != null) s.facing = axis === 'h' ? Math.PI - s.facing : -s.facing; });   // 朝向跟著翻
+  return m;   // edges 是索引、不變
+}
+function mirrorToNew(axis) {   // 鏡像成庫裡新的一張（保留原圖，當變體起點）
+  const copy = mirrorMap(cleanOf(map), axis);
+  copy.label = (map.label || '地圖') + (axis === 'h' ? '·鏡H' : '·鏡V');
+  return addMap(copy);   // addMap 會先把目前這張寫回庫（保留原圖）→ 加新張並切過去
+}
+
+/* ---- 測試戰鬥（跨頁往返）：把目前地圖丟給 index 的自由戰鬥；整個庫存進 session 以便回來還原 ---- */
+const PLAYTEST_KEY = 'homeward_playtest', SESSION_KEY = 'homeward_editor_session';
+function playtestCurrent() {
+  syncCurrentToLib();
+  try {
+    localStorage.setItem(PLAYTEST_KEY, JSON.stringify(exportClean()));               // 要試打的這張地圖
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ lib: libExportObj(), curKey })); // 回來時還原整個工作區（不丟稿）
+  } catch (e) {}
+  return 'index.html?playtest=1';
+}
+function restoreSession() {   // 開場若有上次 session（含測試戰鬥往返）→ 還原整庫，回傳是否成功
+  let s = null; try { s = localStorage.getItem(SESSION_KEY); } catch (e) { return false; }
+  if (!s) return false;
+  let o = null; try { o = JSON.parse(s); } catch (e) { return false; }
+  if (!o || !o.lib) return false;
+  try { libImportObj(o.lib); if (o.curKey && mapLib[o.curKey]) selectMap(o.curKey); return mapKeys().length > 0; } catch (e) { return false; }
+}
+
+/* =====================================================================
+   驗證（即時提示；不阻擋）
+   ===================================================================== */
+function moveBlockers() {                                  // 會卡 AI 路徑的線段（牆 + 低矮牆 + 擋移動的破壞物）
+  const segs = map.walls.slice().concat(map.lowWalls);
+  for (const d of map.destructibles) if (blocksMove(d.intact)) segs.push(d);
+  return segs;
+}
+const moveBlockAreas = () => (map.areas || []).filter(z => blocksMoveArea(z.mat));   // 擋移動的區域（rect）
+function edgeBlocked(A, B) {                                // 邊是否穿越任何阻擋移動的地形（線段 or 區域）
+  if (moveBlockers().some(s => segIntersect(A, B, { x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }))) return true;
+  if (moveBlockAreas().some(z => segHitsRect(A, B, z))) return true;
+  return false;
+}
+function validate() {
+  const out = [];
+  const hasAccessPool = (map.accessPoints || []).length >= 2;   // 候選池≥2＝遊戲每局抽 ENTRY/EXTRACT，就不需要固定進撤點
+  if (!hasAccessPool && map.entryPoints.length < 1) out.push('缺少進場點（或放 ≥2 個候選進出點）');
+  if (!hasAccessPool && map.extractionPoints.length < 1) out.push('缺少撤離點（或放 ≥2 個候選進出點）');
+  if (map.waypoints.length < 1) out.push('缺少 waypoint');
+  // 孤立節點
+  if (map.waypoints.length > 1) {
+    const deg = map.waypoints.map(() => 0);
+    for (const e of map.edges) { deg[e[0]]++; deg[e[1]]++; }
+    const iso = deg.map((d, i) => d === 0 ? i : -1).filter(i => i >= 0);
+    if (iso.length) out.push('孤立節點: ' + iso.join(','));
+  }
+  // 邊穿越牆/低矮牆/擋移動破壞物/擋移動區域
+  const bad = [];
+  map.edges.forEach(e => { const A = map.waypoints[e[0]].pos, B = map.waypoints[e[1]].pos; if (edgeBlocked(A, B)) bad.push(e[0] + '↔' + e[1]); });
+  if (bad.length) out.push('邊穿牆/區域(會卡AI): ' + bad.join(' '));
+  // 按鈕 doorId
+  const doorIds = new Set(map.doors.map(d => d.id));
+  for (const b of map.buttons) if (b.doorId && !doorIds.has(b.doorId)) out.push('按鈕 ' + b.id + ' 連到不存在的門');
+  return out;
+}
+const badEdgeSet = () => {                                 // 給渲染用：壞邊的集合
+  const set = new Set();
+  map.edges.forEach(e => { const A = map.waypoints[e[0]].pos, B = map.waypoints[e[1]].pos; if (edgeBlocked(A, B)) set.add(e[0] + '-' + e[1]); });
+  return set;
+};
+
+/* =====================================================================
+   視圖 / 相機（平移縮放）
+   ===================================================================== */
+let view = { ox: 0, oy: 0, scale: 1 };
+const w2s = (p) => ({ x: p.x * view.scale + view.ox, y: p.y * view.scale + view.oy });
+const s2w = (p) => ({ x: (p.x - view.ox) / view.scale, y: (p.y - view.oy) / view.scale });
+function fitView() {
+  if (!cv) return;   // 無畫布（headless/未初始化）→ 跳過
+  const W = cv.width || 1280, H = cv.height || 720;
+  const s = Math.min(W / (map.width + 120), H / (map.height + 120));
+  view.scale = s; view.ox = (W - map.width * s) / 2; view.oy = (H - map.height * s) / 2;
+}
+
+/* ---- 狀態 ---- */
+let tab = 'objects';
+let tool = 'select';
+let sel = null;            // 選取：{kind, ref|i|e|nodeId}
+let drag = null;           // 拖曳狀態
+let linkFrom = null;       // 連線起點 waypoint index
+let snap = 20;             // 格線吸附（0=關）
+let destructPreset = 0;
+let assignType = 'grunt';      // 指派敵人工具：目前要放的敵人類型
+let assignPers = '(預設)';      // 指派敵人工具：目前要放的個性
+let tagBrush = 'patrol';
+let mouseWorld = { x: 0, y: 0 };
+let panning = null;
+let selRefs = [];          // 框選的物件群組（地圖物件頁）：[{kind,ref}]
+let marquee = null;        // 框選中：{x1,y1,x2,y2}（世界座標）
+let featureIdx = 0;        // 目前特徵
+let featureOpt = 0;        // 特徵子選項（門側/方向/角落…）
+let lastPick = null;       // 重疊點擊循環：{p, all, i}
+let mouseShift = false;    // 目前 Shift 是否按住（縮放等比用）
+let autoLink = false;      // 新增 waypoint 時自動連線到所有「中間無阻隔」的點
+// 參考底圖（編輯器專用，不進 map、不匯出；存自己的 localStorage 鍵）
+let underlay = { img: null, src: null, x: 100, y: 60, scale: 1, rot: 0, opacity: 0.5, visible: true, w: 0, h: 0 };
+
+const snapV = (v) => snap > 0 ? Math.round(v / snap) * snap : v;
+const snapP = (p) => ({ x: snapV(p.x), y: snapV(p.y) });
+const HANDLE = 8;          // 端點/節點抓取半徑（螢幕 px）
+const wr = (px) => px / view.scale;   // 螢幕 px → 世界距離
+
+/* 工具配置（依分頁） */
+const TOOLSETS = {
+  objects: [['select', '選取/移動'], ['feature', '★特徵'], ['wall', '牆'], ['door', '門'], ['lowwall', '低矮牆'], ['destruct', '破壞物'], ['bush', '草叢'], ['area', '區域'], ['button', '按鈕'], ['access', '進出點·候選'], ['entry', '固定進場'], ['extract', '固定撤離'], ['erase', '刪除']],
+  waypoints: [['move', '選取/移動'], ['add', '加點'], ['link', '連線'], ['erase', '刪除']],
+  enemies: [['assign', '指派敵人'], ['prisoner', '俘虜'], ['erase', '刪除']],
+  underlay: [['umove', '移動/縮放底圖']],
+  manage: [],   // 地圖管理：操作都在左側 #managePanel，無畫布工具
+};
+function clearSel() { sel = null; selRefs = []; marquee = null; linkFrom = null; lastPick = null; }
+function setTab(t) { tab = t; tool = (TOOLSETS[t][0] || [])[0] || null; clearSel(); rebuildUI(); }
+function setTool(t) { tool = t; clearSel(); rebuildToolsUI(); rebuildInspector(); }
+
+/* =====================================================================
+   命中測試（世界座標）
+   ===================================================================== */
+function hitWaypoint(p) {
+  let bi = -1, bd = wr(12);
+  map.waypoints.forEach((w, i) => { const d = dist(p, w.pos); if (d < bd) { bd = d; bi = i; } });
+  return bi;
+}
+function hitObjects(p) {
+  const r = wr(HANDLE);
+  // 端點優先（線段層）
+  for (const [tk, ln] of [['destruct', 'destructibles'], ['lowwall', 'lowWalls'], ['door', 'doors'], ['wall', 'walls']]) {
+    for (const s of map[ln]) {
+      if (dist(p, { x: s.x1, y: s.y1 }) < r) return { kind: tk, ref: s, end: 'a' };
+      if (dist(p, { x: s.x2, y: s.y2 }) < r) return { kind: tk, ref: s, end: 'b' };
+    }
+  }
+  // 點物件
+  for (const b of map.buttons) if (dist(p, b) < wr(10)) return { kind: 'button', ref: b };
+  for (const e of map.entryPoints) if (dist(p, e) < wr(12)) return { kind: 'entry', ref: e };
+  for (const e of map.extractionPoints) if (dist(p, e) < wr(12)) return { kind: 'extract', ref: e };
+  for (const e of (map.accessPoints || [])) if (dist(p, e) < wr(12)) return { kind: 'access', ref: e };
+  for (const pr of map.prisoners) if (dist(p, pr) < wr(12)) return { kind: 'prisoner', ref: pr };
+  // 草叢 / 區域
+  for (const bu of map.bushes) if (ptInRect(p, bu)) return { kind: 'bush', ref: bu };
+  for (const z of (map.areas || [])) if (ptInRect(p, z)) return { kind: 'area', ref: z };
+  // 線段本體
+  for (const [tk, ln] of [['destruct', 'destructibles'], ['lowwall', 'lowWalls'], ['door', 'doors'], ['wall', 'walls']]) {
+    for (const s of map[ln]) if (distToSeg(p, { x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }) < wr(6)) return { kind: tk, ref: s };
+  }
+  return null;
+}
+// 一點處所有候選（供重疊循環選取）
+function hitObjectsAll(p) {
+  const out = [], r = wr(8);
+  for (const [tk, ln] of [['wall', 'walls'], ['door', 'doors'], ['lowwall', 'lowWalls'], ['destruct', 'destructibles']])
+    for (const s of map[ln]) if (distToSeg(p, { x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }) < wr(6) || dist(p, { x: s.x1, y: s.y1 }) < r || dist(p, { x: s.x2, y: s.y2 }) < r) out.push({ kind: tk, ref: s });
+  for (const b of map.buttons) if (dist(p, b) < wr(10)) out.push({ kind: 'button', ref: b });
+  for (const e of map.entryPoints) if (dist(p, e) < wr(12)) out.push({ kind: 'entry', ref: e });
+  for (const e of map.extractionPoints) if (dist(p, e) < wr(12)) out.push({ kind: 'extract', ref: e });
+  for (const e of (map.accessPoints || [])) if (dist(p, e) < wr(12)) out.push({ kind: 'access', ref: e });
+  for (const pr of map.prisoners) if (dist(p, pr) < wr(12)) out.push({ kind: 'prisoner', ref: pr });
+  for (const bu of map.bushes) if (ptInRect(p, bu)) out.push({ kind: 'bush', ref: bu });
+  for (const z of (map.areas || [])) if (ptInRect(p, z)) out.push({ kind: 'area', ref: z });
+  return out;
+}
+function hitObjectsCycle(p) {                                // 同點重複點＝循環選堆疊物件
+  const all = hitObjectsAll(p);
+  if (!all.length) { lastPick = null; return null; }
+  if (lastPick && dist(p, lastPick.p) < wr(7) && lastPick.all.length === all.length) lastPick = { p, all, i: (lastPick.i + 1) % all.length };
+  else lastPick = { p, all, i: 0 };
+  return all[lastPick.i];
+}
+function marqueeCollect(rect) {                              // 框內（bbox 相交）所有物件
+  const R = { minx: Math.min(rect.x1, rect.x2), miny: Math.min(rect.y1, rect.y2), maxx: Math.max(rect.x1, rect.x2), maxy: Math.max(rect.y1, rect.y2) };
+  const hit = (b) => b.minx <= R.maxx && b.maxx >= R.minx && b.miny <= R.maxy && b.maxy >= R.miny;
+  const out = [];
+  for (const k in ARR_OF) for (const o of map[ARR_OF[k]]) if (hit(refBounds({ ref: o }))) out.push({ kind: k, ref: o });
+  return out;
+}
+const insideBox = (p, b, pad) => b && p.x >= b.minx - pad && p.x <= b.maxx + pad && p.y >= b.miny - pad && p.y <= b.maxy + pad;
+const GHANDLES = [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]];  // 8 控制點 (hx,hy)
+function handleHit(p) {
+  const b = bboxOfRefs(selRefs); if (!b) return null;
+  const W = b.maxx - b.minx, H = b.maxy - b.miny;
+  for (const [hx, hy] of GHANDLES) { const hp = { x: b.minx + hx * W, y: b.miny + hy * H }; if (dist(p, hp) < wr(9)) return { hx, hy, b0: b }; }
+  return null;
+}
+
+/* =====================================================================
+   滑鼠互動
+   ===================================================================== */
+function onDown(e) {
+  if (e.button === 1 || (e.button === 0 && spaceDown)) { panning = { sx: e._sx, sy: e._sy, ox: view.ox, oy: view.oy }; return; }
+  if (e.button === 2) { return; }  // 右鍵留給 contextmenu→刪除
+  const w = s2w({ x: e._sx, y: e._sy });
+  if (tab === 'objects') downObjects(w);
+  else if (tab === 'waypoints') downWaypoints(w);
+  else if (tab === 'enemies') downEnemies(w);
+  else if (tab === 'underlay') downUnderlay(w);
+  rebuildInspector();
+}
+function downUnderlay(w) {
+  if (!underlay.img) return;
+  if (dist(w, uRotHandleWorld()) < wr(11)) { drag = { kind: 'urotate', did: false }; return; }
+  for (const [hx, hy] of UCORNERS) if (dist(w, uHandleWorld(hx, hy)) < wr(11)) { drag = { kind: 'uscale', h: { hx, hy }, base: { x: underlay.x, y: underlay.y, scale: underlay.scale, rot: underlay.rot || 0 }, did: false }; return; }
+  if (uInside(w)) drag = { kind: 'umove', start: w, base: { x: underlay.x, y: underlay.y }, did: false };
+}
+function downObjects(w) {
+  if (tool === 'select') {
+    // 已有群組：先抓控制點(縮放) / 框內(整組位移)
+    if (selRefs.length > 1) {
+      const hh = handleHit(w);
+      if (hh) { drag = { kind: 'gscale', h: hh, base: selRefs.map(refCoords), did: false }; return; }
+      if (insideBox(w, bboxOfRefs(selRefs), wr(3))) { drag = { kind: 'gmove', start: w, base: selRefs.map(refCoords), did: false }; return; }
+    }
+    const h = hitObjectsCycle(w);
+    if (h) {
+      sel = h; selRefs = [{ kind: h.kind, ref: h.ref }];
+      const o = h.ref, r = wr(8);
+      if (['wall', 'door', 'lowwall', 'destruct'].includes(h.kind)) {
+        if (dist(w, { x: o.x1, y: o.y1 }) < r) drag = { kind: 'segend', ref: o, end: 'a', did: false };
+        else if (dist(w, { x: o.x2, y: o.y2 }) < r) drag = { kind: 'segend', ref: o, end: 'b', did: false };
+        else drag = { kind: 'segmove', ref: o, start: w, o: { x1: o.x1, y1: o.y1, x2: o.x2, y2: o.y2 }, did: false };
+      } else if (h.kind === 'bush' || h.kind === 'area') drag = { kind: 'bushmove', ref: o, start: w, o: { x: o.x, y: o.y }, did: false };
+      else drag = { kind: 'ptmove', ref: o, start: w, o: { x: o.x, y: o.y }, did: false };
+    } else { sel = null; selRefs = []; drag = { kind: 'marquee', x1: w.x, y1: w.y, x2: w.x, y2: w.y }; }
+  } else if (tool === 'feature') {
+    drag = { kind: 'newfeature', start: snapP(w), end: snapP(w) };
+  } else if (['wall', 'door', 'lowwall', 'destruct'].includes(tool)) {
+    drag = { kind: 'newseg', start: snapP(w), end: snapP(w) };
+  } else if (tool === 'bush') {
+    drag = { kind: 'newbush', start: snapP(w), end: snapP(w) };
+  } else if (tool === 'area') {
+    drag = { kind: 'newarea', start: snapP(w), end: snapP(w) };
+  } else if (tool === 'button') { sel = { kind: 'button', ref: addButton(snapV(w.x), snapV(w.y)) }; selRefs = [sel]; }
+  else if (tool === 'entry') { sel = { kind: 'entry', ref: addPoint('entry', snapV(w.x), snapV(w.y)) }; selRefs = [sel]; }
+  else if (tool === 'extract') { sel = { kind: 'extract', ref: addPoint('extract', snapV(w.x), snapV(w.y)) }; selRefs = [sel]; }
+  else if (tool === 'access') { sel = { kind: 'access', ref: addPoint('access', snapV(w.x), snapV(w.y)) }; selRefs = [sel]; }
+  else if (tool === 'erase') { sel = hitObjectsCycle(w); removeSelected(); }
+}
+function downWaypoints(w) {
+  const ni = hitWaypoint(w);
+  if (tool === 'move') {
+    if (ni >= 0) { sel = { kind: 'waypoint', i: ni }; drag = { kind: 'wpmove', i: ni, did: false }; }
+    else sel = null;
+  } else if (tool === 'add') {
+    if (ni >= 0) sel = { kind: 'waypoint', i: ni };
+    else { const wp = addWaypoint(snapV(w.x), snapV(w.y)); if (autoLink) autoLinkWaypoint(wp.id); sel = { kind: 'waypoint', i: wp.id }; }
+  } else if (tool === 'link') {
+    if (ni >= 0) { if (linkFrom == null) linkFrom = ni; else { if (linkFrom !== ni) toggleEdge(linkFrom, ni); linkFrom = null; } }
+    else { if (!removeEdgeNear(w, wr(7))) linkFrom = null; }
+  } else if (tool === 'erase') {
+    if (ni >= 0) { removeWaypoint(ni); sel = null; } else removeEdgeNear(w, wr(7));
+  }
+}
+function downEnemies(w) {
+  const ni = hitWaypoint(w);
+  if (tool === 'assign') {
+    // 先看是否抓朝向把手
+    if (sel && sel.kind === 'spawn') {
+      const s = spawnAt(sel.nodeId);
+      if (s) { const node = map.waypoints[s.nodeId].pos; const hp = { x: node.x + Math.cos(s.facing || 0) * 34, y: node.y + Math.sin(s.facing || 0) * 34 }; if (dist(w, hp) < wr(12)) { drag = { kind: 'facing', nodeId: s.nodeId, did: false }; return; } }
+    }
+    if (ni >= 0) {
+      const ex = spawnAt(ni);
+      if (!ex) setSpawn(ni, { type: assignType, personality: assignPers, facing: Math.PI });   // 空點＝放下目前選的類型/個性
+      else { assignType = ex.type || 'grunt'; assignPers = ex.personality || '(預設)'; }         // 已有＝選取並把筆刷同步成它(不覆蓋；改用右側面板或重選類型後再放別點)
+      sel = { kind: 'spawn', nodeId: ni }; rebuildToolsUI();
+    } else sel = null;
+  } else if (tool === 'prisoner') {
+    for (const pr of map.prisoners) if (dist(w, pr) < wr(12)) { sel = { kind: 'prisoner', ref: pr }; drag = { kind: 'ptmove', ref: pr, start: w, o: { x: pr.x, y: pr.y }, did: false }; return; }
+    sel = { kind: 'prisoner', ref: addPrisoner(snapV(w.x), snapV(w.y)) };
+  } else if (tool === 'erase') {
+    if (ni >= 0 && spawnAt(ni)) { removeSpawn(ni); sel = null; return; }
+    for (const pr of map.prisoners) if (dist(w, pr) < wr(12)) { sel = { kind: 'prisoner', ref: pr }; removeSelected(); return; }
+  }
+}
+function onMove(e) {
+  mouseWorld = s2w({ x: e._sx, y: e._sy });
+  mouseShift = !!e.shift;
+  if (panning) { view.ox = panning.ox + (e._sx - panning.sx); view.oy = panning.oy + (e._sy - panning.sy); return; }
+  if (!drag) return;
+  const w = mouseWorld, sp = snapP(w);
+  if (!drag.did) { drag.did = true; ensureDragUndo(); }
+  switch (drag.kind) {
+    case 'newseg': drag.end = sp; break;
+    case 'newbush': drag.end = sp; break;
+    case 'newarea': drag.end = sp; break;
+    case 'newfeature': drag.end = sp; break;
+    case 'marquee': drag.x2 = w.x; drag.y2 = w.y; break;
+    case 'segend': { const s = drag.ref; if (drag.end === 'a') { s.x1 = sp.x; s.y1 = sp.y; } else { s.x2 = sp.x; s.y2 = sp.y; } break; }
+    case 'segmove': { const s = drag.ref, dx = snapV(w.x - drag.start.x), dy = snapV(w.y - drag.start.y); s.x1 = drag.o.x1 + dx; s.y1 = drag.o.y1 + dy; s.x2 = drag.o.x2 + dx; s.y2 = drag.o.y2 + dy; break; }
+    case 'bushmove': { const s = drag.ref, dx = snapV(w.x - drag.start.x), dy = snapV(w.y - drag.start.y); s.x = drag.o.x + dx; s.y = drag.o.y + dy; break; }
+    case 'ptmove': { const s = drag.ref; s.x = sp.x; s.y = sp.y; break; }
+    case 'wpmove': moveWaypoint(drag.i, sp.x, sp.y); break;
+    case 'facing': { const s = spawnAt(drag.nodeId); if (s) { const node = map.waypoints[s.nodeId].pos; s.facing = Math.atan2(w.y - node.y, w.x - node.x); } break; }
+    case 'gmove': { const dx = snapV(w.x - drag.start.x), dy = snapV(w.y - drag.start.y); selRefs.forEach((r, i) => { setRefCoords(r, Object.assign({}, drag.base[i])); moveRef(r, dx, dy); }); break; }
+    case 'gscale': groupScale(w); break;
+    case 'umove': underlay.x = drag.base.x + (w.x - drag.start.x); underlay.y = drag.base.y + (w.y - drag.start.y); break;
+    case 'uscale': underlayScale(w); break;
+    case 'urotate': { const C = uCenter(); let a = Math.atan2(w.y - C.y, w.x - C.x) + Math.PI / 2; if (mouseShift) a = Math.round(a / (Math.PI / 12)) * (Math.PI / 12); underlay.rot = a; break; }
+  }
+}
+function groupScale(w) {
+  const { hx, hy, b0 } = drag.h, W0 = (b0.maxx - b0.minx) || 1, H0 = (b0.maxy - b0.miny) || 1;
+  const sp = snapP(w);
+  const ax = hx === 0.5 ? 0 : (hx === 1 ? b0.minx : b0.maxx);   // 對側錨點
+  const ay = hy === 0.5 ? 0 : (hy === 1 ? b0.miny : b0.maxy);
+  let sx = hx === 0.5 ? 1 : (hx === 1 ? (sp.x - b0.minx) / W0 : (b0.maxx - sp.x) / W0);
+  let sy = hy === 0.5 ? 1 : (hy === 1 ? (sp.y - b0.miny) / H0 : (b0.maxy - sp.y) / H0);
+  if (mouseShift) { const s = Math.max(Math.abs(sx), Math.abs(sy)); if (hx !== 0.5) sx = s * Math.sign(sx || 1); if (hy !== 0.5) sy = s * Math.sign(sy || 1); }   // Shift 等比
+  sx = Math.abs(sx) < 0.05 ? 0.05 : sx; sy = Math.abs(sy) < 0.05 ? 0.05 : sy;
+  selRefs.forEach((r, i) => scaleRefFrom(r, drag.base[i], ax, ay, hx === 0.5 ? 1 : sx, hy === 0.5 ? 1 : sy));
+}
+function onUp(e) {
+  if (panning) { panning = null; return; }
+  if (!drag) return;
+  if (drag.kind === 'newseg') { const a = drag.start, b = drag.end; if (dist(a, b) > 4) { const o = addSegment(tool, a.x, a.y, b.x, b.y); if (tool === 'door' || tool === 'destruct') cutWallsForDoor(o); sel = { kind: tool, ref: o }; selRefs = [sel]; } }
+  else if (drag.kind === 'newbush') { const a = drag.start, b = drag.end; if (Math.abs(b.x - a.x) > 6 && Math.abs(b.y - a.y) > 6) { sel = { kind: 'bush', ref: addBush(a.x, a.y, b.x - a.x, b.y - a.y) }; selRefs = [sel]; } }
+  else if (drag.kind === 'newarea') { const a = drag.start, b = drag.end; if (Math.abs(b.x - a.x) > 6 && Math.abs(b.y - a.y) > 6) { sel = { kind: 'area', ref: addArea(a.x, a.y, b.x - a.x, b.y - a.y) }; selRefs = [sel]; } }
+  else if (drag.kind === 'newfeature') { const a = drag.start, b = drag.end; const box = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) }; if (box.w > 8 && box.h > 8) { selRefs = stampFeature(featureIdx, box); sel = selRefs.length === 1 ? selRefs[0] : null; } }
+  else if (drag.kind === 'marquee') { selRefs = marqueeCollect(drag); sel = selRefs.length === 1 ? selRefs[0] : null; }
+  else if (drag.kind === 'umove' || drag.kind === 'uscale' || drag.kind === 'urotate') { persistUnderlay(); }
+  drag = null; rebuildInspector();
+}
+// 拖曳移動/改端點/群組變換：第一次真正動到時才記一筆 undo（新建類在 add*/stamp 內已記）
+function ensureDragUndo() { if (drag && ['segend', 'segmove', 'bushmove', 'ptmove', 'wpmove', 'facing', 'gmove', 'gscale'].includes(drag.kind)) pushUndo(); }
+
+function onWheel(e) {
+  const f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const before = s2w({ x: e._sx, y: e._sy });
+  view.scale = clamp(view.scale * f, 0.15, 4);
+  const after = s2w({ x: e._sx, y: e._sy });
+  view.ox += (after.x - before.x) * view.scale; view.oy += (after.y - before.y) * view.scale;
+}
+function onContext(w) { const h = (tab === 'objects') ? hitObjects(w) : null; if (h) { sel = { kind: h.kind, ref: h.ref }; selRefs = [sel]; removeSelected(); rebuildInspector(); } }
+
+/* =====================================================================
+   DOM 介面
+   ===================================================================== */
+let cv, ctx, toolsEl, inspectorEl, statusEl, mapLabelEl, tplSelEl, overlayEl, ovTitle, ovText, ovMsg, ovBtns, gridBtn, uFileInput, mapWEl, mapHEl, mapPickEl, mapKeyEl, mapArchEl, mapTierEl, mapRoleNEl, mapRoleBEl;
+let spaceDown = false, domReady = false;
+
+function rebuildUI() { if (!domReady) return; const mp = document.getElementById('managePanel'); if (mp) mp.style.display = (tab === 'manage') ? 'block' : 'none'; rebuildToolsUI(); rebuildInspector(); if (mapLabelEl) mapLabelEl.value = map.label; if (mapWEl) { mapWEl.value = map.width; mapHEl.value = map.height; } if (mapArchEl) mapArchEl.value = map.category || 'open'; if (mapTierEl) mapTierEl.value = String(map.tier || 1); if (mapRoleNEl) mapRoleNEl.checked = (map.roles || []).includes('normal'); if (mapRoleBEl) mapRoleBEl.checked = (map.roles || []).includes('boss'); rebuildLibUI(); updateStatus(); }
+function rebuildLibUI() {   // 重建 maps.json 地圖庫下拉 + 鍵名輸入
+  if (!domReady || !mapPickEl) return;
+  mapPickEl.innerHTML = '';
+  for (const k of mapKeys()) { const o = document.createElement('option'); o.value = k; o.textContent = k + '（' + (k === curKey ? map.label : (mapLib[k] && mapLib[k].label) || '') + '）'; mapPickEl.appendChild(o); }
+  if (curKey != null) mapPickEl.value = curKey;
+  if (mapKeyEl && document.activeElement !== mapKeyEl) mapKeyEl.value = curKey || '';
+}
+function rebuildToolsUI() {
+  if (!toolsEl) return;
+  toolsEl.innerHTML = '';
+  const hd = document.createElement('div'); hd.className = 'hd'; hd.textContent = '工具'; toolsEl.appendChild(hd);
+  for (const [tk, label] of TOOLSETS[tab]) {
+    const b = document.createElement('div'); b.className = 'tool' + (tool === tk ? ' on' : ''); b.textContent = label;
+    b.addEventListener('click', () => setTool(tk)); toolsEl.appendChild(b);
+  }
+  if (tab === 'objects' && tool === 'destruct') {
+    const hd2 = document.createElement('div'); hd2.className = 'hd'; hd2.textContent = '破壞物預設'; toolsEl.appendChild(hd2);
+    DESTRUCT_PRESETS.forEach((p, i) => { const b = document.createElement('div'); b.className = 'tool' + (destructPreset === i ? ' on' : ''); b.textContent = p.name; b.addEventListener('click', () => { destructPreset = i; rebuildToolsUI(); }); toolsEl.appendChild(b); });
+  }
+  if (tab === 'objects' && tool === 'area') {
+    const hd2 = document.createElement('div'); hd2.className = 'hd'; hd2.textContent = '區域材質（拖框放置）'; toolsEl.appendChild(hd2);
+    MATERIAL_IDS.forEach(id => { const b = document.createElement('div'); b.className = 'tool' + (areaMat === id ? ' on' : ''); b.textContent = MATERIALS[id].name; b.title = matDesc(id); b.addEventListener('click', () => { areaMat = id; rebuildToolsUI(); }); toolsEl.appendChild(b); });
+  }
+  if (tab === 'objects' && tool === 'feature') {
+    const hd2 = document.createElement('div'); hd2.className = 'hd'; hd2.textContent = '特徵（拖框放置）'; toolsEl.appendChild(hd2);
+    FEATURES.forEach((f, i) => { const b = document.createElement('div'); b.className = 'tool' + (featureIdx === i ? ' on' : ''); b.textContent = f.name; b.addEventListener('click', () => { featureIdx = i; featureOpt = 0; rebuildToolsUI(); }); toolsEl.appendChild(b); });
+    const f = FEATURES[featureIdx];
+    if (f && f.opts > 1) { const hd3 = document.createElement('div'); hd3.className = 'hd'; hd3.textContent = '選項'; toolsEl.appendChild(hd3); const b = document.createElement('div'); b.className = 'tool on'; b.textContent = (f.optName ? f.optName[featureOpt % f.opts] : ('選項 ' + (featureOpt + 1))); b.addEventListener('click', () => { featureOpt = (featureOpt + 1) % f.opts; rebuildToolsUI(); }); toolsEl.appendChild(b); }
+  }
+  if (tab === 'waypoints') {
+    const hd2 = document.createElement('div'); hd2.className = 'hd'; hd2.textContent = '選項'; toolsEl.appendChild(hd2);
+    const b = document.createElement('div'); b.className = 'tool' + (autoLink ? ' on' : ''); b.textContent = '放點時自動連:' + (autoLink ? '開' : '關'); b.title = '新增點時自動連到所有中間無阻隔的點（維護繁瑣，建議關；改用下面的「自動整理連線」）';
+    b.addEventListener('click', () => { autoLink = !autoLink; rebuildToolsUI(); }); toolsEl.appendChild(b);
+    const hd3 = document.createElement('div'); hd3.className = 'hd'; hd3.textContent = '自動生成'; toolsEl.appendChild(hd3);
+    const bg = document.createElement('div'); bg.className = 'tool'; bg.textContent = '🔲 鋪滿網格點'; bg.title = '清掉現有 waypoint/連線，每隔一段距離鋪一個點(自動避開障礙)再連成網格。拉完牆/障礙後按這個＝整張圖一鍵鋪好、保證連通';
+    bg.addEventListener('click', () => { fillGridWaypoints(); updateStatus(); rebuildInspector(); }); toolsEl.appendChild(bg);
+    const bm = document.createElement('div'); bm.className = 'tool'; bm.textContent = '🕸 自動整理連線'; bm.title = '只重連現有的點：清掉連線、依「中間無阻隔」重建乾淨網格(K 最近鄰 + 保證連通)。手放點時用這個';
+    bm.addEventListener('click', () => { autoMeshEdges(); updateStatus(); rebuildInspector(); }); toolsEl.appendChild(bm);
+    const bc = document.createElement('div'); bc.className = 'tool'; bc.textContent = '✕ 清除所有連線'; bc.title = '刪掉全部連線（可 undo）；配合上面的「自動整理連線」重抓';
+    bc.addEventListener('click', () => { clearAllEdges(); updateStatus(); rebuildInspector(); }); toolsEl.appendChild(bc);
+  }
+  if (tab === 'enemies' && tool === 'assign') {
+    const hd2 = document.createElement('div'); hd2.className = 'hd'; hd2.textContent = '敵人類型（點 waypoint 放置）'; toolsEl.appendChild(hd2);
+    ENEMY_TYPE_IDS.forEach(t => { const b = document.createElement('div'); b.className = 'tool' + (assignType === t ? ' on' : ''); b.textContent = ENEMY_META[t].name; b.title = t; b.addEventListener('click', () => { assignType = t; rebuildToolsUI(); }); toolsEl.appendChild(b); });
+    const hd3 = document.createElement('div'); hd3.className = 'hd'; hd3.textContent = '個性'; toolsEl.appendChild(hd3);
+    PERSONALITIES.forEach(p => { const b = document.createElement('div'); b.className = 'tool' + (assignPers === p ? ' on' : ''); b.textContent = p; b.addEventListener('click', () => { assignPers = p; rebuildToolsUI(); }); toolsEl.appendChild(b); });
+  }
+}
+function field(label, inputEl) { const r = document.createElement('div'); r.className = 'row'; const l = document.createElement('label'); l.textContent = label; r.appendChild(l); r.appendChild(inputEl); return r; }
+function numInput(val, on) { const i = document.createElement('input'); i.type = 'number'; i.value = Math.round(val); i.addEventListener('input', () => { if (i.value !== '' && i.value !== '-') { on(+i.value); } }); return i; }
+function renderUnderlayInspector(h) {
+  h.textContent = '底圖（參考用，不匯出）';
+  const load = document.createElement('button'); load.textContent = '載入圖片…'; load.style.width = '100%'; load.style.margin = '2px 0 6px';
+  load.addEventListener('click', () => { if (uFileInput) uFileInput.click(); }); inspectorEl.appendChild(load);
+  if (!underlay.img) { const p = document.createElement('div'); p.className = 'muted'; p.textContent = '載入一張真實街區/建築平面圖，墊在地圖下方描著畫。底圖只供參考，不會被匯出。'; inspectorEl.appendChild(p); return; }
+  inspectorEl.appendChild(field('x', numInput(underlay.x, v => { underlay.x = v; persistUnderlay(); })));
+  inspectorEl.appendChild(field('y', numInput(underlay.y, v => { underlay.y = v; persistUnderlay(); })));
+  inspectorEl.appendChild(field('縮放%', numInput(Math.round(underlay.scale * 100), v => { underlay.scale = Math.max(0.02, v / 100); persistUnderlay(); })));
+  inspectorEl.appendChild(field('旋轉°', numInput(Math.round((underlay.rot || 0) * 180 / Math.PI), v => { underlay.rot = v * Math.PI / 180; persistUnderlay(); })));
+  const op = document.createElement('input'); op.type = 'range'; op.min = 0; op.max = 1; op.step = 0.05; op.value = underlay.opacity; op.style.flex = '1';
+  op.addEventListener('input', () => { underlay.opacity = +op.value; persistUnderlay(); }); inspectorEl.appendChild(field('透明度', op));
+  const vis = document.createElement('input'); vis.type = 'checkbox'; vis.checked = underlay.visible;
+  vis.addEventListener('change', () => { underlay.visible = vis.checked; persistUnderlay(); }); inspectorEl.appendChild(field('顯示', vis));
+  const tip = document.createElement('div'); tip.className = 'muted'; tip.textContent = '畫布上拖圖移動、拖四角縮放（等比）。'; inspectorEl.appendChild(tip);
+  const r = document.createElement('div'); r.className = 'row'; r.style.marginTop = '8px'; const c = document.createElement('button'); c.textContent = '清除底圖'; c.style.flex = '1'; c.addEventListener('click', () => { clearUnderlay(); rebuildInspector(); }); r.appendChild(c); inspectorEl.appendChild(r);
+}
+
+function rebuildInspector() {
+  if (!inspectorEl) return;
+  inspectorEl.innerHTML = '';
+  const h = document.createElement('h3'); inspectorEl.appendChild(h);
+  if (tab === 'underlay') { renderUnderlayInspector(h); return; }
+  if (selRefs.length > 1) {
+    h.textContent = '群組（' + selRefs.length + ' 物件）';
+    const p = document.createElement('div'); p.className = 'muted'; p.textContent = '拖外框內部＝整組移動；拖角/邊控制點＝縮放（Shift 等比）。'; inspectorEl.appendChild(p);
+    const r = document.createElement('div'); r.className = 'row'; r.style.marginTop = '8px';
+    const b1 = document.createElement('button'); b1.textContent = '解散選取'; b1.style.flex = '1'; b1.addEventListener('click', () => { clearSel(); rebuildInspector(); });
+    const b2 = document.createElement('button'); b2.textContent = '刪除全部'; b2.style.flex = '1'; b2.addEventListener('click', () => { removeSelected(); rebuildInspector(); });
+    r.appendChild(b1); r.appendChild(b2); inspectorEl.appendChild(r);
+    return;
+  }
+  if (!sel) { h.textContent = '屬性'; const p = document.createElement('div'); p.className = 'muted'; p.textContent = hintFor(); inspectorEl.appendChild(p); return; }
+  const k = sel.kind;
+  if (k === 'waypoint') {
+    const w = map.waypoints[sel.i]; if (!w) { sel = null; return rebuildInspector(); }
+    h.textContent = 'Waypoint #' + sel.i;
+    inspectorEl.appendChild(field('x', numInput(w.pos.x, v => { w.pos.x = v; })));
+    inspectorEl.appendChild(field('y', numInput(w.pos.y, v => { w.pos.y = v; })));
+    const deg = map.edges.filter(e => e[0] === sel.i || e[1] === sel.i).length;
+    const nb = document.createElement('div'); nb.className = 'muted'; nb.textContent = '連線數 ' + deg; inspectorEl.appendChild(nb);
+    const tagsHd = document.createElement('div'); tagsHd.style.margin = '6px 0 2px'; tagsHd.textContent = '標籤'; inspectorEl.appendChild(tagsHd);
+    const wrap = document.createElement('div');
+    WP_TAGS.forEach(tg => { const b = document.createElement('span'); b.className = 'tagbtn' + (w.tags.includes(tg) ? ' on' : ''); b.textContent = tg; b.addEventListener('click', () => { pushUndo(); const i = w.tags.indexOf(tg); if (i >= 0) w.tags.splice(i, 1); else w.tags.push(tg); rebuildInspector(); }); wrap.appendChild(b); });
+    inspectorEl.appendChild(wrap);
+    const lr = document.createElement('div'); lr.className = 'row'; const lb = document.createElement('button'); lb.textContent = '自動連線此點'; lb.style.flex = '1'; lb.title = '連到所有中間無阻隔的點'; lb.addEventListener('click', () => { pushUndo(); autoLinkWaypoint(sel.i); updateStatus(); rebuildInspector(); }); lr.appendChild(lb); inspectorEl.appendChild(lr);
+    addDeleteBtn('刪除此點');
+  } else if (k === 'spawn') {
+    const s = spawnAt(sel.nodeId); if (!s) { sel = null; return rebuildInspector(); }
+    h.textContent = '敵人 @ #' + sel.nodeId;
+    const tsel = document.createElement('select'); ENEMY_TYPE_IDS.forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = ENEMY_META[t].name + ' (' + t + ')'; tsel.appendChild(o); }); tsel.value = s.type || 'grunt';
+    tsel.addEventListener('change', () => { setSpawn(sel.nodeId, { type: tsel.value }); assignType = tsel.value; rebuildToolsUI(); });
+    inspectorEl.appendChild(field('類型', tsel));
+    const psel = document.createElement('select'); PERSONALITIES.forEach(pp => { const o = document.createElement('option'); o.value = pp; o.textContent = pp; psel.appendChild(o); }); psel.value = s.personality || '(預設)';
+    psel.addEventListener('change', () => { setSpawn(sel.nodeId, { personality: psel.value }); assignPers = psel.value; rebuildToolsUI(); });
+    inspectorEl.appendChild(field('個性', psel));
+    const deg = document.createElement('input'); deg.type = 'number'; deg.value = Math.round((s.facing || 0) * 180 / Math.PI); deg.addEventListener('input', () => { if (deg.value !== '' && deg.value !== '-') setSpawn(sel.nodeId, { facing: (+deg.value) * Math.PI / 180 }); });
+    inspectorEl.appendChild(field('朝向°', deg));
+    const tip = document.createElement('div'); tip.className = 'muted'; tip.textContent = '畫面上拖白色把手調朝向'; inspectorEl.appendChild(tip);
+    addDeleteBtn('移除此敵人');
+  } else if (k === 'door') {
+    const s = sel.ref; h.textContent = '門 ' + s.id; segFields(s);
+    const cr = document.createElement('div'); cr.className = 'row'; const cb = document.createElement('button'); cb.textContent = '切出牆缺口'; cb.style.flex = '1'; cb.addEventListener('click', () => { pushUndo(); cutWallsForDoor(s); updateStatus(); }); cr.appendChild(cb); inspectorEl.appendChild(cr);
+    addDeleteBtn('刪除門');
+  } else if (k === 'destruct') {
+    const s = sel.ref; h.textContent = '破壞物'; segFields(s);
+    const psel = document.createElement('select'); DESTRUCT_PRESETS.forEach((p, i) => { const o = document.createElement('option'); o.value = i; o.textContent = p.name; psel.appendChild(o); });
+    const cur = DESTRUCT_PRESETS.findIndex(p => p.intact === s.intact && p.broken === s.broken); psel.value = cur < 0 ? 0 : cur;
+    psel.addEventListener('change', () => { pushUndo(); const p = DESTRUCT_PRESETS[+psel.value]; s.intact = p.intact; s.broken = p.broken; s.hp = p.hp; rebuildInspector(); });
+    inspectorEl.appendChild(field('預設', psel));
+    inspectorEl.appendChild(field('HP', numInput(s.hp, v => { s.hp = v; })));
+    const cr = document.createElement('div'); cr.className = 'row'; const cb = document.createElement('button'); cb.textContent = '切出牆缺口'; cb.style.flex = '1'; cb.title = '把與此窗/破壞物共線重疊的牆切斷留缺口（窗嵌進牆用）'; cb.addEventListener('click', () => { pushUndo(); cutWallsForDoor(s); updateStatus(); }); cr.appendChild(cb); inspectorEl.appendChild(cr);
+    addDeleteBtn('刪除破壞物');
+  } else if (k === 'button') {
+    const s = sel.ref; h.textContent = '按鈕 ' + s.id;
+    inspectorEl.appendChild(field('x', numInput(s.x, v => { s.x = v; }))); inspectorEl.appendChild(field('y', numInput(s.y, v => { s.y = v; })));
+    const dsel = document.createElement('select'); const none = document.createElement('option'); none.value = ''; none.textContent = '(無)'; dsel.appendChild(none);
+    map.doors.forEach(d => { const o = document.createElement('option'); o.value = d.id; o.textContent = d.id; dsel.appendChild(o); }); dsel.value = s.doorId || '';
+    dsel.addEventListener('change', () => { s.doorId = dsel.value || null; }); inspectorEl.appendChild(field('連動門', dsel));
+    addDeleteBtn('刪除按鈕');
+  } else if (k === 'wall' || k === 'lowwall') {
+    h.textContent = (k === 'wall' ? '牆' : '低矮牆'); segFields(sel.ref); addDeleteBtn('刪除');
+  } else if (k === 'bush') {
+    const s = sel.ref; h.textContent = '草叢';
+    inspectorEl.appendChild(field('x', numInput(s.x, v => { s.x = v; }))); inspectorEl.appendChild(field('y', numInput(s.y, v => { s.y = v; })));
+    inspectorEl.appendChild(field('寬', numInput(s.w, v => { s.w = Math.max(4, v); }))); inspectorEl.appendChild(field('高', numInput(s.h, v => { s.h = Math.max(4, v); })));
+    addDeleteBtn('刪除草叢');
+  } else if (k === 'area') {
+    const s = sel.ref; h.textContent = '區域：' + (MATERIALS[s.mat] || MATERIALS.solid).name;
+    const msel = document.createElement('select'); MATERIAL_IDS.forEach(id => { const o = document.createElement('option'); o.value = id; o.textContent = MATERIALS[id].name; msel.appendChild(o); }); msel.value = s.mat;
+    msel.addEventListener('change', () => { pushUndo(); s.mat = msel.value; rebuildInspector(); updateStatus(); });
+    inspectorEl.appendChild(field('材質', msel));
+    inspectorEl.appendChild(field('x', numInput(s.x, v => { s.x = v; }))); inspectorEl.appendChild(field('y', numInput(s.y, v => { s.y = v; })));
+    inspectorEl.appendChild(field('寬', numInput(s.w, v => { s.w = Math.max(4, v); }))); inspectorEl.appendChild(field('高', numInput(s.h, v => { s.h = Math.max(4, v); })));
+    const tip = document.createElement('div'); tip.className = 'muted'; tip.textContent = matDesc(s.mat); inspectorEl.appendChild(tip);
+    addDeleteBtn('刪除區域');
+  } else if (k === 'entry' || k === 'extract' || k === 'access' || k === 'prisoner') {
+    const s = sel.ref; h.textContent = k === 'entry' ? '進場點(固定)' : k === 'extract' ? '撤離點(固定)' : k === 'access' ? '進出點(候選池)' : '俘虜';
+    inspectorEl.appendChild(field('x', numInput(s.x, v => { s.x = v; }))); inspectorEl.appendChild(field('y', numInput(s.y, v => { s.y = v; })));
+    addDeleteBtn('刪除');
+  }
+  function segFields(s) {
+    inspectorEl.appendChild(field('x1', numInput(s.x1, v => { s.x1 = v; }))); inspectorEl.appendChild(field('y1', numInput(s.y1, v => { s.y1 = v; })));
+    inspectorEl.appendChild(field('x2', numInput(s.x2, v => { s.x2 = v; }))); inspectorEl.appendChild(field('y2', numInput(s.y2, v => { s.y2 = v; })));
+  }
+  function addDeleteBtn(label) { const r = document.createElement('div'); r.className = 'row'; r.style.marginTop = '8px'; const b = document.createElement('button'); b.textContent = label; b.style.flex = '1'; b.addEventListener('click', () => { removeSelected(); rebuildInspector(); }); r.appendChild(b); inspectorEl.appendChild(r); }
+}
+function hintFor() {
+  if (tab === 'objects') return '工具放置物件（可重疊）；★特徵＝拖框放整組地圖特徵；進出點·候選(琥珀)＝放 ≥2 個，遊戲每局抽一進一撤(剩下當增援/潰逃點)＝開放圖用；固定進場/撤離＝事件圖用；門/窗(破壞物)畫在牆上會自動切牆缺口。右鍵刪除。';
+  if (tab === 'waypoints') return '加點：點空白（開「自動連線」則自動連到所有中間無阻隔的點）；連線：點兩點建/斷邊、點線上刪邊；移動：拖點。';
+  return '指派：點 waypoint 放敵人，選後改類型/個性/朝向；俘虜：點放置。';
+}
+function updateStatus() {
+  if (!statusEl) return;
+  const issues = validate();
+  statusEl.className = issues.length ? 'warn' : 'ok';
+  statusEl.textContent = (issues.length ? '⚠ ' + issues.join('；') : '✓ 結構正常')
+    + '　|　牆' + map.walls.length + ' 門' + map.doors.length + ' 矮牆' + map.lowWalls.length + ' 破壞' + map.destructibles.length + ' 草叢' + map.bushes.length + ' 區域' + (map.areas || []).length + ' 點' + map.waypoints.length + ' 邊' + map.edges.length + ' 敵' + map.enemySpawns.length + ' 俘' + map.prisoners.length;
+}
+
+/* ---- 匯入/匯出 overlay ---- */
+function openOverlay(title, text, buttons) {
+  ovTitle.textContent = title; ovText.value = text; ovMsg.textContent = ''; ovBtns.innerHTML = '';
+  (buttons || []).forEach(b => { const el = document.createElement('button'); el.textContent = b.label; el.addEventListener('click', b.fn); ovBtns.appendChild(el); });
+  overlayEl.classList.add('on');
+}
+function closeOverlay() { overlayEl.classList.remove('on'); }
+
+/* =====================================================================
+   渲染
+   ===================================================================== */
+function resize() { if (!cv) return; const W = cv.clientWidth || 1280, H = cv.clientHeight || 720; if (cv.width !== W) cv.width = W; if (cv.height !== H) cv.height = H; }
+function line(a, b) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+function dot(p, r, fill) { ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fillStyle = fill; ctx.fill(); }
+function render() {
+  if (!ctx) return;
+  resize();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#06080d'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(view.scale, 0, 0, view.scale, view.ox, view.oy);
+  ctx.lineJoin = 'round';
+  // 世界範圍 + 格線
+  ctx.fillStyle = '#0a0e15'; ctx.fillRect(0, 0, map.width, map.height);
+  // 參考底圖（世界背景之上、其餘之下；所有分頁皆顯示，僅 底圖 分頁可操作）
+  if (underlay.img && underlay.visible) { const { W, H } = uWH(), C = uCenter(); ctx.save(); ctx.globalAlpha = underlay.opacity; ctx.translate(C.x, C.y); ctx.rotate(underlay.rot || 0); try { ctx.drawImage(underlay.img, -W / 2, -H / 2, W, H); } catch (e) {} ctx.restore(); }
+  if (snap > 0) { ctx.strokeStyle = 'rgba(80,100,120,0.12)'; ctx.lineWidth = 1 / view.scale; ctx.beginPath(); for (let x = 0; x <= map.width; x += snap) { ctx.moveTo(x, 0); ctx.lineTo(x, map.height); } for (let y = 0; y <= map.height; y += snap) { ctx.moveTo(0, y); ctx.lineTo(map.width, y); } ctx.stroke(); }
+  ctx.strokeStyle = '#2a3442'; ctx.lineWidth = 2 / view.scale; ctx.strokeRect(0, 0, map.width, map.height);
+
+  const dim = (layer) => tab === 'objects' ? 1 : 0.35;
+  // 草叢
+  ctx.globalAlpha = (tab === 'objects' ? 0.5 : 0.2); for (const b of map.bushes) { ctx.fillStyle = '#3fae5a'; ctx.fillRect(b.x, b.y, b.w, b.h); } ctx.globalAlpha = 1;
+  // 區域地形
+  for (const z of (map.areas || [])) drawArea(z, dim());
+  // 破壞物
+  for (const d of map.destructibles) drawDestruct(d, dim());
+  // 低矮牆
+  ctx.strokeStyle = `rgba(150,120,80,${dim()})`; ctx.lineWidth = 5 / view.scale; ctx.setLineDash([10 / view.scale, 6 / view.scale]); for (const s of map.lowWalls) line({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }); ctx.setLineDash([]);
+  // 門
+  ctx.strokeStyle = `rgba(210,160,90,${dim()})`; ctx.lineWidth = 6 / view.scale; ctx.setLineDash([4 / view.scale, 4 / view.scale]); for (const s of map.doors) line({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }); ctx.setLineDash([]);
+  // 牆（厚度＝遊戲的 8px，WYSIWYG）
+  ctx.lineCap = 'round'; ctx.strokeStyle = `rgba(120,135,150,${dim()})`; ctx.lineWidth = 8 / view.scale; for (const s of map.walls) line({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }); ctx.lineCap = 'butt';
+  // 按鈕 + 連動線
+  for (const b of map.buttons) { ctx.globalAlpha = dim(); dot(b, 6 / view.scale, '#7fe3ff'); const d = map.doors.find(x => x.id === b.doorId); if (d) { ctx.strokeStyle = 'rgba(127,227,255,0.4)'; ctx.lineWidth = 1 / view.scale; line(b, { x: (d.x1 + d.x2) / 2, y: (d.y1 + d.y2) / 2 }); } ctx.globalAlpha = 1; }
+  // 進/撤點
+  for (const e of (map.accessPoints || [])) { dot(e, 10 / view.scale, 'rgba(255,200,90,0.9)'); }   // 候選進出點＝琥珀（每局抽 ENTRY/EXTRACT，剩下當增援/潰逃點）
+  for (const e of map.entryPoints) { dot(e, 9 / view.scale, 'rgba(95,208,107,0.85)'); }
+  for (const e of map.extractionPoints) { dot(e, 9 / view.scale, 'rgba(90,169,255,0.9)'); }
+
+  // 邊
+  const bad = badEdgeSet();
+  ctx.lineWidth = 1.6 / view.scale;
+  for (const e of map.edges) { const A = map.waypoints[e[0]].pos, B = map.waypoints[e[1]].pos; const isBad = bad.has(e[0] + '-' + e[1]); ctx.strokeStyle = isBad ? 'rgba(255,90,90,0.9)' : (tab === 'waypoints' ? 'rgba(120,170,210,0.75)' : 'rgba(110,150,190,0.4)'); ctx.lineWidth = (isBad ? 2.6 : 1.6) / view.scale; line(A, B); }
+  // 連線 rubber band
+  if (tab === 'waypoints' && tool === 'link' && linkFrom != null) { ctx.strokeStyle = 'rgba(127,227,255,0.7)'; ctx.lineWidth = 1.5 / view.scale; ctx.setLineDash([6 / view.scale, 4 / view.scale]); line(map.waypoints[linkFrom].pos, mouseWorld); ctx.setLineDash([]); }
+
+  // waypoints
+  for (const w of map.waypoints) {
+    const sp = w.tags.some(t => ['flank', 'vantage', 'choke'].includes(t));
+    const r = (sp ? 7 : 5) / view.scale;
+    dot(w.pos, r, sp ? 'rgba(200,175,95,0.9)' : (tab === 'waypoints' ? 'rgba(150,180,210,0.95)' : 'rgba(130,150,170,0.55)'));
+    if (linkFrom === w.id) { ctx.strokeStyle = '#7fe3ff'; ctx.lineWidth = 2 / view.scale; ctx.beginPath(); ctx.arc(w.pos.x, w.pos.y, r + 4 / view.scale, 0, Math.PI * 2); ctx.stroke(); }
+    if (view.scale > 0.5) { ctx.fillStyle = 'rgba(200,215,230,0.9)'; ctx.font = (11 / view.scale) + 'px Consolas'; ctx.textAlign = 'center'; ctx.fillText(w.id, w.pos.x, w.pos.y - r - 3 / view.scale); if (tab === 'waypoints' && w.tags.length) { ctx.fillStyle = 'rgba(255,210,122,0.85)'; ctx.fillText(w.tags.join(','), w.pos.x, w.pos.y + r + 11 / view.scale); } }
+  }
+  // 敵人 spawn（視野錐 + 朝向）
+  for (const s of map.enemySpawns) { const node = map.waypoints[s.nodeId]; if (node) drawSpawn(s, node.pos); }
+  // 俘虜
+  for (const pr of map.prisoners) { ctx.strokeStyle = 'rgba(220,120,220,0.9)'; ctx.lineWidth = 2.5 / view.scale; const r = 7 / view.scale; ctx.beginPath(); ctx.moveTo(pr.x - r, pr.y - r); ctx.lineTo(pr.x + r, pr.y + r); ctx.moveTo(pr.x + r, pr.y - r); ctx.lineTo(pr.x - r, pr.y + r); ctx.stroke(); }
+
+  // 底圖操作框（僅 底圖 分頁；旋轉感知）
+  if (tab === 'underlay' && underlay.img) {
+    const cs = UCORNERS.map(([hx, hy]) => uHandleWorld(hx, hy)), s = 5 / view.scale;
+    ctx.strokeStyle = 'rgba(127,227,255,0.9)'; ctx.lineWidth = 1.5 / view.scale; ctx.setLineDash([6 / view.scale, 4 / view.scale]);
+    ctx.beginPath(); ctx.moveTo(cs[0].x, cs[0].y); for (let i = 1; i < 4; i++) ctx.lineTo(cs[i].x, cs[i].y); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#7fe3ff'; for (const c of cs) ctx.fillRect(c.x - s, c.y - s, s * 2, s * 2);
+    const rh = uRotHandleWorld(); ctx.strokeStyle = 'rgba(127,227,255,0.7)'; ctx.lineWidth = 1.5 / view.scale; line({ x: (cs[0].x + cs[1].x) / 2, y: (cs[0].y + cs[1].y) / 2 }, rh); dot(rh, 6 / view.scale, '#ffd27a');
+  }
+  // 選取高亮 + 群組外框 + 新建預覽
+  if (selRefs.length > 1) drawGroupBox(); else drawSelection();
+  drawDragPreview();
+  drawScaleRef();   // 左下角 1 公尺比例尺參考
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+// 比例尺：地圖左下角畫 1 公尺×1 公尺參考方框（世界空間＝代表真實 1m、隨縮放）
+function drawScaleRef() {
+  const m = PX_PER_M, k = 1 / view.scale, x0 = 20, y1 = map.height - 20, y0 = y1 - m, x1 = x0 + m;
+  ctx.setLineDash([5 * k, 4 * k]); ctx.lineWidth = 1.4 * k; ctx.strokeStyle = 'rgba(127,227,255,0.45)';
+  ctx.strokeRect(x0, y0, m, m); ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(127,227,255,0.95)'; ctx.lineWidth = 2.4 * k;   // L 形強調＝長 × 寬
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke();
+  ctx.fillStyle = 'rgba(190,230,255,0.95)'; ctx.font = (11 * k) + 'px Consolas'; ctx.textAlign = 'left';
+  ctx.fillText('1 公尺 (' + m + 'px)', x0, y1 + 13 * k); ctx.textAlign = 'center';
+}
+function drawGroupBox() {
+  const b = bboxOfRefs(selRefs); if (!b) return;
+  ctx.strokeStyle = 'rgba(255,210,122,0.9)'; ctx.lineWidth = 1.5 / view.scale; ctx.setLineDash([6 / view.scale, 4 / view.scale]);
+  ctx.strokeRect(b.minx, b.miny, b.maxx - b.minx, b.maxy - b.miny); ctx.setLineDash([]);
+  const W = b.maxx - b.minx, H = b.maxy - b.miny, s = 4 / view.scale;
+  ctx.fillStyle = '#ffd27a';
+  for (const [hx, hy] of GHANDLES) { const x = b.minx + hx * W, y = b.miny + hy * H; ctx.fillRect(x - s, y - s, s * 2, s * 2); }
+  // 標出個別成員
+  ctx.strokeStyle = 'rgba(255,210,122,0.5)'; ctx.lineWidth = 1 / view.scale;
+  for (const r of selRefs) { const rb = refBounds(r); ctx.strokeRect(rb.minx, rb.miny, Math.max(2 / view.scale, rb.maxx - rb.minx), Math.max(2 / view.scale, rb.maxy - rb.miny)); }
+}
+function drawArea(z, alpha) {
+  const m = MATERIALS[z.mat] || MATERIALS.solid, col = m.col;
+  ctx.globalAlpha = alpha;
+  if (z.mat === 'smoke') { ctx.fillStyle = `rgba(${col},0.5)`; ctx.fillRect(z.x, z.y, z.w, z.h); }
+  else if (m.los === false) {   // barrier / lowcover：可看穿 → 半透 + 斜線
+    ctx.fillStyle = `rgba(${col},0.22)`; ctx.fillRect(z.x, z.y, z.w, z.h);
+    ctx.save(); ctx.beginPath(); ctx.rect(z.x, z.y, z.w, z.h); ctx.clip();
+    ctx.strokeStyle = `rgba(${col},0.6)`; ctx.lineWidth = 1.5 / view.scale;
+    for (let x = z.x - z.h; x < z.x + z.w; x += 12) { ctx.beginPath(); ctx.moveTo(x, z.y + z.h); ctx.lineTo(x + z.h, z.y); ctx.stroke(); }
+    ctx.restore();
+    ctx.setLineDash([8 / view.scale, 5 / view.scale]); ctx.strokeStyle = `rgba(${col},0.85)`; ctx.lineWidth = 2 / view.scale; ctx.strokeRect(z.x, z.y, z.w, z.h); ctx.setLineDash([]);
+  } else {   // solid / cover：實心
+    ctx.fillStyle = `rgba(${col},${z.mat === 'cover' ? 0.7 : 0.9})`; ctx.fillRect(z.x, z.y, z.w, z.h);
+    ctx.strokeStyle = `rgba(${col},1)`; ctx.lineWidth = 2 / view.scale; ctx.strokeRect(z.x, z.y, z.w, z.h);
+  }
+  ctx.globalAlpha = 1;
+  if (view.scale > 0.4) { ctx.fillStyle = 'rgba(232,237,242,0.85)'; ctx.font = (10 / view.scale) + 'px Consolas'; ctx.textAlign = 'center'; ctx.fillText(m.name, z.x + z.w / 2, z.y + z.h / 2 + 3 / view.scale); }
+}
+function drawDestruct(d, a) {
+  const A = { x: d.x1, y: d.y1 }, B = { x: d.x2, y: d.y2 }, f = d.intact;
+  ctx.lineWidth = 5 / view.scale;
+  if (f === 'wall') { ctx.strokeStyle = `rgba(150,110,80,${a})`; ctx.setLineDash([]); line(A, B); }
+  else if (f === 'glass') { ctx.strokeStyle = `rgba(120,190,225,${0.7 * a})`; ctx.setLineDash([]); line(A, B); }
+  else if (f === 'lowwall') { ctx.strokeStyle = `rgba(150,110,80,${a})`; ctx.setLineDash([8 / view.scale, 5 / view.scale]); line(A, B); ctx.setLineDash([]); }
+  else if (f === 'fence') { ctx.strokeStyle = `rgba(150,160,170,${a})`; ctx.setLineDash([3 / view.scale, 5 / view.scale]); ctx.lineWidth = 2.5 / view.scale; line(A, B); ctx.setLineDash([]); }
+}
+function drawSpawn(s, pos) {
+  const t = s.type || 'grunt', meta = ENEMY_META[t], face = s.facing || 0, half = meta.cone * Math.PI / 180, range = meta.range;
+  ctx.fillStyle = `hsla(${meta.hue},60%,55%,0.12)`;
+  ctx.beginPath(); ctx.moveTo(pos.x, pos.y); ctx.arc(pos.x, pos.y, range, face - half, face + half); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = `hsl(${meta.hue},60%,58%)`; dot(pos, 7 / view.scale, `hsl(${meta.hue},60%,58%)`);
+  ctx.strokeStyle = '#0a0e14'; ctx.lineWidth = 1.5 / view.scale; line(pos, { x: pos.x + Math.cos(face) * 16 / view.scale, y: pos.y + Math.sin(face) * 16 / view.scale });
+  // 朝向把手（選取此 spawn 時）
+  if (sel && sel.kind === 'spawn' && sel.nodeId === s.nodeId) { const hp = { x: pos.x + Math.cos(face) * 34 / view.scale, y: pos.y + Math.sin(face) * 34 / view.scale }; ctx.strokeStyle = 'rgba(127,227,255,0.6)'; ctx.lineWidth = 1 / view.scale; line(pos, hp); dot(hp, 5 / view.scale, '#fff'); }
+}
+function drawSelection() {
+  if (!sel) return;
+  ctx.strokeStyle = '#ffd27a'; ctx.lineWidth = 2 / view.scale; ctx.setLineDash([]);
+  const k = sel.kind;
+  if (k === 'waypoint') { const w = map.waypoints[sel.i]; if (w) circle(w.pos, 11 / view.scale); }
+  else if (k === 'spawn') { const n = map.waypoints[sel.nodeId]; if (n) circle(n.pos, 12 / view.scale); }
+  else if (sel.ref && sel.ref.x1 != null) { const s = sel.ref; line({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }); handle(s.x1, s.y1); handle(s.x2, s.y2); }
+  else if (sel.ref && sel.ref.w != null) { const s = sel.ref; ctx.strokeRect(s.x, s.y, s.w, s.h); }
+  else if (sel.ref && sel.ref.x != null) circle(sel.ref, 11 / view.scale);
+  function circle(p, r) { ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke(); }
+  function handle(x, y) { ctx.strokeRect(x - 4 / view.scale, y - 4 / view.scale, 8 / view.scale, 8 / view.scale); }
+}
+function drawDragPreview() {
+  if (!drag) return;
+  ctx.lineWidth = 2 / view.scale; ctx.setLineDash([5 / view.scale, 4 / view.scale]);
+  if (drag.kind === 'newseg') { ctx.strokeStyle = 'rgba(255,255,255,0.7)'; line(drag.start, drag.end); }
+  else if (drag.kind === 'newbush' || drag.kind === 'newarea') { ctx.strokeStyle = 'rgba(255,255,255,0.7)'; const a = drag.start, b = drag.end; ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y)); }
+  else if (drag.kind === 'marquee') { ctx.strokeStyle = 'rgba(127,227,255,0.9)'; ctx.fillStyle = 'rgba(127,227,255,0.08)'; const x = Math.min(drag.x1, drag.x2), y = Math.min(drag.y1, drag.y2), w = Math.abs(drag.x2 - drag.x1), hh = Math.abs(drag.y2 - drag.y1); ctx.fillRect(x, y, w, hh); ctx.strokeRect(x, y, w, hh); }
+  else if (drag.kind === 'newfeature') { const a = drag.start, b = drag.end, box = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) }; ctx.strokeStyle = 'rgba(127,227,255,0.6)'; ctx.strokeRect(box.x, box.y, box.w, box.h); ctx.setLineDash([]); if (box.w > 4 && box.h > 4) { ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 3 / view.scale; for (const it of FEATURES[featureIdx].build(box, featureOpt)) if (it.x1 != null) line({ x: it.x1, y: it.y1 }, { x: it.x2, y: it.y2 }); } }
+  ctx.setLineDash([]);
+}
+
+/* =====================================================================
+   初始化（DOM 接線）
+   ===================================================================== */
+function init() {
+  cv = document.getElementById('cv'); ctx = cv.getContext('2d');
+  toolsEl = document.getElementById('tools'); inspectorEl = document.getElementById('inspector'); statusEl = document.getElementById('status');
+  mapLabelEl = document.getElementById('mapLabel'); tplSelEl = document.getElementById('tplSel'); mapWEl = document.getElementById('mapW'); mapHEl = document.getElementById('mapH');
+  mapPickEl = document.getElementById('mapPick'); mapKeyEl = document.getElementById('mapKey');
+  mapArchEl = document.getElementById('mapArch'); mapTierEl = document.getElementById('mapTier'); mapRoleNEl = document.getElementById('mapRoleN'); mapRoleBEl = document.getElementById('mapRoleB');
+  if (mapArchEl) { MAP_ARCHETYPES.forEach(a => { const o = document.createElement('option'); o.value = a.id; o.textContent = a.name + '（' + a.id + '）'; mapArchEl.appendChild(o); }); }
+  const setRoles = () => { const r = []; if (mapRoleNEl.checked) r.push('normal'); if (mapRoleBEl.checked) r.push('boss'); if (!r.length) { r.push('normal'); mapRoleNEl.checked = true; } map.roles = r; };
+  if (mapArchEl) mapArchEl.addEventListener('change', () => { map.category = mapArchEl.value; });
+  if (mapTierEl) mapTierEl.addEventListener('change', () => { map.tier = +mapTierEl.value || 1; });
+  if (mapRoleNEl) mapRoleNEl.addEventListener('change', setRoles);
+  if (mapRoleBEl) mapRoleBEl.addEventListener('change', setRoles);
+  overlayEl = document.getElementById('overlay'); ovTitle = document.getElementById('ovtitle'); ovText = document.getElementById('ovtext'); ovMsg = document.getElementById('ovmsg'); ovBtns = document.getElementById('ovbtns'); gridBtn = document.getElementById('btnGrid');
+  domReady = true;
+
+  // 分頁
+  document.querySelectorAll('.tabbtn').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.tabbtn').forEach(x => x.classList.remove('on')); b.classList.add('on'); setTab(b.dataset.tab); }));
+  // 範本下拉
+  const optBlank = document.createElement('option'); optBlank.value = '__blank'; optBlank.textContent = '— 空白 —'; tplSelEl.appendChild(optBlank);
+  Object.keys(TEMPLATES).forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = k + '（' + TEMPLATES[k].label + '）'; tplSelEl.appendChild(o); });
+  tplSelEl.addEventListener('change', () => { loadTemplate(tplSelEl.value); });
+  // 標題
+  mapLabelEl.addEventListener('input', () => { map.label = mapLabelEl.value; });
+  // 按鈕
+  document.getElementById('btnNew').addEventListener('click', () => { loadMap(blankMap()); });
+  const onSize = () => { const w = +mapWEl.value, h = +mapHEl.value; if (w >= 200) map.width = Math.round(w); if (h >= 200) map.height = Math.round(h); updateStatus(); };
+  mapWEl.addEventListener('input', onSize); mapHEl.addEventListener('input', onSize);
+  document.getElementById('btnWall').addEventListener('click', () => { rebuildBoundary(); rebuildUI(); });
+  document.getElementById('btnFit').addEventListener('click', () => fitView());
+  gridBtn.addEventListener('click', () => { snap = snap > 0 ? 0 : 20; gridBtn.textContent = '格線:' + (snap > 0 ? '開' : '關'); });
+  document.getElementById('btnUndo').addEventListener('click', undo);
+  document.getElementById('btnRedo').addEventListener('click', redo);
+  document.getElementById('btnImport').addEventListener('click', () => openOverlay('匯入地圖 JSON', '', [{ label: '匯入', fn: () => { try { importJSON(ovText.value); closeOverlay(); } catch (e) { ovMsg.textContent = '解析失敗：' + e.message; } } }]));
+  document.getElementById('btnExport').addEventListener('click', () => openOverlay('匯出（複製下方文字）', exportJSON(), [
+    { label: '純 JSON', fn: () => { ovText.value = exportJSON(); ovMsg.textContent = '可存檔/再匯入'; sel0(); } },
+    { label: 'MAPS 片段', fn: () => { ovText.value = exportMAPS(map.label); ovMsg.textContent = '貼進 index.html 的 MAPS'; sel0(); } },
+  ]));
+  document.getElementById('ovclose').addEventListener('click', closeOverlay);
+  document.getElementById('btnPlaytest').addEventListener('click', () => { try { location.href = playtestCurrent(); } catch (e) {} });
+  document.getElementById('btnHelp').addEventListener('click', () => openOverlay('地圖編輯器 — 使用說明', EDITOR_HELP, []));
+  document.getElementById('btnMirH').addEventListener('click', () => mirrorToNew('h'));
+  document.getElementById('btnMirV').addEventListener('click', () => mirrorToNew('v'));
+  function sel0() { if (ovText.select) ovText.select(); }
+
+  // maps.json 地圖庫：切換 / 新增 / 刪除 / 改鍵 / 讀入 / 下載
+  mapPickEl.addEventListener('change', () => selectMap(mapPickEl.value));
+  document.getElementById('btnMapAdd').addEventListener('click', () => addMap());
+  document.getElementById('btnMapDel').addEventListener('click', () => { if (mapKeys().length <= 1 || confirm('刪除地圖「' + curKey + '」？')) deleteMap(curKey); });
+  mapKeyEl.addEventListener('change', () => renameCurKey(mapKeyEl.value));
+  const libFile = document.getElementById('libFile');
+  document.getElementById('btnLibLoad').addEventListener('click', () => libFile.click());
+  libFile.addEventListener('change', () => {
+    const f = libFile.files && libFile.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => { try { const ks = libImportText(String(r.result)); statusEl.textContent = '已讀入 maps.json：' + ks.length + ' 張地圖'; } catch (e) { alert('讀入失敗：' + e.message); } };
+    r.readAsText(f); libFile.value = '';
+  });
+  document.getElementById('btnLibSave').addEventListener('click', () => {
+    const blob = new Blob([libExportText()], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'maps.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  // 畫布事件
+  const sxsy = (e) => { const r = cv.getBoundingClientRect(); return { _sx: e.clientX - r.left, _sy: e.clientY - r.top, button: e.button, shift: e.shiftKey }; };
+  cv.addEventListener('mousedown', e => { onDown(Object.assign(sxsy(e), {})); });
+  window.addEventListener('mousemove', e => { onMove(sxsy(e)); });
+  window.addEventListener('mouseup', e => onUp(sxsy(e)));
+  cv.addEventListener('wheel', e => { e.preventDefault(); const o = sxsy(e); o.deltaY = e.deltaY; onWheel(o); }, { passive: false });
+  cv.addEventListener('contextmenu', e => { e.preventDefault(); onContext(s2w({ x: e.clientX - cv.getBoundingClientRect().left, y: e.clientY - cv.getBoundingClientRect().top })); });
+  window.addEventListener('keydown', e => {
+    const t = e.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    const k = e.key.toLowerCase();
+    if (k === ' ') { spaceDown = true; e.preventDefault(); }
+    else if ((e.ctrlKey || e.metaKey) && k === 'z') { undo(); e.preventDefault(); }
+    else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { redo(); e.preventDefault(); }
+    else if (k === 'delete' || k === 'backspace') { removeSelected(); rebuildInspector(); }
+    else if (k === 'g') { snap = snap > 0 ? 0 : 20; gridBtn.textContent = '格線:' + (snap > 0 ? '開' : '關'); }
+    else if (k === 'escape') { clearSel(); rebuildInspector(); }
+  });
+  window.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; });
+  window.addEventListener('resize', resize);
+
+  // 底圖檔案輸入（隱藏）
+  uFileInput = document.createElement('input'); uFileInput.type = 'file'; uFileInput.accept = 'image/*'; uFileInput.style.display = 'none';
+  uFileInput.addEventListener('change', () => { if (uFileInput.files && uFileInput.files[0]) loadUnderlayFile(uFileInput.files[0]); uFileInput.value = ''; });
+  document.body.appendChild(uFileInput);
+  restoreUnderlay();
+
+  resize();
+  // 開場：有上次 session（含測試戰鬥往返）→ 還原工作區；否則庫先放一張 alpha 方便上手
+  if (!restoreSession()) { mapLib = { alpha: cleanOf(TEMPLATES.alpha) }; curKey = 'alpha'; loadMap(mapLib.alpha); }
+  fitView();
+  rebuildUI();
+  (function loop() { render(); requestAnimationFrame(loop); })();
+}
+if (typeof document !== 'undefined' && document.getElementById) init();
+</script>
+</body>
+</html>

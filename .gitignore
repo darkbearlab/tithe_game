@@ -1,0 +1,13 @@
+# headless 驗證用的暫存檔（抽出 <script> 丟 Node vm 測試）
+_check.js
+_check*.js
+_probe*.js
+_extract*.js
+_maps.json
+_test*.js
+*.tmp
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
