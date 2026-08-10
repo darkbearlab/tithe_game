@@ -1,6 +1,7 @@
-# headless 驗證用的暫存檔（抽出 <script> 丟 Node vm 測試）
-_check.js
-_check*.js
+# headless 驗證：`_check.js` 本身**有進版控**（見 README「開發」）。
+# 這個 repo 要對 index.html 做大規模手術，harness 必須跟著程式碼一起走，
+# 不能每開一個新 session 就重寫一遍。以下只忽略它的臨時變體與探針。
+_check[-_.]*.js
 _probe*.js
 _extract*.js
 _maps.json
