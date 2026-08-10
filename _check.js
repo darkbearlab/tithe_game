@@ -150,6 +150,7 @@ const EPILOGUE = `
   get execCount() { return execCount; },
   get knight() { return knight(); },
   get exitPortal() { return exitPortal; },
+  get exitPrompt() { return exitPrompt; },
   get floaters() { return floaters; },
   setScene(s) { scene = s; },
   forceMap(k) { forcedMap = k; },
@@ -312,11 +313,15 @@ function dashHappened() { return sawDash ? null : '整場沒有 dash 過——�
 /* 出口的洞（D6 第一塊）：清場 → 開洞 → 走進去才過關。
    這條探針顧的是「清場之後還走得完」——改成要走進洞之後，過關路徑就不再是
    自動發生的了，很容易在後續改動中悄悄斷掉而測試全綠。 */
-let sawPortal = false;
-function samplePortal() { if (!sawPortal && T.exitPortal && T.exitPortal.open) sawPortal = true; }
+let sawPortal = false, sawExitPrompt = false;
+function samplePortal() {
+  if (!sawPortal && T.exitPortal && T.exitPortal.open) sawPortal = true;
+  if (!sawExitPrompt && T.exitPrompt) sawExitPrompt = true;
+}
 function portalRun() {
   if (!sawPortal) return '清場之後沒有開出口的洞';
-  if (T.scene === 'COMBAT') return '走進洞裡了卻還停在 COMBAT——過關判定沒接上';
+  if (!sawExitPrompt) return '站上洞口沒有跳出確認框——誤觸保護沒生效';
+  if (T.scene === 'COMBAT') return '確認之後還停在 COMBAT——過關判定沒接上';
   return null;
 }
 function executionHappened() { return sawExec ? null : '整場沒有觸發過處決——F 鍵的處決路徑可能斷了'; }
@@ -374,6 +379,9 @@ function pokeCombat(i) {
      不是走路。距離判定仍由遊戲自己在下一幀跑。 */
   const ep = T.exitPortal;
   if (ep && ep.open) { const k = T.knight; if (k) { k.pos.x = ep.x + 6; k.pos.y = ep.y + 6; } }
+  // 洞口確認框：按 Enter 跳下去。**框本身也要被驗到**（見 portalRun）——
+  // 它是誤觸保護，斷掉的話玩家會莫名其妙地被結束一房，而且不會有例外可抓。
+  if (T.exitPrompt) { key('keydown', 'Enter'); key('keyup', 'Enter'); }
   const mm = { movementX: (i % 7) - 3, movementY: (i % 5) - 2, clientX: 640, clientY: 360, preventDefault() {} };
   fire(listeners.canvas, 'mousemove', mm); fire(listeners.window, 'mousemove', mm);
 }
@@ -392,7 +400,7 @@ for (const s of list) {
   let stage = 'enter', i = 0;
   try {
     seedRng(0x51ED + sIdx);   // 每個情境固定種子＝失敗可以原地重現
-    sawEnemyHurt = false; sawExec = false; sawFloater = false; sawDash = false; sawPortal = false;
+    sawEnemyHurt = false; sawExec = false; sawFloater = false; sawDash = false; sawPortal = false; sawExitPrompt = false;
     s.enter();
     grabPointer();
     stage = 'loop';
