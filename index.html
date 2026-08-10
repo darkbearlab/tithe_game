@@ -143,7 +143,7 @@ const CONFIG = {
   flank: { flankMult: 2.0, surpriseMult: 1.5 },
   // 打擊感（juice）：子彈近 hitscan(速度×mul)＋曳光、開火後座/相機踢、命中/擊殺螢幕震動、擊殺頓幀。皆可即時調。
   // bulletSpeedMul：原版 4＝為了讓槍戰接近 hitscan。HOMEWARD 中世紀化後箭矢要「看得見在飛、能預判走位」→ 1.5
-  juice: { bulletSpeedMul: 1.5, tracer: 1.0, bulletAlpha: 0.16, tracerEvery: 5, recoil: 4, recoilDecay: 60, camKick: 2, shakeFire: 1.2, shakeHit: 3, shakeKill: 6, shakeMax: 12, shakeDecay: 16, hitstopKill: 0.04,   // 一般彈＝極細淡線(bulletAlpha,0＝隱形)；曳光彈＝火光色、每 tracerEvery 發一發(現實 4:1≈第5發)、只有 W.tracer 的槍有
+  juice: { bulletSpeedMul: 1.5, tracer: 1.0, bulletAlpha: 0.5, tracerEvery: 5, recoil: 4, recoilDecay: 60, camKick: 1, shakeFire: 0.5, shakeHit: 1.2, shakeKill: 2, shakeMax: 12, shakeDecay: 16, hitstopKill: 0.04,   // 一般彈＝極細淡線(bulletAlpha,0＝隱形)；曳光彈＝火光色、每 tracerEvery 發一發(現實 4:1≈第5發)、只有 W.tracer 的槍有
     hitFlash: 0.12, flinch: 5,                                              // 受擊：閃白時長 / 後仰位移(px)
     cardHit: 0.45, cardShake: 4,                                            // 狀態卡受擊：紅框時長 / 震幅(px)
     deathHitstop: 0.06 },   // 我方陣亡：只保留短頓幀「頓一下」（已取消死亡鏡頭＝相機不轉去死亡點，激戰中不干擾操作）
@@ -178,10 +178,23 @@ const CONFIG = {
   // 望遠/偵察（右鍵按住）：鏡頭往前帶(anchorY↓ 看更前)+微縮(scale)、降發散穩定、禁奔跑、移速降(moveMul)。
   // toggle＝改成切換模式(留給未來 option)；sensMul＝望遠時滑鼠靈敏度倍率(留給未來 option)。moveMul＝穩住細瞄的機動代價(meta「沉著」可減輕)。
   scope: { anchorY: 0.82, scale: 0.86, spreadMul: 0.5, moveMul: 0.6, toggle: false, sensMul: 1.0 },
-  // 遠程「動作中」的倍率（個別武器可用 WEAPONS[id].aimMoveMul / reloadMoveMul / aimTurnMul 覆寫）：
-  //   aimMoveMul＝瞄準預告中移動（AI 蓄力放箭那段；騎士手動射擊無此窗）；reloadMoveMul＝裝填中移動（全體含騎士，0＝定身）。
-  //   aimTurnMul＝AI 瞄準預告中的「轉向」倍率（1＝硬追瞄如舊；<1＝預告一出朝向就鎖住、可被 strafe 閃開）。AI 遠程一律沿「實際朝向」放箭＝預告不騙人。
-  ranged: { aimMoveMul: 0.4, reloadMoveMul: 0.7, aimTurnMul: 1.0 },
+  /* 遠程「動作中」的倍率（個別武器可用 WEAPONS[id].aimMoveMul / reloadMoveMul / aimTurnMul 覆寫）：
+       aimMoveMul＝瞄準預告中移動；reloadMoveMul＝裝填中移動（0＝定身）。
+       aimTurnMul＝AI 瞄準預告中的**轉向**倍率。
+
+     ★ TITHE 的投射物二分法（使用者定案）——每一種遠程敵人只能是這兩者之一：
+
+       A「彈幕型」：**沒有預告窗**（aimTime 0），但彈**很慢且很顯眼**（orb）。
+                    你躲的是**彈本身**——空間題，看得到就閃得掉。
+       B「狙擊型」：**有預告走廊**（長 aimTime），預告一出**朝向完全鎖死**（aimTurnMul 0），
+                    填滿的瞬間以**近乎 hitscan** 的速度射出。
+                    你躲的是**預告**——時間題，要在它填滿前離開那條線。
+
+     兩者都滿足 DESIGN.md §2.8 推論 2「每一次受傷都必須是玩家指認得出來的失誤」：
+     A 是「我沒閃開那顆球」，B 是「我沒離開那條線」。
+     **禁止中間態**——會追瞄的快彈就是無法閃避的傷害，那是設計 bug 不是難度。
+     aimTurnMul 的預設因此是 0（鎖死）；要追瞄的武器自己把它調上去。 */
+  ranged: { aimMoveMul: 0.4, reloadMoveMul: 0.7, aimTurnMul: 0 },
 
   enemy: {
     moveSpeed: 85,
@@ -263,14 +276,16 @@ const WEAPONS = {
   // 穿甲軸的遠程擔當（原版 rifle 0.5 / DMR 0.9 的位置）：長弓＝反人員、十字弓＝破甲。
   // magazine 1 + reloadTime＝每發搭箭/絞弦；特定魔法（火矢等）之後進 Phase 2 一樣走此管線。
   // aimTime＝AI 射這把武器前的瞄準時間（＝預告長方形填滿所需秒數）；玩家不受此限
-  longbow: { name: '長弓',   rarity: 'common',   weight: 1.2, damage: 26, fireRate: 1.4, range: 1200, projSpeed: 640, spreadBase: 1.6, spreadPerShot: 0.8, spreadMax: 6, spreadRecover: 9, magazine: 1, reloadTime: 1.5, turnSpeed: 520, pierce: 0.15, aimTime: 0.9, reloadMoveMul: 0.65, hands: 2 },
-  crossbow:{ name: '十字弓', rarity: 'uncommon', weight: 2.6, damage: 42, fireRate: 1.0, range: 1300, projSpeed: 920, spreadBase: 1.0, spreadPerShot: 0.6, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 2.6, turnSpeed: 420, pierce: 0.85, aimTime: 1.0, aimMoveMul: 0.15, reloadMoveMul: 0, aimTurnMul: 0.2, hands: 2 },   // 重弩＝瞄得久、絞弦裝填 2.6s 完全定身、預告一出轉向鎖死(可被 strafe 閃)、但一發很痛且高穿甲
+  // B 狙擊型：長預告 + 朝向鎖死 + 近乎 hitscan。你躲的是預告走廊，不是箭。
+  longbow: { name: '長弓',   rarity: 'common',   weight: 1.2, damage: 26, fireRate: 1.4, range: 1200, projSpeed: 2400, spreadBase: 1.6, spreadPerShot: 0.8, spreadMax: 6, spreadRecover: 9, magazine: 1, reloadTime: 1.5, turnSpeed: 520, pierce: 0.15, aimTime: 0.9, reloadMoveMul: 0.65, hands: 2, tracer: true },
+  crossbow:{ name: '十字弓', rarity: 'uncommon', weight: 2.6, damage: 42, fireRate: 1.0, range: 1300, projSpeed: 2800, spreadBase: 1.0, spreadPerShot: 0.6, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 2.6, turnSpeed: 420, pierce: 0.85, aimTime: 1.2, aimMoveMul: 0.15, reloadMoveMul: 0, hands: 2, tracer: true },   // B 狙擊型的極端：瞄最久、絞弦裝填 2.6s 完全定身、一發最痛
   // 投槍＝**單手**遠程：唯一能搭盾的投射武器（射程短、彈數少），劍盾流的補牌
-  javelin: { name: '投槍',  rarity: 'common',   weight: 1.0, damage: 34, fireRate: 1.2, range: 620,  projSpeed: 560, spreadBase: 2.2, spreadPerShot: 1.0, spreadMax: 8, spreadRecover: 9, magazine: 1, reloadTime: 1.3, turnSpeed: 540, pierce: 0.45, aimTime: 0.75, hands: 1 },
+  // A 彈幕型：沒有預告，改成慢而顯眼的飛行物——你躲的是投槍本身。
+  javelin: { name: '投槍',  rarity: 'common',   weight: 1.0, damage: 34, fireRate: 1.2, range: 620,  projSpeed: 300, spreadBase: 2.2, spreadPerShot: 1.0, spreadMax: 8, spreadRecover: 9, magazine: 1, reloadTime: 1.3, turnSpeed: 540, pierce: 0.45, aimTime: 0, orb: '255,180,110', hands: 1 },
   // 局外解鎖武器（榮譽；解鎖後才進招募/loot 池，仍 RNG 取得）
-  warbow:  { name: '戰弓',  rarity: 'uncommon', weight: 1.6, damage: 34, fireRate: 1.2, range: 1300, projSpeed: 760, spreadBase: 1.2, spreadPerShot: 0.7, spreadMax: 5, spreadRecover: 9, magazine: 1, reloadTime: 1.7, turnSpeed: 470, pierce: 0.45, aimTime: 0.95, aimMoveMul: 0.35, reloadMoveMul: 0.6, hands: 2 },   // 強弓：長弓的上位，過半穿甲、略笨重
+  warbow:  { name: '戰弓',  rarity: 'uncommon', weight: 1.6, damage: 34, fireRate: 1.2, range: 1300, projSpeed: 2600, spreadBase: 1.2, spreadPerShot: 0.7, spreadMax: 5, spreadRecover: 9, magazine: 1, reloadTime: 1.7, turnSpeed: 470, pierce: 0.45, aimTime: 0.95, aimMoveMul: 0.35, reloadMoveMul: 0.6, hands: 2, tracer: true },   // B 狙擊型：長弓的上位，過半穿甲、略笨重
   // 術士騎士（救援變體 B1）的法杖：走遠程開火 AI（隊友本就會射），發射魔法彈＝彈藥無限、過半穿甲、視覺另畫。noRandom＝不進任何隨機池。
-  staff:   { name: '法杖',  rarity: 'rare', weight: 1.4, damage: 30, fireRate: 1.2, range: 900, projSpeed: 560, spreadBase: 1.0, spreadPerShot: 0.5, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 1.5, turnSpeed: 500, pierce: 0.55, aimTime: 0.8, reloadMoveMul: 0.85, hands: 2, magic: true, infinite: true, noRandom: true },   // 引魔比絞弦流暢＝裝填移動懲罰輕
+  staff:   { name: '法杖',  rarity: 'rare', weight: 1.4, damage: 30, fireRate: 1.2, range: 900, projSpeed: 320, spreadBase: 1.0, spreadPerShot: 0.5, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 1.5, turnSpeed: 500, pierce: 0.55, aimTime: 0, reloadMoveMul: 0.85, hands: 2, magic: true, infinite: true, noRandom: true },   // A 彈幕型：魔法彈本來就畫成發光光矢＝最適合當慢而顯眼的那種
   falchion:{ name: '彎刀',  rarity: 'uncommon', weight: 1.3, damage: 34, fireRate: 6, range: 62, turnSpeed: 560, pierce: 0.25, melee: true, swingStyle: 'sweep', hands: 1,
              arcDeg: 120, reach: 62, windup: 0.09, activeT: 0.09, recover: 0.24, cleave: 4, knock: 240, stagger: 0, backstabMul: 1.0, poiseDmg: 24, stamCost: 17,
              magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },   // 單手廣掃：對付雜兵群
@@ -426,7 +441,8 @@ CONFIG.melee = {
      另外：**前搖中被命中＝揮擊直接被打斷**（重武器的 hyperArmor 免疫）＝搶到先手的人贏整次交鋒。 */
   poiseRegenDelay: 1.6,    // 多久沒被打才開始回體幹（太短＝連段打不破，體幹破永遠不會發生）
   poiseRegen: 18,          // 體幹回復速度 /s
-  poiseBreakStagger: 0.9,  // 體幹破的硬直秒數
+  poiseBreakStagger: 1.8,  // 體幹破的硬直秒數＝**處決窗**。刻意長：處決是唯一的回血手段，
+                           // 窗太短就變成「看到了但跑不過去」，那不是難度，是挫折。
   staggerDmg: 15,          // 失衡打斷：單擊(post-armor)≥此值 → 打斷「預告中」動作(近接前搖/遠程瞄準/施法前搖)，所有單位同一把尺。實測：農兵/劍兵/槍兵砸不斷、披甲士/軍士(鎚斧)會斷。體幹破是另一層(重硬直)
   poiseBreakDmgMul: 1.6,   // 硬直中受到的傷害倍率（處決窗）
   /* 處決（TITHE D2）——整個資源迴圈的心臟（DESIGN.md §2.4）。
@@ -489,7 +505,8 @@ CONFIG.melee = {
   tgBeamHalfW: 5,          // 遠程預告的長方形半寬（px）＝彈道走廊的視覺粗細
   tgBeamMaxLen: 900,       // 遠程預告畫多長（會再被牆截斷；不畫滿整個射程免得洗版）
   hitstopBlocked: 0.05,    // 被格擋時的頓幀（金屬撞擊感）
-  shakeHit: 5,             // 近接命中的螢幕震動
+  shakeHit: 1.5,           // 近接命中的螢幕震動。**刻意很小**——一直震會讓畫面讀不動，
+                           // 而且會把處決那一下的份量吃掉。大震只留給處決（見 exec.shake）
   arcFadeT: 0.22,          // 揮斬弧特效殘留秒數
   staggerFlashT: 0.25,     // 硬直時頭頂符號閃爍週期
 };
@@ -4159,7 +4176,7 @@ function fireUnit(u, angle, spreadDeg, fireRateMult, bloomAdd) {
   const dmgF = 1;
   const isPlayer = u.faction === 'player';
   u.shotCount = (u.shotCount || 0) + 1;                       // 連射計數（曳光彈每 N 發一發用）
-  const isTracer = !!W.tracer && (u.shotCount % CONFIG.juice.tracerEvery === 0);   // 只有帶曳光的槍、且輪到第 N 發才是曳光彈
+  const isTracer = !!W.tracer;   // B 狙擊型：**每一發**都要留下亮痕——彈速近乎 hitscan，沒有痕跡玩家就不知道自己被什麼打到了
   for (let p = 0; p < pellets; p++) {
     const a = angle + (Math.random() * 2 - 1) * spreadDeg * spreadF * Math.PI / 180;
     bullets.push({
@@ -4170,6 +4187,7 @@ function fireUnit(u, angle, spreadDeg, fireRateMult, bloomAdd) {
       pierce: clamp((W.pierce || 0) + (u.pierceBonus || 0), 0, 1),   // 穿甲：對裝甲敵人的擋格率衰減（誓約「重弩/長驅」：pierceBonus +）
       pierceThru: u.magicPierce || 0,   // 貫穿：可穿過幾名敵人繼續飛（誓約「法脈」＝魔法彈直線貫穿）
       tracer: isTracer,           // 曳光彈：火光色亮拖尾（否則極細淡線/隱形）
+      orb: W.orb || null,         // A 彈幕型：畫成發光的球（慢彈必須顯眼）
       magic: !!W.magic,           // 魔法彈（法杖）：另畫成發光的紫青光矢
       shooterId: isPlayer ? u.id : -1, owner: u,   // 擊殺歸屬；owner＝射手本人（友軍誤傷判定用來排除自己）
     });
@@ -5743,7 +5761,7 @@ function drawBullets() {
   if (alpha > 0) {
     ctx.globalCompositeOperation = 'source-over'; ctx.lineWidth = 1;
     for (const b of bullets) {
-      if (b.tracer) continue;
+      if (b.tracer || b.orb || b.magic) continue;
       const l = Math.hypot(b.vx, b.vy) || 1, len = clamp(l * 0.03, 8, 54);
       const col = b.faction === 'player' ? '185,212,236' : '226,176,150';
       ctx.strokeStyle = `rgba(${col},${alpha})`;
@@ -5760,6 +5778,20 @@ function drawBullets() {
     const g = ctx.createLinearGradient(tx, ty, b.x, b.y);
     g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(1, `rgba(${col},0.95)`);
     ctx.strokeStyle = g; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  // A 彈幕型（orb）：發光的球 + 短拖尾。沒有預告窗的攻擊，**彈本身就是預告**——
+  // 所以它必須是畫面上最顯眼的東西之一，而且要慢到看得到、閃得掉。
+  ctx.globalCompositeOperation = 'lighter';
+  for (const b of bullets) {
+    if (!b.orb) continue;
+    const l = Math.hypot(b.vx, b.vy) || 1, len = clamp(l * 0.06, 14, 60);
+    const tx = b.x - b.vx / l * len, ty = b.y - b.vy / l * len;
+    const g = ctx.createLinearGradient(tx, ty, b.x, b.y);
+    g.addColorStop(0, `rgba(${b.orb},0)`); g.addColorStop(1, `rgba(${b.orb},0.8)`);
+    ctx.lineWidth = 4; ctx.strokeStyle = g; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(b.x, b.y); ctx.stroke();
+    const pul = 0.85 + 0.15 * Math.sin(simTime * 18);
+    ctx.fillStyle = `rgba(${b.orb},0.95)`; ctx.beginPath(); ctx.arc(b.x, b.y, 5 * pul, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,245,230,0.9)'; ctx.beginPath(); ctx.arc(b.x, b.y, 2.4 * pul, 0, Math.PI * 2); ctx.fill();
   }
   // 魔法彈（法杖）：紫青發光光矢 + 亮頭
   ctx.globalCompositeOperation = 'lighter';
