@@ -92,9 +92,11 @@ const CONFIG = {
   //   時間類（前後搖、預告瞄準）× tempo＝更長；速度類（移動）÷ tempo＝更慢。
   //   套用點：spdOf（我方移動）、makeEnemy.moveSpeed（敵方移動）、startSwing（揮擊三段）、aimTimeOf（預告）。
   //   設回 1.0＝恢復原速。刻意不動士氣/CD/耐力回復等純邏輯計時。
-  tempo: 1.2,
+  // TITHE：Homeward 這裡是 1.2（刻意拉長 20% 的戰術節奏）。我們要往反方向走——
+  // <1 ＝前後搖更短、移動更快。見 DESIGN.md §3。
+  tempo: 0.9,
   introEnabled: true,       // 選完出身是否播序章（敗騎自屍山醒來→處決狼→遇敵兵→撤離）。關掉＝直接進路線圖。
-  moveSpeed: 110,           // px/s（戰術化：放慢）
+  moveSpeed: 200,           // px/s（TITHE：DOOM 式的高基礎移速；Homeward 是 110「戰術化放慢」）
   turnSpeed: 480,           // deg/s（預設砲塔轉速；實際以各武器 turnSpeed 為準）
   mouseSensitivity: 0.0035, // FPS 式滑鼠鎖定靈敏度（rad/px）。轉速不夠快時砲塔會追不上＝轉向延遲
   // Shift 奔跑：奔跑倍率 = base − (武器weight−1)×weightPenalty，夾在 [minMult, base]（越重跑越慢）
@@ -141,7 +143,7 @@ const CONFIG = {
   flank: { flankMult: 2.0, surpriseMult: 1.5 },
   // 打擊感（juice）：子彈近 hitscan(速度×mul)＋曳光、開火後座/相機踢、命中/擊殺螢幕震動、擊殺頓幀。皆可即時調。
   // bulletSpeedMul：原版 4＝為了讓槍戰接近 hitscan。HOMEWARD 中世紀化後箭矢要「看得見在飛、能預判走位」→ 1.5
-  juice: { bulletSpeedMul: 1.5, tracer: 1.0, bulletAlpha: 0.16, tracerEvery: 5, recoil: 4, recoilDecay: 60, camKick: 0, shakeFire: 0, shakeHit: 0, shakeKill: 0, shakeMax: 12, shakeDecay: 16, hitstopKill: 0.04,   // 一般彈＝極細淡線(bulletAlpha,0＝隱形)；曳光彈＝火光色、每 tracerEvery 發一發(現實 4:1≈第5發)、只有 W.tracer 的槍有
+  juice: { bulletSpeedMul: 1.5, tracer: 1.0, bulletAlpha: 0.16, tracerEvery: 5, recoil: 4, recoilDecay: 60, camKick: 2, shakeFire: 1.2, shakeHit: 3, shakeKill: 6, shakeMax: 12, shakeDecay: 16, hitstopKill: 0.04,   // 一般彈＝極細淡線(bulletAlpha,0＝隱形)；曳光彈＝火光色、每 tracerEvery 發一發(現實 4:1≈第5發)、只有 W.tracer 的槍有
     hitFlash: 0.12, flinch: 5,                                              // 受擊：閃白時長 / 後仰位移(px)
     cardHit: 0.45, cardShake: 4,                                            // 狀態卡受擊：紅框時長 / 震幅(px)
     deathHitstop: 0.06 },   // 我方陣亡：只保留短頓幀「頓一下」（已取消死亡鏡頭＝相機不轉去死亡點，激戰中不干擾操作）
@@ -427,6 +429,21 @@ CONFIG.melee = {
   poiseBreakStagger: 0.9,  // 體幹破的硬直秒數
   staggerDmg: 15,          // 失衡打斷：單擊(post-armor)≥此值 → 打斷「預告中」動作(近接前搖/遠程瞄準/施法前搖)，所有單位同一把尺。實測：農兵/劍兵/槍兵砸不斷、披甲士/軍士(鎚斧)會斷。體幹破是另一層(重硬直)
   poiseBreakDmgMul: 1.6,   // 硬直中受到的傷害倍率（處決窗）
+  /* 處決（TITHE D2）——整個資源迴圈的心臟（DESIGN.md §2.4）。
+     體幹破 → 踉蹌 → 貼上去按 F → 處決 → **噴聖血**。處決是唯一的回血手段，
+     所以「往前打」才會是唯一的活路。
+     這套機制的地基（體幹、踉蹌、擊退、爆擊火花、poiseBroken 掛勾）Homeward 都寫好了，
+     這裡加的只是最後一哩：觸發、鎖定、演出、回收。 */
+  exec: {
+    range: 54,        // 觸發距離（到目標中心）
+    dur: 0.42,        // 動作長度：短——這是爽點，不是過場
+    healFrac: 0.16,   // 回血＝目標 maxHp × 此值（大隻的一大口、雜兵一小口）
+    healMin: 8,
+    zoom: 1.4,        // 鏡頭拉近倍率
+    zoomLerp: 18,     // 拉近很快、拉回沿用一般跟隨速度＝「猛地推進、緩緩退開」
+    shake: 9,
+    hitstop: 0.10,
+  },
   poiseBreakKnockMul: 2.5, // 體幹破當下的擊退倍率
   blockPoiseMul: 0.5,      // 舉盾擋下時，體幹只吃這個比例（擋得住傷害，擋不住全部衝擊）
   hyperPoiseMul: 0.5,      // hyperArmor 武器在判定窗中，體幹傷害只吃這個比例
@@ -2098,9 +2115,11 @@ function updateCamera(dt) {
   cam.angle += angDiff(camTarget.angle, cam.angle) * ka;
   // 望遠：鏡頭微縮 + 錨點往下(看更前方)，平滑過渡。
   const sc = isScoping();
-  const tScale = sc ? CONFIG.scope.scale : CONFIG.camera.scale;
+  // 處決特寫：鏡頭猛地推進、結束後沿一般跟隨速度緩緩退開（拉近用 zoomLerp、拉回用 kp）
+  const ex = knight() && knight().exec;
+  const tScale = ex ? CONFIG.camera.scale * CONFIG.melee.exec.zoom : (sc ? CONFIG.scope.scale : CONFIG.camera.scale);
   const tAnchor = sc ? CONFIG.scope.anchorY : CONFIG.camera.anchorY;
-  cam.scale += (tScale - cam.scale) * kp;
+  cam.scale += (tScale - cam.scale) * (ex ? (1 - Math.exp(-CONFIG.melee.exec.zoomLerp * dt)) : kp);
   camAnchorY += (tAnchor - camAnchorY) * kp;
 }
 function w2s(p) {
@@ -2268,6 +2287,7 @@ function makePlayer(i, cfg, pos) {
     caches: 0,                             // 運搬中的密封容器數（每場撿取，撤離開封；不跨關）
     senseRadius: CONFIG.vision.senseRadius * (cfg.strength || 1) * (fx.senseMul || 1),
     swing: null, blocking: false, blockT: null, staggerT: 0, kbx: 0, kby: 0, parryFxT: 0,   // 近接：揮斬狀態機 / 盾格 / 硬直 / 擊退速度 / 招架特效
+    exec: null,                                                // 處決動作中（非 null＝鎖住輸入、免傷）
     aimT: 0, aimDur: 0,   // 遠程瞄準進度／所需時間（扈從也吃；騎士手動射擊不經此）
     cast: null,   // 施法前搖狀態 { slot, artId, t, dur }；卷軸即時＝不經過這裡
     parryT: 0, parryDur: 0, parryHit: false,   // 武器招架（無盾時的防禦）：動作計時 / 總長 / 這次有沒有接到攻擊
@@ -2554,7 +2574,7 @@ function startMission() {
   const faceInto = ENTRY ? angTo(ENTRY, { x: WORLD.w / 2, y: WORLD.h / 2 }) : 0;   // 開場面向地圖內部
   for (const p of players) { p.facing = faceInto; p.idleAnchor = faceInto; }
   controlledId = 0;
-  enemies = []; bullets = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; shakeAmt = 0; kickY = 0; hitstopT = 0;
+  enemies = []; bullets = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; floaters = []; execCount = 0; shakeAmt = 0; kickY = 0; hitstopT = 0;
   attackTokens = new Map(); enemyIdSeq = 1; drops = []; fileDrop = null;
   cacheGround = (MAP.caches || []).map(c => ({ x: c.x, y: c.y }));   // 密封容器：本場地圖配置的（撿走撤離才開封）
   for (const p of players) p.caches = 0;
@@ -3115,7 +3135,7 @@ function startIntro() {
   for (const d of (MAP.destructibles || [])) { d.cur = d.intact; d.curHp = d.hp; }
   enemyIdSeq = 1;
   bullets = []; grenades = []; flashFx = []; particles = []; drops = []; fileDrop = null;
-  cacheGround = []; prisoners = []; corpses = []; decals = []; shakeAmt = 0; kickY = 0; hitstopT = 0;
+  cacheGround = []; prisoners = []; corpses = []; decals = []; floaters = []; execCount = 0; shakeAmt = 0; kickY = 0; hitstopT = 0;
   introGuards = []; introConsole = null;
   // 騎士＝出身選定的孤身一人；醒來處在戰場左側
   const wake = { x: 220, y: 360 };
@@ -3584,6 +3604,58 @@ const activePlayers = () => players.filter(p => p.state !== 'DEAD');
 /* 無附身：全程只操作騎士本人。已移除 possess()／autoPossess()／數字鍵切換／
    自走撤離（TITHE C6：撤離整套沒了，過關條件改成清場）。 */
 
+/* ── 傷害飄字（TITHE D4）──────────────────────────────────────────────
+   Homeward 完全沒有這個東西。多巴胺版沒有它，玩家就看不出「這一刀到底有沒有比較痛」——
+   繞背、破甲、體幹破、處決回了多少血，全部只能用體感猜。
+
+   世界座標存、**螢幕座標畫**：攝影機會旋轉，字必須永遠正立才讀得動。 */
+let floaters = [];
+const FLOAT_STYLE = {
+  hit:     { col: '#e8eef6', size: 15, rise: 44, life: 0.60, bold: false },
+  crit:    { col: '#ff6b7a', size: 23, rise: 62, life: 0.85, bold: true  },   // 繞背/突襲
+  blocked: { col: '#9fb3c8', size: 13, rise: 28, life: 0.45, bold: false },   // 被甲整發彈開
+  parry:   { col: '#bcd2ff', size: 19, rise: 48, life: 0.70, bold: true  },
+  poise:   { col: '#ffcf5a', size: 20, rise: 52, life: 0.80, bold: true  },   // 體幹破
+  exec:    { col: '#ffd27a', size: 27, rise: 34, life: 0.95, bold: true  },   // 處決
+  heal:    { col: '#7fffa8', size: 24, rise: 66, life: 1.00, bold: true  },   // 聖血
+};
+function spawnFloater(pos, text, kind) {
+  const st = FLOAT_STYLE[kind] || FLOAT_STYLE.hit;
+  floaters.push({
+    x: pos.x + (Math.random() * 14 - 7), y: pos.y - 6,
+    vx: (Math.random() * 2 - 1) * 16, rise: st.rise,
+    text, life: st.life, max: st.life, col: st.col, size: st.size, bold: st.bold,
+  });
+  if (floaters.length > 60) floaters.shift();   // 上限淘汰＝激戰中不會累積成拖累
+}
+function updateFloaters(dt) {
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i];
+    f.life -= dt;
+    if (f.life <= 0) { floaters.splice(i, 1); continue; }
+    const k = 1 - f.life / f.max;                      // 0→1
+    f.x += f.vx * dt;
+    f.y -= f.rise * dt * (1 - k * 0.65);               // 越後面升得越慢＝有重量
+  }
+}
+function drawFloaters() {
+  if (!floaters.length || !cam) return;
+  ctx.textAlign = 'center';
+  for (const f of floaters) {
+    const k = 1 - f.life / f.max;
+    const pop = k < 0.12 ? 1 + (0.12 - k) * 2.6 : 1;   // 出現瞬間的放大（打擊感）
+    const a = k > 0.7 ? (1 - k) / 0.3 : 1;             // 尾段才淡出
+    const sp = w2s({ x: f.x, y: f.y });
+    ctx.globalAlpha = a;
+    ctx.font = `${f.bold ? 'bold ' : ''}${Math.round(f.size * pop)}px Consolas`;
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(f.text, sp.x, sp.y);                // 描邊＝任何底色上都讀得到
+    ctx.fillStyle = f.col;
+    ctx.fillText(f.text, sp.x, sp.y);
+  }
+  ctx.globalAlpha = 1; ctx.textAlign = 'left';
+}
+
 /* =====================================================================
    Combat — 開火(發散) / 換彈 / 彈藥 / 子彈 / 傷害 / 死亡
    ===================================================================== */
@@ -3807,8 +3879,61 @@ function breakPoise(t, fromAng, by) {
   if (fromAng != null) applyKnock(t, fromAng + Math.PI, (t.lastKnock || 160) * M.poiseBreakKnockMul);
   Hooks.fire('poiseBroken', { u: t, by: by || null });
   spawnCrit(t.pos);
+  spawnFloater(t.pos, '體幹破', 'poise');
   Sfx.play('block', t.pos);
 }
+/* ── 處決 ─────────────────────────────────────────────────────────── */
+let execCount = 0;   // 本場處決次數（HUD/驗證用）
+// 可處決的目標＝踉蹌中（體幹破）且在觸及距離內的敵人，取最近的。
+function execTargetFor(u) {
+  if (!u || u.state !== 'CONTROLLED' || u.exec || u.staggerT > 0) return null;
+  const R = CONFIG.melee.exec.range;
+  let best = null, bd = R;
+  for (const e of enemies) {
+    if (e.dead || e.dummy || !(e.staggerT > 0)) continue;
+    if (!hostile(u.faction, e.faction)) continue;
+    const d = dist(u.pos, e.pos);
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+function startExecution(u, e) {
+  const X = CONFIG.melee.exec;
+  u.exec = { t: 0, dur: X.dur, target: e, ang: angTo(u.pos, e.pos) };
+  u.swing = null; u.cast = null; u.blocking = false; u.blockT = null;
+  u.invulnT = Math.max(u.invulnT || 0, X.dur + 0.08);   // 處決期間免傷＝敢衝進人堆裡吃這一口
+  e.staggerT = Math.max(e.staggerT, X.dur + 0.05);      // 目標定住，不會在動畫中間走掉
+  u.facing = u.exec.ang;
+  hitstop(0.04);
+  return true;
+}
+// 每幀推進；結束的那一幀結算（殺掉目標 + 回血 + 演出）
+function tickExecution(u, dt) {
+  const x = u.exec; if (!x) return;
+  const X = CONFIG.melee.exec, e = x.target;
+  u.facing = x.ang;                                  // 動作中朝向鎖住
+  if (e && !e.dead) { e.staggerT = Math.max(e.staggerT, 0.05); }
+  x.t += dt;
+  if (x.t < x.dur) return;
+  u.exec = null;
+  if (!e || e.dead) return;                          // 目標中途被別的東西殺掉＝白做（不給血）
+  const heal = Math.max(X.healMin, Math.round((e.maxHp || 40) * X.healFrac));
+  const before = u.hp;
+  u.hp = Math.min(u.maxHp, u.hp + heal);
+  const gained = Math.round(u.hp - before);
+  e.hp = 0; killUnit(e, u);
+  execCount++;
+  // 演出：頓幀 + 大震 + 血花 + 兩個字
+  hitstop(X.hitstop);
+  addShakeAt(e.pos, X.shake);
+  spawnBlood(e.pos, x.ang); spawnBlood(e.pos, x.ang + 0.9); spawnBlood(e.pos, x.ang - 0.9);
+  pushDecal(e.pos.x, e.pos.y, 10 + Math.random() * 5, 'rgba(122,20,28,0.62)');
+  spawnFloater(e.pos, '處決', 'exec');
+  if (gained > 0) spawnFloater({ x: u.pos.x, y: u.pos.y - 10 }, '+' + gained, 'heal');
+  Sfx.play('crit', e.pos);
+  Hooks.fire('execute', { u, victim: e, heal: gained });
+}
+
 /* 攻擊權：同時只有 CONFIG.melee.maxAttackers 隻近接敵可以進攻。
    取得後保有 tokenHold 秒（沒打到也會過期讓給別人＝不會卡死）。 */
 /* 攻擊權的池是**以「被攻擊的目標」為單位**，不是全域一個。
@@ -3855,7 +3980,7 @@ function friendlyInSwingArc(u, aimPos) {
 
 function startSwing(u, fireRateMult) {
   const W = u.weapon;
-  if (u.swing || u.staggerT > 0 || u.swapT > 0 || u.parryT > 0 || u.cast) return false;   // 揮擊中/硬直中/換手中/招架中/施法前搖中不能再揮
+  if (u.swing || u.staggerT > 0 || u.swapT > 0 || u.parryT > 0 || u.cast || u.exec) return false;   // 揮擊中/硬直中/換手中/招架中/施法前搖中/處決中不能再揮
   const cost = W.stamCost || 0;   // 耐力不足＝揮不動（攻擊有成本）
   if (u.stamMax && cost > 0 && (u.stam || 0) < cost) {
     u.noStamFxT = 0.25;
@@ -4233,7 +4358,7 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
     if (u.stamMax) u.stam = Math.min(u.stamMax, (u.stam || 0) + M.stamParryRefund);
     u.parryFxT = M.arcFadeT;
     Hooks.fire('parry', { u, from: atk || null });
-    spawnBlock(u.pos); Sfx.play('parry', u.pos);
+    spawnBlock(u.pos); Sfx.play('parry', u.pos); spawnFloater(u.pos, '招架', 'parry');
     return true;
   }
   let blocked = false;
@@ -4300,7 +4425,7 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
     applyKnock(u, fromAng + Math.PI, opts.knock || 0);                                   // 往「背離攻擊者」的方向推
     if (opts.stagger) { u.staggerT = Math.max(u.staggerT || 0, opts.stagger); u.swing = null; u.cast = null; }
   }
-  if (armorBlocked) return blocked;   // 被甲彈開：不流血（體幹/擊退已在上面結算過了）
+  if (armorBlocked) { spawnFloater(u.pos, '擋', 'blocked'); return blocked; }   // 被甲彈開：不流血（體幹/擊退已在上面結算過了）
   if (u.staggerT > 0 && !blocked) dmg *= M.poiseBreakDmgMul;   // 處決窗：硬直中的人挨打特別痛
   /* 甲的第二層：**被彈開之外，穿過來的那一下也吃得少一點**（使用者定案）。
      原本甲只有機率性的「整發彈開」，55% 全免 / 45% 全額——倍率其實已經是 2.3 倍，
@@ -4331,6 +4456,7 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
   if (u.maxHp && !u._hpLowFired && u.hp > 0 && u.hp / u.maxHp < CONFIG.hooks.hpLowFrac) { u._hpLowFired = true; Hooks.fire('hpLow', { u, frac: u.hp / u.maxHp }); }
   if (u.faction === 'player') u.alertTimer = CONFIG.ghostAlertTime;   // 受傷＝在戰鬥
   if (flanked || surprise) spawnCrit(u.pos); else spawnHit(u.pos);   // 繞背/突襲命中＝不同火花
+  spawnFloater(u.pos, String(Math.round(raw)), (flanked || surprise) ? 'crit' : 'hit');   // 傷害數字（raw＝實際打出去的，不是被 overkill 夾過的 dealt）
   addShakeAt(u.pos, (flanked || surprise) ? CONFIG.juice.shakeHit * 1.6 : CONFIG.juice.shakeHit);   // 命中震動（依離相機衰減）
   u.hitFlash = CONFIG.juice.hitFlash;                                 // 受擊閃白（單位本體，0.12s）
   u.cardHitT = CONFIG.juice.cardHit;                                  // 狀態卡的紅框＋震動（比本體長，不然掃一眼會漏看）
@@ -5063,7 +5189,10 @@ window.addEventListener('keydown', e => {
   if (k === 'r') { if (controlledId != null) startReload(players[controlledId]); } // 換彈
   if (k === 'x') { if (controlledId != null) swapWeapon(players[controlledId]); }   // 換槍(主↔副)
   if (k === 'c') { if (controlledId != null) useItem(players[controlledId]); }     // 道具(原 Q)
-  if (k === 'f') { tryInteract(); }                                                // 互動：開關門/按鈕(原 E)
+  if (k === 'f') {   // 處決優先於互動：踉蹌中的敵人就在眼前時，F 是處決鍵；否則才是開門
+    const kn = knight(), ex = execTargetFor(kn);
+    if (ex) startExecution(kn, ex); else tryInteract();
+  }
   // --- 近戰試作場專用熱鍵（只在 arenaMode 生效，不影響戰役）---
   if (arenaMode) {
     // 試作場的主手輪盤讓位給 1-4 槽位 → 改用 Tab / Shift+Tab 循環（見下），數字鍵不再選武器
@@ -5128,7 +5257,8 @@ function update(dt) {
       }
       u.defendHeldPrev = wantDefend;
       // 硬直中：完全不能動、不能轉、不能攻擊（被鎚打中/招架失敗的代價）
-      if (u.staggerT > 0) { u.sprinting = false; }
+      if (u.exec) { u.sprinting = false; tickExecution(u, dt); }   // 處決中：鎖住移動與攻擊，只推進動作
+      else if (u.staggerT > 0) { u.sprinting = false; }
       else {
         // 砲塔以「武器迴轉速度」追滑鼠輸入累積的目標朝向（追不上＝轉向延遲；裝備可改迴轉）
         // 近接：揮出去之後轉向大幅受限（swingTurnMul）＝要預判，不能揮到一半整個人轉過去掃。
@@ -5156,7 +5286,7 @@ function update(dt) {
   for (const e of enemies) if (!e.dead) enemyTick(e, dt);
 
   // 5) 子彈 / 特效
-  updateBullets(dt); updateGrenades(dt); updateFlashFx(dt); updateParticles(dt);
+  updateBullets(dt); updateGrenades(dt); updateFlashFx(dt); updateParticles(dt); updateFloaters(dt);
 
   // 6) 擊退位移 + 分離 + 牆面碰撞 + 掉落物拾取（擊退走位移而非瞬移＝仍吃 collideWalls，不會被推穿牆）
   const movers = [...activePlayers(), ...enemies.filter(e => !e.dead)];
@@ -5243,6 +5373,7 @@ function draw() {
   ctx.save(); applyCam(); drawSkeleton(); drawFileDrop(); drawCacheDrops(); ctx.restore();
 
   // ---- 螢幕層：血條/標記/HUD/卡片 ----（演出鎖控制時隱藏＝乾淨電影感；gate 解鎖時照常）
+  drawFloaters();   // 傷害數字（螢幕層＝不隨鏡頭旋轉）
   if (!(cutscene && cutscene.lock)) { drawScreenOverlays(); drawHUD(); drawCards(); drawHotkeyBar(); }
   if (arenaMode) drawArenaHUD();  // 試作場：武器參數表 + 即時命中數據 + 熱鍵
   if (cutscene) drawCutscene();   // 第0關：對話泡 + 字幕（最上層）
@@ -5780,14 +5911,29 @@ function drawMeleeFx(list) {
   }
 }
 // 硬直標記：頭頂閃爍的螺旋符號（誰現在動不了一目了然）
+/* 踉蹌標記。TITHE 把它從「一個小星號」升級成**遠遠一眼就看得到的處決提示**——
+   處決是唯一的回血手段，所以「那隻可以吃」必須是畫面上最醒目的資訊之一（DESIGN.md §2.4）。 */
 function drawStaggerMarks(list) {
+  const kn = knight(), R = CONFIG.melee.exec.range;
   for (const u of list) {
     if (!(u.staggerT > 0)) continue;
     if (u.dead || u.state === 'DEAD') continue;
     const blink = 0.5 + 0.5 * Math.sin(simTime / CONFIG.melee.staggerFlashT * Math.PI * 2);
+    const foe = kn && hostile(kn.faction, u.faction) && !u.dummy;
+    const near = foe && kn.state === 'CONTROLLED' && dist(kn.pos, u.pos) <= R;
+    // 持續的環：踉蹌中的敵人整個圈起來（一次性火花看不到，這個看得到）
+    ctx.strokeStyle = near ? `rgba(255,225,140,${0.75 + 0.25 * blink})` : `rgba(255,200,90,${0.30 + 0.25 * blink})`;
+    ctx.lineWidth = near ? 3 : 2;
+    ctx.beginPath(); ctx.arc(u.pos.x, u.pos.y, u.radius + 7 + (near ? blink * 2 : 0), 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = `rgba(255,215,110,${0.5 + 0.5 * blink})`;
     ctx.font = 'bold 14px Consolas'; ctx.textAlign = 'center';
     ctx.fillText('✷', u.pos.x, u.pos.y - u.radius - 12);
+    if (near) {   // 進到觸及距離＝直接把按鍵講出來
+      ctx.font = 'bold 13px Consolas'; ctx.fillStyle = `rgba(255,240,190,${0.7 + 0.3 * blink})`;
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 3;
+      ctx.strokeText('F 處決', u.pos.x, u.pos.y - u.radius - 28);
+      ctx.fillText('F 處決', u.pos.x, u.pos.y - u.radius - 28);
+    }
     ctx.textAlign = 'left';
   }
 }

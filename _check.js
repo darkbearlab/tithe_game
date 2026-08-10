@@ -147,6 +147,8 @@ const EPILOGUE = `
   enterRest, enterArmory, enterTutor, enterBlacksmith, enterHQ, enterEvent, enterArena,
   enterArenaSelect, editorOpen, enterSandbox, enterFinaleSetup, playEnding,
   keys, mouse,
+  get execCount() { return execCount; },
+  get floaters() { return floaters; },
   setScene(s) { scene = s; },
   forceMap(k) { forcedMap = k; },
 };
@@ -214,7 +216,7 @@ const SCENARIOS = [
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
   { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, noMorale, noStealth, noTacticalAI] },
-  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
@@ -272,8 +274,11 @@ function noStealth() {
 // 連一次 damageUnit 都不會進去。而傷害/體幹/擊殺正是拆解過程中最該被守住的路徑。
 function dragFoeToBlade() {
   const k = (T.players || [])[0]; if (!k) return;
-  const foes = (T.enemies || []).filter(e => !e.dead); if (!foes.length) return;
-  const e = foes[0];
+  // 優先挑**非假人**：試作場的訓練假人排在陣列前面，但牠們不會還手、也不能處決，
+  // 只拖假人的話等於整場都在打稻草人（處決路徑一次都走不到）。
+  const foes = (T.enemies || []).filter(e => !e.dead);
+  if (!foes.length) return;
+  const e = foes.find(x => !x.dummy) || foes[0];
   e.pos.x = k.pos.x + Math.cos(k.facing) * 26;
   e.pos.y = k.pos.y + Math.sin(k.facing) * 26;
   e.state = 'ENGAGED';
@@ -289,6 +294,17 @@ function noTacticalAI() {
   }
   return null;
 }
+
+// TITHE D2/D4 的行為探針：處決與飄字都要真的發生過。
+// 這兩個是新加的核心（處決是唯一的回血手段、飄字是它可讀的前提），
+// 所以它們不該只是「有寫」——要有證據說它在模擬裡真的觸發得到。
+let sawExec = false, sawFloater = false;
+function sampleNewFx() {
+  if (!sawExec && (T.execCount || 0) > 0) sawExec = true;
+  if (!sawFloater && (T.floaters || []).length) sawFloater = true;
+}
+function executionHappened() { return sawExec ? null : '整場沒有觸發過處決——F 鍵的處決路徑可能斷了'; }
+function floatersHappened() { return sawFloater ? null : '整場沒有出現過傷害飄字'; }
 
 // 行為探針：這一場模擬應該真的打過架。
 // 純粹「不丟例外」不足以證明拆解沒把 AI 弄啞——這條確認敵人確實受過傷或陣亡。
@@ -319,7 +335,14 @@ function pokeCombat(i) {
   if (i % 71 === 30) { key('keydown', '2'); key('keyup', '2'); }
   if (i % 83 === 11) { key('keydown', 'x'); key('keyup', 'x'); }   // 換武器組
   if (i % 89 === 17) { key('keydown', 'r'); key('keyup', 'r'); }   // 換彈
-  if (i % 53 === 23) { key('keydown', 'f'); key('keyup', 'f'); }   // 互動
+  if (i % 9 === 4) { key('keydown', 'f'); key('keyup', 'f'); }   // 互動
+  /* 處決的探針：**主動製造踉蹌窗**。
+     為什麼要作弊：以目前的數值，敵人往往在體幹破之前就先被血量殺死（實測 shieldman
+     體幹只掉到 38/60 就死了），所以自然狀態下處決窗幾乎不會出現。那是一個**平衡問題**，
+     要靠玩測與調值解決；而這個探針要回答的是另一個問題——「處決這條路走不走得通」。
+     兩者不該混在一起，否則調值一動測試就紅，測試就會被當成雜訊。 */
+  if (i > 30 && i % 40 === 0) { const e = (T.enemies || []).find(x => !x.dead && !x.dummy); if (e) e.poise = 1; }
+  if ((T.enemies || []).some(e => !e.dead && !e.dummy && e.staggerT > 0)) { key('keydown', 'f'); key('keyup', 'f'); }
   const mm = { movementX: (i % 7) - 3, movementY: (i % 5) - 2, clientX: 640, clientY: 360, preventDefault() {} };
   fire(listeners.canvas, 'mousemove', mm); fire(listeners.window, 'mousemove', mm);
 }
@@ -338,7 +361,7 @@ for (const s of list) {
   let stage = 'enter', i = 0;
   try {
     seedRng(0x51ED + sIdx);   // 每個情境固定種子＝失敗可以原地重現
-    sawEnemyHurt = false;
+    sawEnemyHurt = false; sawExec = false; sawFloater = false;
     s.enter();
     grabPointer();
     stage = 'loop';
@@ -348,7 +371,7 @@ for (const s of list) {
       T.update(FIXED);
       T.draw();
       T.drawSeedTag();
-      sampleCombat();
+      sampleCombat(); sampleNewFx();
     }
     releaseKeys();
     for (const inv of (s.invariants || [])) {
