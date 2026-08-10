@@ -67,13 +67,21 @@
 
 按砍的順序排（先砍掉的東西會讓後面的更好砍）。
 
+> **§C5 的範圍修訂（重要）**：原訂「waypoint AI 整套砍掉換直接操舵」。實際動工前拆成四層重新評估，
+> 結論是**尋路（`navMoveTo`／`bfsPath`／`nearestNode`／waypoint 圖）要留**——它不是戰術 AI，是「不撞牆」的工具，
+> 直線可達就直走、被牆擋才走圖，拿掉的代價是敵人卡在轉角磨蹭。真正該砍的只有**戰術選點**那一層
+> （躲掩體是反 push-forward 的）。這個修訂讓 C5 從「砍與寫同時發生」變成幾乎純刪除，
+> 而 D7 的兵種花招也就能真的等到有惡魔名冊時再做。
+> **相依**：留下尋路 ⇒ 每張地圖都要有 waypoint 圖。程序生成房間需要把編輯器的
+> 「鋪滿網格點 + 自動整理連線」搬進遊戲端（見 D 表 D6/D7 前置）。
+
 | # | 系統 | 位置 | 為什麼 |
 |---|---|---|---|
 | 1 | ✅ **扈從 / 指令層** | ~~`CONFIG.command`／`CMD_LIST`／`CMD_META`／`RETAINER_BEHAVIOR`／`anchorOf`／`issueCommand`／`allyMoveTick`／`spaceOutAllies`／`cmdWheel`＋`wheelAimTarget`＋`commitWheelCommand`／`drawCommandWheel`／`drawAllyCard`／`extractAll`／`arenaAllies`~~ | 教廷送**一個人**進地獄。**已完成**：`startMission` 現在只生成騎士一人，Q/G/Shift+H/B 熱鍵移除，`idleTick` 縮成「自走撤離時的自動還擊」，`scoreNode` 的繩長懲罰移除。`navMoveTo` **保留**（敵人的有序後撤 `retreat` 還在用）。harness 加了 `soloKnight` 不變式當回歸守門員。 |
 | 2 | ✅ **士氣質量模型** | ~~`CONFIG.morale`／`BREAK_PCT`／`QBASE`／`MORALE_STATE`／28 個函式（`quality`／`structMass`／`knightAnchor`／`ralliedMass`／`effMass`／`moraleLine`／`refreshMoraleState`／`tickMorale`／`tickFactionMorale`／`fleeUnit`／`rallyUnit`／`drawFactionMorale`／`drawMoraleFlag`／momentum 全套）～~ | 敵人會潰逃而不是死掉＝反 loot、反資源迴圈。**已完成**：拉鋸線、崩潰門檻、震盪、騎士錨點、聚攏度、`panicType`（潰逃／捨身／呆立／轉進）全數移除；敵人現在戰到死。連帶處理跨戰鬥氣勢層（S1 `runMomentumMods`）與它在護送／女巫／事件的四個消費點。harness 加了 `noMorale` 不變式。 |
 | 3 | ✅ **潛行 / 警覺 / 識別** | ~~`CONFIG.stealth`／識別空窗 `detect`／開火現形 `revealT`／`concealAt`＋`inConceal`＋`inSmoke`（遮蔽）／全隊靜默 `squadRevealed`／煙罐 `smokepot`~~ | 房間是亮的、門是鎖的。**已完成**：敵人改成「看到就交戰」；`canSee` 拿掉遮蔽判定與 IDLE 視錐縮減，**視錐/迷霧本身完整保留**（B 表）。草叢只剩移動減速。煙罐因遮蔽消失而失去作用，整個術移除、舊存檔別名指向火油罐。⚠️ **過渡狀態**：牠們現在只靠看見醒來，繞過視錐仍過得去——D6 房間流程會讓進房即鎖門、全員 ENGAGED。 |
 | 4 | ✅ **聽覺 / 聲音漣漪** | ~~`CONFIG.hearing`／`CONFIG.enemyHearRadius`／`CONFIG.soundEdge`／`CONFIG.soundRipple`／`alertEnemiesNear`／`pingSound`＋`SOUND_PINGS`＋`swingPingR`／`visStep`／`drawSoundEdges`／`drawSoundRipples`／`bushRustleMult`~~ | 潛行的配套，一起走。**已完成**：腳步聲、求援連鎖、命中/陣亡驚動全部移除；`Sfx.play` 留著當未來接 WebAudio 的接縫（pos/r 參數保留給空間化）。⚠️ 喪鐘的 `loud` 旗標因此失效，待內容階段處理。 |
-| 5 | **waypoint 戰術 AI** | `scoreNode` ~5313、`watchPoint` ~5346、`reservations`/`commitReservation` ~5309、`patrolStep` ~5407、`claimPatrolPoint` ~5387、`huntStep` ~5498、`searchMoveTo` ~5485、`updateThreatKnowledge` ~5449、`bfsPath` ~5399、`buildNextHop` ~2193、`CONFIG.ai` ~234、`CONFIG.hunt` ~170、`CONFIG.patrol` ~167 | 封閉房間用不上。**換成直接操舵**，順便解鎖程序生成房間 |
+| 5 | ✅ **waypoint 戰術「選點」**（尋路保留！） | ~~`scoreNode`／`watchPoint`／`CONFIG.ai` 權重表／`nodeVis`／`reservations`＋`commitReservation`＋`hysteresisBonus`／`SPECIAL_TAGS`＋`isSpecial`／巡邏全套（`patrolStep`／`claimPatrolPoint`／`computePatrolPool`／`enemyIdleTick`）／搜索全套（`huntStep`／`searchMoveTo`／`bfsWithin`／`updateThreatKnowledge`／`registerHitThreat`／`nearestKnownPlayer`）~~ | **⚠️ 這一列的範圍在動工前改過**（見下方註）。**已完成**：拿掉「挑哪個點站」那一層，敵人改成 `navMoveTo` 直接朝目標尋路、停在自己武器打得到的距離上。目標記憶改成**逐隻自己記**（`lastSeenPos`／`CONFIG.enemy.memory` 秒），不再有全體共享的情報網；背後挨刀會把來向記成最後已知位置（所以還是會回頭）。`personalityName` 保留成**純資料標籤**，等 D7 掛操舵參數。 |
 | 6 | ✅ **進出點 / 撤離 / 追兵** | ~~`EXTRACT`／`CONFIG.access`＋`pickAccessPoints`／`spawnPoints`／`extractTick`／`toggleExtract`＋H 熱鍵／`EXTRACTING`＋`EXTRACTED` 兩個狀態／`seizeIfEscorting`／`extractNodeId`＋`nextHop`＋`buildNextHop`／`CONFIG.reinforce`＋追兵／`curTimeBudget`＋計時 HUD／`idleTick`＋`KNIGHT_IDLE`~~ | 出口是房間中央的洞。**已完成**：新增 `roomCleared`，**清場＝過關**（`enemies.every(dead)`）。`ENTRY` 保留當騎士的出生點；隊形軸與開場朝向改成「朝地圖中央」。連帶：`idleTick` 失去唯一呼叫者（`extractTick`）而一併移除，C1 留下的 `KNIGHT_IDLE` 也跟著退役。序章的 `gate: 'extract'` 改成 `'clearRoom'`。⚠️ 地圖資料的 `extractionPoints` 與編輯器的「撤」工具**尚未清理**——編輯器要等 D6 決定「洞」怎麼表示時一起改。 |
 | 7 | **休息關 / 配裝 UI** | ~3676–3900（rest 全套）、~7558–8110（`drawKnightPanel`/`drawWarehousePanel`/拖曳穿脫/`drawRest*`）、`warehouse`/`backpack` ~2343 | 掉落改成即時吃 + 洞口三選一，不需要背包畫面 |
 | 8 | **事件 / 導師 / 鐵匠 / 軍械庫 / 俘虜 / 護送** | `EVENTS` ~3112、`enterTutor` ~3607、`enterBlacksmith` ~3663、`enterArmory` ~3564、`freePrisoner` ~4830、`runEscort` ~3043、`REST_SITES` ~921 | run 內經濟改由掉落承擔 |
@@ -97,8 +105,8 @@
 | 3 | **dash** | — | 免費、CD、i-frame |
 | 4 | **傷害飄字** | — | 一般/暴擊/招架/處決 四種樣式 |
 | 5 | **聖油** | 處決的資源噴發 | 極少次數、刪菁英、大演出 |
-| 6 | **房間流程** | C6（撤離砍掉） | 進門鎖上 → 清場 → 中央開洞 → 三選一全揭露 → 跳下去 |
-| 7 | **直接操舵 AI** | C5（waypoint AI 砍掉） | 各兵種的位移花招 |
+| 6 | **房間流程** | C6 ✅ | 進門鎖上 → 清場 → 中央開洞 → 三選一全揭露 → 跳下去。**前置**：程序生成房間要能自動產 waypoint 圖（把編輯器的「鋪滿網格點 + 自動整理連線」搬進遊戲端） |
+| 7 | **兵種位移花招** | C5 ✅ | 各兵種自己的接近方式（撲咬者衝刺、投火者保持距離…）。掛在 `personalityName` 上。**尋路已經有了**，這層只加「怎麼靠近」的個性 |
 | 8 | **惡魔名冊** | 7 | 7 隻，見 `DESIGN.md` §4 |
 | 9 | **血脈紀年** | — | 存檔格式 + 死亡命名 + 禱文演出（用現有 cutscene 管線） |
 | 10 | **父輩 boss** | 9 + 玩家行為可被 AI 驅動 | **用玩家的程式碼做**——他會 dash、格擋、招架、處決你。見 `DESIGN.md` §10.4 |
@@ -108,7 +116,7 @@
 ## E. 建議的動刀順序
 
 > **進度**：✅ = 已完成。動工前先看這裡，別重做。
-> 目前完成到 **6（進出點／撤離）**；下一項是 **5（waypoint AI → 直接操舵）**，那是這批裡最需要小心的一塊。
+> 目前完成到 **5（waypoint 戰術選點）**；C1–C6 全部完成。下一項是 **7（休息關／配裝 UI）**。
 
 一次砍一塊、每塊砍完都要能跑起來。沿用 Homeward 的守則：**改完一定要跑 headless 驗證**
 （逐幀跑遍所有場景的 `update()` + `draw()`，不只在戰鬥跑）。
@@ -117,7 +125,7 @@
 2. ✅ **C2 士氣** — 最大一塊，但邊界清楚（`hasMorale`/`moraleEligible` 是總開關）
 3. ✅ **C3+C4 潛行 + 聽覺** — 視錐/迷霧已確認保留
 4. ✅ **C6 進出點 / 撤離** — 場景流程已改成「清場＝過關」
-5. **C5 waypoint AI → 直接操舵**（D7）— **砍與寫同時發生**，這批裡最需要小心的一塊
+5. ✅ **C5 waypoint 戰術選點** — 尋路保留，所以幾乎是純刪除
 6. **C7+C8 休息關 / 事件經濟**
 7. **C9~C12 meta / 誓約 / 敘事** — ⚠️ 留下 `useOathSkill` 空殼與演出管線
 8. **C14 地圖** — 最後，因為前面每一步都還要靠它測試

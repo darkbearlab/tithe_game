@@ -213,9 +213,9 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, noMorale, noStealth] },
-  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth] },
-  { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth] },
+  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
   { name: 'armory',          frames: 60,  enter: () => { bootCampaignToMap(); T.enterArmory(); } },
@@ -237,7 +237,7 @@ for (const k of Object.keys(T.MAPS)) {
   SCENARIOS.push({
     name: 'map-' + k, frames: 240,
     enter: () => { bootCampaignToMap(); T.forceMap(k); T.startMission(); },
-    poke: pokeCombat, invariants: [soloKnight, noMorale, noStealth],
+    poke: pokeCombat, invariants: [soloKnight, noMorale, noStealth, noTacticalAI],
   });
 }
 
@@ -278,6 +278,16 @@ function dragFoeToBlade() {
   e.pos.y = k.pos.y + Math.sin(k.facing) * 26;
   e.state = 'ENGAGED';
   e.facing = k.facing + Math.PI;   // 面向騎士＝牠也會還手（順便走到我方受傷的路徑）
+}
+
+// TITHE C5 的回歸守門員：waypoint **戰術選點**移除（尋路保留）。
+// 這幾個欄位是選點/佔點/巡邏/搜索留下的痕跡，不該再出現。
+const TACTICAL_FIELDS = ['targetNode', 'reservedNode', 'patrolTarget', 'patrolDwell', 'searchTarget', 'threatPos', 'patrols'];
+function noTacticalAI() {
+  for (const u of [...(T.players || []), ...(T.enemies || [])]) {
+    for (const f of TACTICAL_FIELDS) if (u && u[f] !== undefined) return `單位帶著已移除的戰術選點欄位 ${f}`;
+  }
+  return null;
 }
 
 // 行為探針：這一場模擬應該真的打過架。

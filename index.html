@@ -101,7 +101,6 @@ const CONFIG = {
   sprint: { base: 1.9, weightPenalty: 0.5, minMult: 1.1 },
   // 武器數值移至下方 WEAPONS 目錄（可指派、未來可換）
 
-  hysteresisBonus: 25,
   squadSize: 1,             // TITHE：教廷送**一個人**進地獄。場上永遠只有騎士（見 startMission）
   // 跨關回復：每場戰鬥開始時，存活成員「缺血」回復的比例。
   // 1.0＝自動全補（目前行為）；0＝殘血照舊帶入；0.5＝回復一半缺口。當前血量已跨關攜帶，調此鈕即生效。
@@ -140,12 +139,6 @@ const CONFIG = {
   // 側翼/突襲（敵我皆適用）：依攻擊來向 vs 目標視野錐。flank＝錐外(側後)＝×flankMult 且無視所有裝甲；
   // surprise＝閒置敵人正面＝×surpriseMult（僅對敵）；兩者皆中取較高、不相乘。
   flank: { flankMult: 2.0, surpriseMult: 1.5 },
-  // IDLE 巡邏（只有 type.patrols 的單位＝grunt 巡，重裝/狗守原地）。巡邏池：地圖有 patrol 標籤點(≥2)用之，否則自動取「距入口/撤離口都 ≥autoBandFromEnds」的點。
-  // 認領制：每個沒目標的巡邏兵隨機認領一個未被認領的點→沿圖走→到點停 dwell 秒(緩慢掃視)→放掉再認領。點>兵＝輪換不可預測。speedMul＝巡邏走速倍率。
-  patrol: { dwell: 2.0, speedMul: 0.7, autoBandFromEnds: 200 },
-  // 交戰後追蹤：KNOWN(任一敵看得到→全體共享實位、追擊) → 全員失去視線→SEARCH(最後已知位置 searchHops 步內清查，走到或視線掃過即清) → 清完沒找到→全場巡邏(全員)。
-  //   knownGrace＝失去視線後仍視為「已知」的緩衝秒（避免一閃就重置）。修「交戰後視野穿牆、永遠找得到你」。
-  hunt: { searchHops: 3, knownGrace: 0.5, threatGrace: 4, threatShareRadius: 240, threatDist: 320 },   // 被擊中來向脅威：記憶秒數 / 近隣傳播半徑 / 沿來向放置脅威點的距離
   // 打擊感（juice）：子彈近 hitscan(速度×mul)＋曳光、開火後座/相機踢、命中/擊殺螢幕震動、擊殺頓幀。皆可即時調。
   // bulletSpeedMul：原版 4＝為了讓槍戰接近 hitscan。HOMEWARD 中世紀化後箭矢要「看得見在飛、能預判走位」→ 1.5
   juice: { bulletSpeedMul: 1.5, tracer: 1.0, bulletAlpha: 0.16, tracerEvery: 5, recoil: 4, recoilDecay: 60, camKick: 0, shakeFire: 0, shakeHit: 0, shakeKill: 0, shakeMax: 12, shakeDecay: 16, hitstopKill: 0.04,   // 一般彈＝極細淡線(bulletAlpha,0＝隱形)；曳光彈＝火光色、每 tracerEvery 發一發(現實 4:1≈第5發)、只有 W.tracer 的槍有
@@ -189,7 +182,6 @@ const CONFIG = {
     hp: 70,
     reactionDelay: 0.35,
     strength: 1.0,
-    meleeApproach: 60,   // 近戰收尾：weapon.melee 或 range ≤ 此值的單位，交戰且看得到目標時直接朝「目標本人」衝完最後一段（補節點導航到不了的距離）；長射程武器永不觸發
     // AI 近接打在我方身上的傷害倍率。敵我共用同一份 WEAPONS，但這是「英雄 vs 群體」的遊戲：
     // 不下修的話，騎士 4 刀就會被砍死（100hp ÷ 30dmg），而清掉 3 隻雜兵要 9 刀＝數學上必輸。
     meleeDmgMul: 0.45,
@@ -197,21 +189,11 @@ const CONFIG = {
     // 有了它，AI 射擊才有前搖可以畫預告長方形；填滿的瞬間＝放箭的瞬間。
     // 玩家不受此限（手動射擊仍是即時）。個別武器可用 WEAPONS[id].aimTime 覆寫。
     aimTime: 0.45,
-    // 敵人武器＝WEAPONS.carbine（已入目錄、可掉落/撿取/裝備）；數值在 WEAPONS 調整
+    // 跟丟後還會往「最後看到的位置」走多久（秒）。過了就原地待命——
+    // 搜索/巡邏隨潛行一起移除了，敵人不會自己去找你。
+    memory: 4,
   },
 
-  // 敵人選點權重
-  chargeMul: 1.7,   // 未能交火時加碼推進
-  holdProxMul: 0.2, // 已能交火時壓低推進（拉開距離對射）
-  ai: {
-    rusher:  { tags: { rush: 20, choke: 10, patrol: 5 },               wRush: 700, wFlank: 0,   wExpose: 5,  wSight: 25 },
-    flanker: { tags: { flank: 30, vantage: 15, cover: 25, patrol: 5 }, wRush: 500, wFlank: 120, wExpose: 70, wSight: 25 },
-    holder:  { tags: { vantage: 25, cover: 30, choke: 12, patrol: 5 }, wRush: 200, wFlank: 0,   wExpose: 55, wSight: 35 },  // 弩手/重裝：守點壓制、不愛推進/暴露
-    exposeCheckRange: 700,   // 算「暴露」時只看這個距離內的敵對單位（省 canSee 射線）
-    allySpeedMul: 1.0,       // 扈從移動速度倍率（相對 CONFIG.moveSpeed）
-    closeInMinRush: 400,     // 近接扈從的站位門檻：wRush ≥ 此值＝貼到接觸；低於＝停在自己武器長度上（固守）
-    holderStandoffFrac: 0.85, // 固守型停在「武器 reach × 此值」——留一點餘裕，但一定在打得到的範圍內
-  },
 };
 /* =====================================================================
    指令層（HOMEWARD Phase 3 前置，使用者定案）
@@ -226,8 +208,6 @@ const CONFIG = {
    Homeward 的扈從指令層（跟隨/守住/集中攻擊/先行撤離 + 繩長 + 指令輪盤）整套拆掉：
    教廷送**一個人**進地獄，場上不會有第二個我方單位。
    若之後要做召喚物之類的東西，不要復活這一層——那是為「小隊」設計的，成本太高。 */
-const SPECIAL_TAGS = ['flank', 'vantage', 'choke'];
-
 /* =====================================================================
    WEAPONS / ABILITIES — 資料驅動（未來可掉落/更換）
    每把武器：威力 / 射速 / 射程 / 彈速 / 發散(基礎,連射,上限,回復) / 彈夾 / 換彈 / 總彈藥 /
@@ -248,7 +228,7 @@ const WEAPONS = {
   //   poiseDmg：體幹傷害（扣光＝體幹破＝大硬直+處決窗）／stamCost：揮一次的耐力成本
   //   hyperArmor：判定窗中不被前搖打斷、且體幹傷害減半＝重武器的身分（斧/鎚）
   //   stagger：直接硬直秒數。現已由「體幹破」取代，全部留 0（欄位保留給未來的特殊武器）
-  // range 仍填 reach＝敵 AI 的接近距離判斷(CONFIG.enemy.meleeApproach)與扈從索敵沿用同一欄位。
+  // range 仍填 reach＝敵 AI 的接近距離判斷沿用同一欄位。
   // 節奏＝windup+activeT+recover（近接沒有額外 CD，這一輪就是攻速）。
   sword: { name: '長劍',  rarity: 'common',   weight: 1.5, damage: 30, fireRate: 6, range: 66, turnSpeed: 520, pierce: 0.35, melee: true, swingStyle: 'sweep', hands: 1,
            arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, stagger: 0, backstabMul: 1.0, poiseDmg: 22, stamCost: 18,
@@ -1129,8 +1109,6 @@ function spawnGroup(units, anchor, faction, opening, facePos) {
     e.pos = { x: pos.x, y: pos.y };
     e.homePos = { x: pos.x, y: pos.y };
     if (opening === 'ambush' || opening === 'threeway') e.state = 'ENGAGED';
-    else if (opening === 'patrol') e.patrols = true;   // sentry＝維持 IDLE 靜態守點
-    commitReservation(e, e.currentNode);
     out.push(e);
   });
   return out;
@@ -1999,7 +1977,7 @@ const MAPS = {
 
 let MAP = MAPS.alpha;        // 目前作用中的戰鬥地圖（startMission 依節點切換）
 const MAXD = Math.hypot(WORLD.w, WORLD.h);
-let ENTRY, N, adj, nodeVis;   // ENTRY＝騎士的進場點（TITHE C6：撤離點與追兵整套移除，出口改成「清場」）
+let ENTRY, N, adj;   // ENTRY＝騎士的進場點（TITHE C6：撤離點與追兵整套移除，出口改成「清場」）
 const wp = (id) => MAP.waypoints[id];
 
 /* =====================================================================
@@ -2039,10 +2017,6 @@ function segBlocked(a, b) {
 }
 const clearLine = (a, b) => !segBlocked(a, b);
 // 只看永久牆（門/低矮牆不算）——給節點可見度表，與門開關狀態無關、保持穩定
-function clearLineWalls(a, b) {
-  for (const w of MAP.walls) if (segIntersect(a, b, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 })) return false;
-  return true;
-}
 
 function nearestNode(pos, requireLoS = false) {
   let best = -1, bd = Infinity;
@@ -2054,7 +2028,7 @@ function nearestNode(pos, requireLoS = false) {
   if (best < 0) return nearestNode(pos, false);
   return best;
 }
-// 切換作用中地圖並重建衍生表（N / adj / nodeVis / ENTRY）
+// 切換作用中地圖並重建衍生表（N / adj / ENTRY）
 function buildMapDerived(key) {
   MAP = MAPS[key] || MAPS.alpha;
   if (MAP.accessPoints && MAP.accessPoints.length >= 2) {
@@ -2065,8 +2039,6 @@ function buildMapDerived(key) {
   N = MAP.waypoints.length;
   adj = Array.from({ length: N }, () => []);
   for (const [a, b] of MAP.edges) { adj[a].push(b); adj[b].push(a); }
-  nodeVis = Array.from({ length: N }, () => new Array(N).fill(false));
-  for (let i = 0; i < N; i++) { nodeVis[i][i] = true; for (let j = i + 1; j < N; j++) { const v = clearLineWalls(wp(i).pos, wp(j).pos); nodeVis[i][j] = v; nodeVis[j][i] = v; } }
 }
 buildMapDerived('alpha');   // 載入時先建好預設圖，讓全域衍生值存在
 
@@ -2141,9 +2113,7 @@ let flashFx = [];            // 閃光彈爆閃視覺 [{x,y,t,max}]（純特效�
 const KNIGHT_ID = 0;
 const knight = () => (players && players[KNIGHT_ID]) || null;
 const knightAlive = () => { const k = knight(); return !!k && k.state !== 'DEAD'; };
-let controlledId, reservations, enemyIdSeq;
-let patrolClaims = new Map(), patrolPool = [];   // IDLE 巡邏：點認領集（node→enemyId）/ 本場巡邏點池
-let searchFocusNode = null, searchSet = null, searchCleared = null, searchFocusLeadT = -Infinity, searchConsumedT = -Infinity;   // 交戰後搜索焦點（最後已知位置那區）
+let controlledId, enemyIdSeq;
 let simTime, deadCount;
 // TITHE C6：本房是否已清空。取代 Homeward 的「騎士走到撤離點＝過關」——
 // 出口是房間中央的洞（DESIGN.md §5.3），洞在清場那一刻才開，所以過關條件就是清場本身。
@@ -2198,7 +2168,7 @@ let roadCompleted, roadAvailable, roadCurrent;  // 路線圖狀態
 let runAct = 1;      // A/B 兩幕：1＝敵境歸途、2＝故土焦原（initRun 重置為 1；Act1 boss 完成→beginAct2 轉 2）
 let actMsg = '';     // 翻面（進第二幕）當下的路線圖橫幅（selectNode 清）
 let debrief = null;  // 戰後結算畫面資料 { reward, joined[], survived[], dead[] }（enterDebrief 設、debriefContinue 清）
-let hysteresisOn = true, debugView = false;
+let debugView = false;
 let aimDir = 0;              // 砲塔目標朝向（世界角，由滑鼠位移累積）
 let pointerLocked = false;  // 是否已鎖定滑鼠（FPS 式瞄準）
 // 第0關（序章/教學）：cutscene 導演 + 演出用 actor/標記。詳見 startIntro / cutsceneTick。
@@ -2275,7 +2245,7 @@ function makePlayer(i, cfg, pos) {
     state: i === 0 ? 'CONTROLLED' : 'IDLE',
     disciplineOverride: cfg.disciplineOverride || null,
     cmd: { mode: 'follow', pos: null, target: null },   // 指令層：預設跟隨騎士
-    currentNode: null, targetNode: null,                       // 節點導航（與敵人同一套）
+    currentNode: null,                                         // 節點導航（與敵人同一套）
     // 以下是「當前主手」的鏡像（既有戰鬥碼只認得這些欄位；換 set 由 equipActiveSet 重寫）
     weaponId: mainSlot.weaponId, weapon: mainSlot.weapon, quality: mainSlot.quality, enh: mainSlot.enh, magazine: mainSlot.magazine, ammoInMag: mainSlot.ammoInMag, ammoReserve: mainSlot.ammoReserve, reloadT: 0, reloadDur: 0, bloom: 0,
     swapT: 0, turnMul,   // 換手冷卻 + 轉向倍率(換手時重算 turnSpeed)
@@ -2305,7 +2275,6 @@ function makePlayer(i, cfg, pos) {
     fireCooldown: 0, engageTimer: 0, alertTimer: 0, muzzle: 0, sprinting: false,
     idleAnchor: 0, sweepPhase: 0, sweepDir: 1, extractNode: null,   // idleAnchor＝進入閒置時的正前方
     burstLeft: CONFIG.idleTap.size, burstCd: 0, wanderTarget: 0, wanderTimer: 0,
-    lastSeenPos: null, lastSeenT: -Infinity, _seenNow: false,   // 敵人共享情報：此我方最後被任一敵人看到的位置/時間
   };
   if (i === KNIGHT_ID) { _u.originId = cfg.originId || null; applyOathLoadout(_u); }   // 誓約：綁定誓約由出身決定、每場重套（mods 改旋鈕）
   return _u;
@@ -2320,14 +2289,15 @@ function makeEnemy(nodeId, personalityName, isReinforce = false, facing = Math.P
     pos: { x: wp(nodeId).pos.x, y: wp(nodeId).pos.y }, facing, radius: TYPE.radius || CONFIG.unitRadius,
     hp: TYPE.hp, maxHp: TYPE.hp,
     state: 'IDLE',   // 純狀態機：IDLE(守點被動) → ENGAGED(latch、看到/聽到/被打→永不取消)
-    personalityName, personality: CONFIG.ai[personalityName],
+    // personalityName 現在只是**資料標籤**：C5 拿掉 scoreNode 之後它暫時不驅動任何行為，
+    // 留著是因為 D7（各兵種的位移花招）會用它掛操舵參數。ENEMY_TYPES 的資料不必動。
+    personalityName,
     weapon: W, ammoInMag: W.magazine, ammoReserve: 9999, reloadT: 0, bloom: 0,
     senseRadius: CONFIG.vision.senseRadius * CONFIG.enemy.strength * (TYPE.senseMul || 1),
     coneHalfDeg: TYPE.coneHalfDeg || CONFIG.vision.coneHalfDeg,   // 逐單位視錐（警犬更寬）
     moveSpeed: TYPE.moveSpeed, armor: TYPE.armor || 0, attack: TYPE.attack || 'ranged', dummy: !!TYPE.dummy,
-    basePersonality: CONFIG.ai[personalityName],   // 士氣恢復時換回來的那一組
     burstLeft: (W.burst ? W.burst.size : 0), burstCd: 0,   // 重機槍點放節奏
-    currentNode: nodeId, targetNode: nodeId, reservedNode: null,
+    currentNode: nodeId,
     offId: TYPE.offId || null,   // 副手（盾兵）：敵人沒有槽位系統，盾直接掛在單位上
     reactBlockT: 0, reactBlockCd: 0,   // 反射式格擋：舉著的剩餘時間 / 放下後的冷卻
     swing: null, blocking: false, blockT: null, staggerT: 0, kbx: 0, kby: 0, parryFxT: 0,   // 近接（敵人拿近接武器時同樣走揮斬管線）
@@ -2336,12 +2306,8 @@ function makeEnemy(nodeId, personalityName, isReinforce = false, facing = Math.P
     stamMax: 0, stam: 0, stamT: -99,   // 敵人不管理耐力（AI 不會用；壓力靠體幹 + 攻擊權）
     poiseBreakFxT: 0, guardBreakFxT: 0, flinchFxT: 0, noStamFxT: 0,
     fireCooldown: 0, engageTimer: 0, muzzle: 0, isReinforce, watchFacing: facing,
-    patrols: !!TYPE.patrols,   // IDLE 是否巡邏（grunt=true；重裝/狗守原地）
-    patrolTarget: null, patrolPath: null, patrolDwell: 0, patrolAnchor: facing, patrolSweepPh: 0, patrolSweepDir: 1,
-    searchTarget: null, searchPath: null,   // 交戰後失去視線時的搜索目標節點
-    threatPos: null, threatT: -Infinity,     // 被擊中「來向」的局部脅威記憶（看得到被擊中者的敵＋近隣才共享；只給方向、非全體 lastSeen）
+    lastSeenPos: null, lastSeenT: -Infinity,   // 逐隻自己的目標記憶（TITHE C5：不再有全體共享的情報網）
     opensDoors: TYPE.opensDoors !== false,   // 是否會操作門（狗＝false）
-    openedDoors: null,                        // 巡邏期自己開過、待走遠後關回的門 id 清單
   };
 }
 // 跨關陣容工具
@@ -2583,7 +2549,7 @@ function startMission() {
   for (const p of players) { p.facing = faceInto; p.idleAnchor = faceInto; }
   controlledId = 0;
   enemies = []; bullets = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; shakeAmt = 0; kickY = 0; hitstopT = 0;
-  reservations = new Map(); patrolClaims = new Map(); attackTokens = new Map(); enemyIdSeq = 1; drops = []; fileDrop = null;
+  attackTokens = new Map(); enemyIdSeq = 1; drops = []; fileDrop = null;
   cacheGround = (MAP.caches || []).map(c => ({ x: c.x, y: c.y }));   // 密封容器：本場地圖配置的（撿走撤離才開封）
   for (const p of players) p.caches = 0;
   if (CONFIG.relicEnabled && !fromSandbox && !fromEditor && !finaleActive) {   // 遺物：本場由 roster 指定的攜帶者背上（保底＝沒人標記就給騎士，遺物不能憑空消失）
@@ -2600,15 +2566,13 @@ function startMission() {
     for (const e of placeEncounter(encId, MAP)) enemies.push(e);
     // 難度遞增：每清一關，往主錨點多丟一名 rusher（張力上升；遭遇本身維持小規模）
     const anc = encounterAnchorsOf(MAP)[0];
-    for (let k = 0; k < missionIndex; k++) { const e = makeEnemy(nearestNode(anc, false), 'rusher', false, angTo(anc, ENTRY), 'footman'); e.pos = { x: anc.x, y: anc.y }; enemies.push(e); commitReservation(e, e.currentNode); }
+    for (let k = 0; k < missionIndex; k++) { const e = makeEnemy(nearestNode(anc, false), 'rusher', false, angTo(anc, ENTRY), 'footman'); e.pos = { x: anc.x, y: anc.y }; enemies.push(e); }
   } else {
-    for (const s of MAP.enemySpawns) { const e = makeEnemy(s.nodeId, s.personality, false, s.facing, s.type, s.faction); enemies.push(e); commitReservation(e, e.currentNode); }
+    for (const s of MAP.enemySpawns) { const e = makeEnemy(s.nodeId, s.personality, false, s.facing, s.type, s.faction); enemies.push(e); }
     // 每清一關多放幾名 rusher（暫定的上升張力，待路徑圖時再正式設計難度）
     if (!MAP.eventMap) for (let k = 0; k < missionIndex; k++) { const sp = MAP.enemySpawns[k % MAP.enemySpawns.length]; enemies.push(makeEnemy(sp.nodeId, 'rusher')); }   // 事件地圖不加難度遞增兵
   }
   if (pendingRescueKnight) { injectKnightRescue(); pendingRescueKnight = false; }   // B面「救援落難騎士」：注入接觸點 + 圍攻他的劫掠隊（一次性）
-  patrolPool = computePatrolPool();   // 本場巡邏點池（IDLE grunt 巡邏用）
-  searchFocusNode = null; searchSet = null; searchCleared = null; searchConsumedT = -Infinity;   // 重置交戰後搜索
   simTime = 0; roomCleared = false;
   deadCount = 0; result = null;
   scene = 'COMBAT';
@@ -2728,13 +2692,12 @@ function arenaSetArmor(i) {
 function arenaRoster() { return [arenaMember('騎士', 205, arenaWeaponId(), 'knight')]; }   // TITHE C1：孤騎，沒有扈從選項
 // 配置測試對象：讀 ARENA_MODES[arenaModeKey].spawn（資料驅動＝加新場地不改此函式）
 function arenaSpawn() {
-  enemies = []; enemyIdSeq = 1; reservations = new Map(); patrolClaims = new Map(); attackTokens = new Map();
+  enemies = []; enemyIdSeq = 1; attackTokens = new Map();
   const M = ARENA_MODES[arenaModeKey] || ARENA_MODES.melee;
   for (const s of M.spawn) {
     const e = makeEnemy(s.node, null, false, s.facing != null ? s.facing : Math.PI, s.t);
     e.pos = { x: s.x, y: s.y };
     e.homePos = { x: s.x, y: s.y };   // 假人被擊退後會慢慢飄回原位＝維持整齊，方便反覆測
-    if (!e.dummy) commitReservation(e, e.currentNode);
     enemies.push(e);
   }
 }
@@ -3144,10 +3107,9 @@ function startIntro() {
   buildMapDerived('field');                          // 曠野當戰場（開闊，適合屍山血海的 placeholder）
   for (const d of MAP.doors) d.open = false;
   for (const d of (MAP.destructibles || [])) { d.cur = d.intact; d.curHp = d.hp; }
-  reservations = new Map(); patrolClaims = new Map(); patrolPool = []; enemyIdSeq = 1;
+  enemyIdSeq = 1;
   bullets = []; grenades = []; flashFx = []; particles = []; drops = []; fileDrop = null;
   cacheGround = []; prisoners = []; corpses = []; decals = []; shakeAmt = 0; kickY = 0; hitstopT = 0;
-  searchFocusNode = null; searchSet = null; searchCleared = null; searchConsumedT = -Infinity;
   introGuards = []; introConsole = null;
   // 騎士＝出身選定的孤身一人；醒來處在戰場左側
   const wake = { x: 220, y: 360 };
@@ -4309,7 +4271,9 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
   const mult = flanked ? CONFIG.flank.flankMult + atkBonus : (surprise ? CONFIG.flank.surpriseMult + atkBonus : 1);  // 取較高、不相乘
   if (u.faction !== 'player') {   // 任一 AI 陣營被打（不論後續有沒有被甲彈開）
     u.state = 'ENGAGED';   // 被攻擊（即使被甲擋下）也進入交戰（latch）
-    if (fromAng != null && !surprise) registerHitThreat(u, fromAng);   // 被擊中→把「來向」當局部脅威傳給：本人＋看得到本人的敵＋近隣（解側翼魚貫）。**突襲未察覺者不傳＝潛行擊殺不驚動同袍**
+    // 被擊中→記下來向當作「最後已知位置」：背後挨刀的敵人會回頭，而不是傻站著。
+    // （C5 之前這裡會把來向廣播給附近同袍，那套全體共享的情報網隨戰術 AI 一起移除了。）
+    if (fromAng != null && opts && opts.attacker) { u.lastSeenPos = { x: opts.attacker.pos.x, y: opts.attacker.pos.y }; u.lastSeenT = simTime; }
   }
   /* ---- 裝甲：機率「整發擋下」非穿甲攻擊（繞背無視）。有效擋格率 = armor × (1 − pierce)。
      **擋下 ≠ 沒事**：刀砍在板甲上不會流血，但力道全部變成衝擊 → 體幹傷害改為 ×armorPoiseMul（>1）。
@@ -4401,7 +4365,7 @@ function killUnit(u, killer) {
   hitstop(CONFIG.juice.hitstopKill); addShakeAt(u.pos, CONFIG.juice.shakeKill);   // 擊殺：頓幀 + 較大震動
   pushDecal(u.pos.x, u.pos.y, 8 + Math.random() * 3, 'rgba(92,15,22,0.5)');       // 死亡血池
   corpses.push({ x: u.pos.x, y: u.pos.y, enemy: u.faction !== 'player' });   // 地上留陣亡叉叉（任一 AI 陣營＝敵屍）
-  if (u.faction !== 'player') { spawnDrop(u, CONFIG.ammo.salvageEnemy); u.dead = true; releaseReservation(u); releasePatrol(u); releaseAttackToken(u); }   // 任一 AI 陣營死亡（駐軍/暴民…）；攻擊權立刻讓給還活著的
+  if (u.faction !== 'player') { spawnDrop(u, CONFIG.ammo.salvageEnemy); u.dead = true; releaseAttackToken(u); }   // 任一 AI 陣營死亡（駐軍/暴民…）；攻擊權立刻讓給還活著的
   else {
     spawnDrop(u, CONFIG.ammo.salvageAlly);
     if (u.hasFile) { u.hasFile = false; fileDrop = { x: u.pos.x, y: u.pos.y }; Sfx.play('death', u.pos); }   // 攜帶者陣亡→遺物掉在原地，待人回收（CONFIG.relicEnabled 關閉時不會發生）
@@ -4547,7 +4511,7 @@ function injectKnightRescue() {
     const ang = (i / CONFIG.rescue.raiders) * Math.PI * 2;
     const e = makeEnemy(node, 'rusher', false, ang + Math.PI, rngPick(['footman', 'spearman']));
     e.pos = { x: kp.x + Math.cos(ang) * 92, y: kp.y + Math.sin(ang) * 92 }; e.state = 'ENGAGED'; e.rescueRaider = true;
-    enemies.push(e); commitReservation(e, e.currentNode);
+    enemies.push(e);
   }
 }
 function updateBullets(dt) {
@@ -4643,90 +4607,23 @@ function navMoveTo(u, goalPos, step) {
 }
 
 /* =====================================================================
-   EnemyAI — waypoint 選點(tag+位置+暴露+hysteresis+reservation)
+   EnemyAI — 尋路接敵（navMoveTo：直線可達就直走，被牆擋才走 waypoint 圖 BFS）
              開火/朝向受感知限制；堅守時視錐朝「最近、朝我方那側的 waypoint」
    ===================================================================== */
-const isSpecial = (n) => wp(n).tags.some(t => SPECIAL_TAGS.includes(t));
-function releaseReservation(e) { if (e.reservedNode != null && reservations.get(e.reservedNode) === e.id) reservations.delete(e.reservedNode); e.reservedNode = null; }
-function commitReservation(e, node) { if (isSpecial(node)) { reservations.set(node, e.id); e.reservedNode = node; } }
 function nearestFriendly(pos) { let best = null, bd = Infinity; for (const p of activePlayers()) { const d = dist(pos, p.pos); if (d < bd) { bd = d; best = p; } } return best; }
 
-function scoreNode(e, n, f, engaging) {
-  const node = wp(n), P = e.personality;
-  let s = 0;
-  for (const t of node.tags) s += (P.tags[t] || 0);
-  if (!f) return s;
-  const dn = dist(node.pos, f.pos);
-  s += (1 - Math.min(1, dn / MAXD)) * P.wRush * (engaging ? CONFIG.holdProxMul : CONFIG.chargeMul);
-  if (P.wFlank) { const a = Math.abs(angDiff(angTo(f.pos, node.pos), f.facing)); s += (a / Math.PI) * P.wFlank; }
-  // 暴露：被「敵對陣營」的視野覆蓋的節點扣分。
-  // ※ 原本寫死 activePlayers()＝性格唯一不中立的地方；扈從要共用同一套性格就必須改成陣營中立。
-  let exposed = 0;
-  for (const o of [...activePlayers(), ...enemies]) {
-    if (o === e || o.dead) continue;
-    if (!hostile(e.faction, o.faction)) continue;
-    if (dist(o.pos, node.pos) > CONFIG.ai.exposeCheckRange) continue;   // 太遠的先濾掉＝省下 canSee 的射線
-    if (canSee(o, node.pos)) exposed++;
-  }
-  s -= exposed * P.wExpose * (engaging ? 1 : 0.25);
-  const fn = nearestNode(f.pos, false);
-  if (nodeVis[n][fn]) s += P.wSight;
-  return s;
-}
 
 // 堅守/推進時的視錐朝向目標：最近、且位於朝我方那側的 waypoint
-function watchPoint(e, f) {
-  if (!f) return wp(e.targetNode).pos;
-  const tox = f.pos.x - e.pos.x, toy = f.pos.y - e.pos.y;
-  let best = null, bd = Infinity;
-  for (const n of MAP.waypoints) {
-    if (n.id === e.currentNode) continue;
-    const dx = n.pos.x - e.pos.x, dy = n.pos.y - e.pos.y;
-    if (dx * tox + dy * toy <= 0) continue;          // 只取朝我方那一側
-    const d = dx * dx + dy * dy;
-    if (d < bd) { bd = d; best = n; }
-  }
-  return best ? best.pos : f.pos;
-}
 
 // 開門：走到路徑上的關門就開（狗不會操作門）。track＝記住「自己從關開到開」的門，供巡邏走遠後關回去。
-function openDoorsNear(e, track) {
+function openDoorsNear(e) {
   if (!e.opensDoors) return;   // 狗：不會開門
-  for (const d of MAP.doors) { if (d.open) continue; if (distToDoor(e.pos, d) <= CONFIG.interactRadius) { d.open = true; Sfx.play('door', { x: (d.x1 + d.x2) / 2, y: (d.y1 + d.y2) / 2 }); if (track) (e.openedDoors || (e.openedDoors = [])).push(d.id); } }
+  for (const d of MAP.doors) { if (d.open) continue; if (distToDoor(e.pos, d) <= CONFIG.interactRadius) { d.open = true; Sfx.play('door', { x: (d.x1 + d.x2) / 2, y: (d.y1 + d.y2) / 2 }); } }
 }
 const unitNearDoor = (d, except) => enemies.some(u => !u.dead && u !== except && distToDoor(u.pos, d) <= CONFIG.interactRadius) || activePlayers().some(p => distToDoor(p.pos, d) <= CONFIG.interactRadius);
 // 隨手關門（僅非交戰的 IDLE 巡邏）：把自己開過、已走遠、門口無人的門關回去（交戰後清空＝永不關）
-function closeDoorsBehind(e) {
-  if (!e.openedDoors || !e.openedDoors.length) return;
-  e.openedDoors = e.openedDoors.filter(id => {
-    const d = MAP.doors.find(x => x.id === id); if (!d || !d.open) return false;            // 已被關/不存在 → 移出清單
-    if (distToDoor(e.pos, d) <= CONFIG.interactRadius * 1.6) return true;                    // 還沒走遠 → 留著待關
-    if (unitNearDoor(d, e)) return true;                                                     // 門口有人 → 先不關（防夾人/閃爍）
-    d.open = false; Sfx.play('door'); return false;                                         // 關回去
-  });
-}
 
-/* ---- IDLE 巡邏（只有 type.patrols 的單位＝grunt）---- */
 // 巡邏點池：地圖有 patrol 標籤點(≥2)→用之；否則自動取「距入口/撤離口都夠遠」的點；再不行＝全部點。
-function computePatrolPool() {
-  const tagged = MAP.waypoints.filter(n => (n.tags || []).includes('patrol')).map(n => n.id);
-  if (tagged.length >= 2) return tagged;
-  const R = CONFIG.patrol.autoBandFromEnds;
-  const auto = MAP.waypoints.filter(n => dist(n.pos, ENTRY) >= R).map(n => n.id);   // 離進場點夠遠的點
-  if (auto.length >= 2) return auto;
-  return MAP.waypoints.map(n => n.id);
-}
-function claimPatrolPoint(e) {   // 隨機認領一個「未被認領、且不是腳下」的巡邏點
-  const free = patrolPool.filter(n => n !== e.currentNode && !patrolClaims.has(n));
-  if (!free.length) return null;
-  const t = free[Math.floor(Math.random() * free.length)];
-  patrolClaims.set(t, e.id); return t;
-}
-function releasePatrol(e) {
-  if (e.patrolTarget != null && patrolClaims.get(e.patrolTarget) === e.id) patrolClaims.delete(e.patrolTarget);
-  e.patrolTarget = null; e.patrolPath = null; e.patrolDwell = 0;
-}
-function startDwell(e) { e.patrolDwell = CONFIG.patrol.dwell; e.patrolAnchor = e.facing; e.patrolSweepPh = 0; }   // 到點停留＝以到達朝向為中心緩慢掃視
 // 圖上 BFS：from→to 的節點序列（不含 from、含 to）；不可達回 []
 function bfsPath(from, to) {
   if (from === to || from == null || to == null) return [];
@@ -4736,100 +4633,17 @@ function bfsPath(from, to) {
   const path = []; let c = to; while (c !== from && c !== -1) { path.unshift(c); c = prev[c]; }
   return path;
 }
-function patrolStep(e, dt) {
-  const turn = e.weapon.turnSpeed * Math.PI / 180 * dt;
-  // 停留：到點後緩慢掃視一段時間，再放掉認領、下個 tick 重新認領
-  if (e.patrolDwell > 0) {
-    e.patrolDwell -= dt;
-    const amp = CONFIG.sweepAmpDeg * Math.PI / 180;
-    e.patrolSweepPh += CONFIG.sweepSpeed * Math.PI / 180 * dt * e.patrolSweepDir;
-    if (e.patrolSweepPh > amp) { e.patrolSweepPh = amp; e.patrolSweepDir = -1; }
-    if (e.patrolSweepPh < -amp) { e.patrolSweepPh = -amp; e.patrolSweepDir = 1; }
-    e.facing = e.patrolAnchor + e.patrolSweepPh;
-    if (e.patrolDwell <= 0) releasePatrol(e);
-    return;
-  }
-  // 認領一個巡邏點
-  if (e.patrolTarget == null) {
-    const t = claimPatrolPoint(e);
-    if (t == null) { e.facing = rotToward(e.facing, e.watchFacing, turn); return; }   // 沒有可認領的點＝原地等（不打架）
-    e.patrolTarget = t; e.patrolPath = bfsPath(e.currentNode, t);
-    if (e.patrolPath.length === 0) { startDwell(e); return; }   // 已在該點/不可達 → 停留後重抽
-  }
-  // 沿路徑走（節點到節點，沿邊＝不穿牆）；視錐朝移動方向
-  const np = wp(e.patrolPath[0]).pos;
-  moveToward(e, np, e.moveSpeed / CONFIG.tempo * CONFIG.patrol.speedMul * flashMoveMul(e) * dt);
-  e.facing = rotToward(e.facing, angTo(e.pos, np), turn);
-  if (dist(e.pos, np) < CONFIG.nodeReach) { e.currentNode = e.patrolPath.shift(); if (e.patrolPath.length === 0) startDwell(e); }
-}
 
 // IDLE：grunt 巡邏；其餘守原地（視錐維持 watchFacing）。不推進、不開門、不開火（看到/聽到/被打才轉 ENGAGED）
-function enemyIdleTick(e, dt) {
-  if (e.patrols && patrolPool.length) { patrolStep(e, dt); openDoorsNear(e, true); closeDoorsBehind(e); }   // 巡邏：開路上的門、走遠後隨手關回
-  else { const turn = e.weapon.turnSpeed * Math.PI / 180 * dt; e.facing = rotToward(e.facing, e.watchFacing, turn); }   // 守原地：緩慢回正守備朝向
-  e.engageTimer = 0;
-}
 
 /* ---- 交戰後共享情報 + 搜索（KNOWN→SEARCH→PATROL）---- */
-function bfsWithin(start, hops) {   // 圖上 start 起 hops 步內的所有節點（含 start）
-  const dd = new Array(N).fill(-1); dd[start] = 0; const q = [start], out = [start];
-  while (q.length) { const c = q.shift(); if (dd[c] >= hops) continue; for (const nb of adj[c]) if (dd[nb] < 0) { dd[nb] = dd[c] + 1; out.push(nb); q.push(nb); } }
-  return out;
-}
-const resetSearch = () => { searchFocusNode = null; searchSet = null; searchCleared = null; };
 // 每幀算我方「被誰看到」＝共享情報；全員失去視線→以最新最後已知位置建搜索焦點、視線/走訪覆蓋清格、清光轉巡邏
-function updateThreatKnowledge() {
-  const act = activePlayers(); let anySeen = false;
-  for (const p of act) {
-    const seen = enemies.some(en => !en.dead && canSee(en, p.pos));
-    p._seenNow = seen;
-    if (seen) { p.lastSeenPos = { x: p.pos.x, y: p.pos.y }; p.lastSeenT = simTime; anySeen = true; }
-  }
-  if (anySeen) { resetSearch(); searchConsumedT = -Infinity; return; }                 // 有人看得到＝KNOWN，不搜索
-  if (!enemies.some(en => !en.dead && en.state === 'ENGAGED')) { resetSearch(); return; }  // 未交戰＝交給 IDLE 巡邏
-  let lead = null;   // 取最新、且尚未消費過的「最後已知位置」線索
-  for (const p of act) if (p.lastSeenPos && p.lastSeenT > searchConsumedT && (!lead || p.lastSeenT > lead.lastSeenT)) lead = p;
-  if (lead && searchFocusNode == null) { searchFocusNode = nearestNode(lead.lastSeenPos, false); searchSet = bfsWithin(searchFocusNode, CONFIG.hunt.searchHops); searchCleared = new Set(); searchFocusLeadT = lead.lastSeenT; }
-  if (searchSet) for (const nid of searchSet) if (!searchCleared.has(nid)) { const np = wp(nid).pos; if (enemies.some(en => !en.dead && (dist(en.pos, np) < CONFIG.nodeReach || canSee(en, np)))) searchCleared.add(nid); }   // 走到 或 視線掃過＝清格
-  if (searchFocusNode != null && searchSet && searchCleared.size >= searchSet.length) { searchConsumedT = searchFocusLeadT; resetSearch(); }   // 清光仍沒找到 → 轉全場巡邏（待新目擊才再建焦點）
-}
 // 被擊中來向＝局部脅威：在「被擊中者→射手」方位上放一個脅威點，傳給被擊中者本人、看得到他的敵、與近隣的敵（皆轉 ENGAGED）。
-// 只給「方向」(非全體共享 lastSeenPos)＝解「側翼成功後敵人魚貫而出、全程面向前方被側射」：後續的人一出來就朝來向、會回頭找你。
-function registerHitThreat(victim, fromAng) {
-  const D = CONFIG.hunt.threatDist;
-  const tp = { x: victim.pos.x + Math.cos(fromAng) * D, y: victim.pos.y + Math.sin(fromAng) * D };   // fromAng 已是「被擊中者→射手」方位
-  const give = (e) => { e.threatPos = { x: tp.x, y: tp.y }; e.threatT = simTime; if (e.state !== 'ENGAGED') e.state = 'ENGAGED'; };
-  give(victim);
-  const R = CONFIG.hunt.threatShareRadius;
-  for (const o of enemies) { if (o.dead || o === victim || o.faction !== victim.faction) continue; if (dist(o.pos, victim.pos) <= R || canSee(o, victim.pos)) give(o); }   // 只分享給同陣營友軍
-}
-function nearestKnownPlayer(pos) {   // knownGrace 內被任一敵看過的最近我方（追其「已知位置」）
-  let best = null, bd = Infinity;
-  for (const p of activePlayers()) { if (simTime - p.lastSeenT > CONFIG.hunt.knownGrace) continue; const d = dist(pos, p.lastSeenPos || p.pos); if (d < bd) { bd = d; best = p; } }
-  return best;
-}
 // 多陣營：最近、本隻看得到的「他陣營 AI」（暴動＝即時互毆，不走玩家那套知識/潛行記憶）
 function nearestHostileAI(e) {
   let best = null, bd = Infinity;
   for (const o of enemies) { if (o.dead || !hostile(e.faction, o.faction) || !canSee(e, o.pos)) continue; const d = dist(e.pos, o.pos); if (d < bd) { bd = d; best = o; } }
   return best;
-}
-function searchMoveTo(e, dt) {   // 走向焦點區最近的未清查節點（沿圖）
-  if (e.searchTarget == null || searchCleared.has(e.searchTarget) || searchSet.indexOf(e.searchTarget) < 0) {
-    let best = null, bd = Infinity;
-    for (const n of searchSet) if (!searchCleared.has(n)) { const d = dist(e.pos, wp(n).pos); if (d < bd) { bd = d; best = n; } }
-    e.searchTarget = best; e.searchPath = best != null ? bfsPath(e.currentNode, best) : null;
-  }
-  if (e.searchTarget == null) { patrolStep(e, dt); return; }
-  const turn = e.weapon.turnSpeed * Math.PI / 180 * dt;
-  const np = (e.searchPath && e.searchPath.length) ? wp(e.searchPath[0]).pos : wp(e.searchTarget).pos;
-  moveToward(e, np, e.moveSpeed / CONFIG.tempo * CONFIG.patrol.speedMul * flashMoveMul(e) * dt);
-  e.facing = rotToward(e.facing, angTo(e.pos, np), turn);
-  if (dist(e.pos, np) < CONFIG.nodeReach) { if (e.searchPath && e.searchPath.length) e.currentNode = e.searchPath.shift(); else e.currentNode = e.searchTarget; }
-}
-function huntStep(e, dt) {   // 沒有已知目標：有焦點區→清查；否則全場巡邏（ENGAGED＝完整視野錐、看到瞬間再追）
-  if (searchFocusNode != null && searchSet && searchCleared && searchCleared.size < searchSet.length) searchMoveTo(e, dt);
-  else patrolStep(e, dt);
 }
 
 function enemyTick(e, dt) {
@@ -4843,52 +4657,39 @@ function enemyTick(e, dt) {
   //    所以繞過視錐仍然過得去。這是暫時的：D6 房間流程會讓進房即鎖門、全員 ENGAGED。
   if (e.state !== 'ENGAGED') {
     if (aiFoe || (f && canSee(e, f.pos))) e.state = 'ENGAGED';
-    else { enemyIdleTick(e, dt); return; }   // 仍守點被動
+    else return;   // 仍守點被動（巡邏隨潛行一起移除；D6 之後進房即全員 ENGAGED）
   }
 
-  // --- ENGAGED：共享情報 → KNOWN(追已知位置/親眼才開火) 或 HUNT(搜索焦點 / 全場巡邏) ---
-  if (e.openedDoors) e.openedDoors = null;   // 交戰後永不關門（清掉巡邏期的待關清單）
-  let tgt = nearestKnownPlayer(e.pos);   // 任一敵人在 knownGrace 內看過的最近我方（位置全體共享）
-  if (aiFoe) {   // 多陣營：他陣營 AI（直接視線）也是交戰目標，取較近者
-    const dPlayer = tgt ? dist(e.pos, tgt.lastSeenPos || tgt.pos) : Infinity;
-    if (dist(e.pos, aiFoe.pos) < dPlayer) tgt = aiFoe;
-  }
-  let threatOnly = false;   // 無全體已知目標、但自己有被擊中來向記憶＝朝來向推進/回頭（不對空地開火）
-  if (!tgt && e.threatPos && simTime - e.threatT <= CONFIG.hunt.threatGrace) { tgt = { pos: e.threatPos, lastSeenPos: e.threatPos, facing: 0, _threat: true }; threatOnly = true; }
-  if (!tgt) { e.engageTimer = 0; huntStep(e, dt); openDoorsNear(e, false); return; }   // 無已知目標＝沒人看得到、也無來向 → 搜索/巡邏（只開不關）
-  if (e.patrolTarget != null) releasePatrol(e); e.searchTarget = null; e.searchPath = null;   // 有真目標：放掉搜索/巡邏殘留
+  /* --- ENGAGED（TITHE C5）---------------------------------------------
+     Homeward 的**戰術選點**（scoreNode 依掩體/側翼/暴露/視線評分挑站位、佔點 reservation、
+     遲滯 hysteresis）整套移除：那是為「潛行 + 掩體 + 少量敵人」設計的，而躲掩體正好是
+     反 push-forward 的——敵人往掩體後縮，玩家就得慢慢把牠挖出來。
 
-  const aimPos = tgt.pos;                                   // 實際位置：視線/開火/收尾衝刺
-  const knownPos = tgt.lastSeenPos || tgt.pos;             // 已知位置：移動/選點（不穿牆作弊）
-  const fKnown = { pos: knownPos, facing: tgt.facing };
-  const seen = canSee(e, aimPos);                          // 這隻親眼看到才開火
+     **尋路（navMoveTo / bfsPath）保留**：它不是戰術 AI，是一個「不撞牆」的工具，
+     直線可達就直走（開闊地零成本）、被牆擋才落到圖上 BFS。拿掉它的代價是敵人卡在轉角磨蹭。
+
+     目標記憶改成**逐隻自己記**（不再有全體共享的情報網）：看得到就追，跟丟後在
+     CONFIG.enemy.memory 秒內往最後位置走，再過就站住。 */
+  let tgt = (f && canSee(e, f.pos)) ? f : null;
+  if (aiFoe && (!tgt || dist(e.pos, aiFoe.pos) < dist(e.pos, tgt.pos))) tgt = aiFoe;   // 多陣營：他陣營 AI 也是目標，取較近者
+  if (tgt) { e.lastSeenPos = { x: tgt.pos.x, y: tgt.pos.y }; e.lastSeenT = simTime; }
+
+  const seen = !!tgt;                                        // 親眼看到才開火
+  const fresh = e.lastSeenPos && simTime - (e.lastSeenT || -1e9) <= CONFIG.enemy.memory;
+  if (!seen && !fresh) { e.engageTimer = 0; e.aimT = 0; openDoorsNear(e); return; }   // 跟丟太久＝原地待命（搜索/巡邏已隨潛行一起移除）
+
+  const aimPos = tgt ? tgt.pos : e.lastSeenPos;              // 實際位置：視線/開火
+  const knownPos = e.lastSeenPos || aimPos;                  // 已知位置：移動（不穿牆作弊）
   const inRange = dist(e.pos, aimPos) <= e.weapon.range;
-  const engaging = seen && inRange;
-
-  let cands = [e.currentNode, ...adj[e.currentNode]];
-  cands = [...new Set(cands)].filter(n => !(isSpecial(n) && reservations.has(n) && reservations.get(n) !== e.id));
-  if (cands.length === 0) cands = [e.currentNode];
-
-  let best = e.currentNode, bestScore = -Infinity;
-  for (const n of cands) {
-    let s = scoreNode(e, n, fKnown, engaging);
-    if (n === e.targetNode && hysteresisOn) s += CONFIG.hysteresisBonus;
-    if (s > bestScore) { bestScore = s; best = n; }
-  }
-  if (best !== e.targetNode) { releaseReservation(e); e.targetNode = best; commitReservation(e, best); }
-
-  const tn = wp(e.targetNode);
-  // 收尾衝刺：超短射程(近戰)看得到目標時直奔本人；長射程永不觸發
-  // 近接武器一律衝完最後一段（不看 range 門檻：長槍 reach 104 > meleeApproach，但它仍然必須貼上去才打得到）
   const melee = !!e.weapon.melee;
   // 攻擊權（1 對多的可讀性）：近接敵要先取得攻擊權才進逼；沒拿到的在 ringDist 外圍繞行伺機。
   // 沒有這層，體幹/耐力只會讓被圍毆變成必死宣告。
   let token = true;
-  if (melee && seen && !threatOnly) {
-    token = tryAcquireToken(e, (tgt && !tgt._threat) ? tgt : null);
+  if (melee && seen) {
+    token = tryAcquireToken(e, tgt);
     if (!token) releaseAttackToken(e);
   } else if (melee) { releaseAttackToken(e); }
-  let goalPos = (seen && (melee || e.weapon.range <= CONFIG.enemy.meleeApproach)) ? aimPos : tn.pos;
+  let goalPos = seen ? aimPos : knownPos;
   let spd = e.moveSpeed / CONFIG.tempo * flashMoveMul(e) * rangedActionMoveMul(e);   // 遠程：瞄準預告中放慢/定身、裝填中放慢（弩＝定身）
   if (melee && seen && !token) {
     // 繞行：保持 ringDist，並沿切線橫移（以自己的 id 決定繞哪一邊＝不會全部擠同一側）
@@ -4900,9 +4701,13 @@ function enemyTick(e, dt) {
       ? ring                                                                              // 太近/太遠 → 先回到環上
       : { x: e.pos.x + Math.cos(tang) * 60, y: e.pos.y + Math.sin(tang) * 60 };            // 在環上 → 沿切線繞
     spd *= CONFIG.melee.ringStrafe;
+    moveToward(e, goalPos, spd * dt);
+  } else {
+    // 一般接敵：朝目標尋路，停在自己武器打得到的距離上（近接貼上去、遠程停在射程內）。
+    const standoff = melee ? Math.max(16, (e.weapon.reach || 40) * 0.85) : e.weapon.range * 0.8;
+    if (dist(e.pos, goalPos) > standoff) navMoveTo(e, goalPos, spd * dt);
+    else e.currentNode = nearestNode(e.pos, false);
   }
-  moveToward(e, goalPos, spd * dt);   // 閃光暈眩＝減速
-  if (dist(e.pos, tn.pos) < CONFIG.nodeReach) e.currentNode = e.targetNode;
 
   const turn = e.weapon.turnSpeed * Math.PI / 180 * dt;
   if (seen) {
@@ -4911,13 +4716,13 @@ function enemyTick(e, dt) {
     const aimTMul = (!e.weapon.melee && (e.aimT || 0) > 0) ? (e.weapon.aimTurnMul != null ? e.weapon.aimTurnMul : CONFIG.ranged.aimTurnMul) : 1;
     e.facing = rotToward(e.facing, ang, turn * 2 * aimTMul);
     // 遠程沿「實際朝向」放箭＝預告長方形就是真彈道（轉向被鎖時才閃得掉）；近接仍朝目標本人
-    if (inRange && !threatOnly && token) { e.engageTimer += dt; if (e.engageTimer >= CONFIG.enemy.reactionDelay) enemyAttack(e, e.weapon.melee ? ang : e.facing, dt); }   // 只憑來向記憶＝先朝來向推進/回頭，不對空地開火；親眼看到真目標才射；近接還需攻擊權
+    if (inRange && token) { e.engageTimer += dt; if (e.engageTimer >= CONFIG.enemy.reactionDelay) enemyAttack(e, e.weapon.melee ? ang : e.facing, dt); }   // 親眼看到才射；近接還需攻擊權
     else { e.engageTimer = 0; e.aimT = 0; }   // 沒得射＝瞄準歸零（預告不能留在畫面上）
   } else {
     e.engageTimer = 0; e.aimT = 0;
-    e.facing = rotToward(e.facing, angTo(e.pos, watchPoint(e, fKnown)), turn);  // 朝已知位置那側推進
+    e.facing = rotToward(e.facing, angTo(e.pos, knownPos), turn);   // 跟丟：朝最後看到的位置
   }
-  openDoorsNear(e, false);   // 交戰中只開不關（追擊破門）
+  openDoorsNear(e);   // 交戰中只開不關（追擊破門）
 }
 
 /* =====================================================================
@@ -5270,7 +5075,6 @@ window.addEventListener('keydown', e => {
   // 指令輪盤：按住 G 出現四向輪盤（滑鼠選方向），放開＝下令。1-4 已給槽位，故用長按選單。
   if (k === 'shift') { /* Shift 本身不觸發指令 */ }
   if (k === 'j') debugView = !debugView;   // debug 檢視（原 G，讓位給指令輪盤）
-  if (k === 'k') hysteresisOn = !hysteresisOn;   // (debug) 遲滯開關
   if ([' ', 'w', 'a', 's', 'd'].includes(k)) e.preventDefault();
 });
 window.addEventListener('keyup', e => {
@@ -5342,8 +5146,7 @@ function update(dt) {
     }
   }
 
-  // 3) 敵人 AI（先更新共享情報/搜索焦點，再逐一行動）
-  updateThreatKnowledge();
+  // 3) 敵人 AI（TITHE C5：不再有全體共享情報，每隻自己看、自己記）
   for (const e of enemies) if (!e.dead) enemyTick(e, dt);
 
   // 5) 子彈 / 特效
@@ -5790,7 +5593,7 @@ function drawButtons() {
 function drawWaypoints() {
   ctx.strokeStyle = 'rgba(120,140,160,0.10)'; ctx.lineWidth = 1;
   for (const [a, b] of MAP.edges) { ctx.beginPath(); ctx.moveTo(wp(a).pos.x, wp(a).pos.y); ctx.lineTo(wp(b).pos.x, wp(b).pos.y); ctx.stroke(); }
-  for (const n of MAP.waypoints) { const sp = isSpecial(n.id); ctx.fillStyle = sp ? 'rgba(180,160,90,0.30)' : 'rgba(120,140,160,0.18)'; ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, sp ? 5 : 3, 0, Math.PI * 2); ctx.fill(); }
+  for (const n of MAP.waypoints) { ctx.fillStyle = 'rgba(120,140,160,0.18)'; ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, 3, 0, Math.PI * 2); ctx.fill(); }
 }
 function drawZonesWorld() {   // 進場點（撤離圈隨 C6 移除；D6 之後這裡會改畫「清場後開啟的洞」）
   ctx.strokeStyle = hsl(30, 70, 55, 0.5); ctx.lineWidth = 3;
@@ -6078,14 +5881,12 @@ function drawDebug() {
   ctx.font = '10px Consolas'; ctx.textAlign = 'center';
   for (const n of MAP.waypoints) {
     ctx.fillStyle = '#8aa'; ctx.fillText(`#${n.id} ${n.tags.join(',')}`, n.pos.x, n.pos.y - 8);
-    if (reservations.has(n.id)) { ctx.strokeStyle = '#ffcf5a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, 9, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = '#ffcf5a'; ctx.fillText(`R:E${reservations.get(n.id)}`, n.pos.x, n.pos.y + 16); }
   }
   for (const e of enemies) {
     if (e.dead) continue;
     ctx.strokeStyle = e.personalityName === 'rusher' ? 'rgba(255,80,80,0.5)' : 'rgba(255,180,80,0.5)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(e.pos.x, e.pos.y); ctx.lineTo(wp(e.targetNode).pos.x, wp(e.targetNode).pos.y); ctx.stroke();
     ctx.fillStyle = e.state === 'ENGAGED' ? '#ff7d7d' : '#7fd0a0';
-    ctx.fillText(`${e.state === 'ENGAGED' ? '⚔' : 'z'}${e.personalityName[0].toUpperCase()}→${e.targetNode}`, e.pos.x, e.pos.y - e.radius - 14);
+    ctx.fillText(`${e.state === 'ENGAGED' ? '⚔' : 'z'}${e.personalityName}`, e.pos.x, e.pos.y - e.radius - 14);
   }
   ctx.textAlign = 'left';
 }
@@ -6309,9 +6110,9 @@ function drawHUD() {
   // 控制提示（卡片帶上方）
   ctx.textAlign = 'center'; ctx.font = '11px Consolas'; ctx.fillStyle = 'rgba(205,214,224,0.55)';
   ctx.fillText('移動 WASD · Shift 奔跑 · 滾輪/X 換裝 · R 換彈 · F 互動 · G 指令 · H 自走撤離 · Shift+H 扈從先撤　（招式見下方快捷列）', cv.width / 2, cv.height - 78);
-  if (debugView || !hysteresisOn) {
-    ctx.fillStyle = hysteresisOn ? '#7fe3ff' : '#ff9b5a';
-    ctx.fillText(`hysteresis: ${hysteresisOn ? 'ON' : 'OFF (觀察抖動)'}    debug(無迷霧): ${debugView ? 'ON' : 'OFF'}`, cv.width / 2, cv.height - 108);
+  if (debugView) {
+    ctx.fillStyle = '#7fe3ff';
+    ctx.fillText(`debug(無迷霧): ON`, cv.width / 2, cv.height - 108);
   }
   ctx.textAlign = 'left';
 }
