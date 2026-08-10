@@ -101,12 +101,6 @@ const CONFIG = {
   sprint: { base: 1.9, weightPenalty: 0.5, minMult: 1.1 },
   // 武器數值移至下方 WEAPONS 目錄（可指派、未來可換）
 
-  timeBudget: 90,
-  // 追兵：**軟取消**（使用者定案）——敵人沒理由特別派人追一個落敗的騎士。
-  // enabled:false ＝計時上限拉到超長（追兵幾乎不會來）且隱藏 UI 計時條；機制與數值都留著，將來要用改回 true 即可。
-  reinforce: { enabled: false, startInterval: 2.0, rampEvery: 10, rampDelta: -0.3, minInterval: 0.4 },
-  // 多通用進出點：地圖若給 accessPoints 池，每局抽 ENTRY/EXTRACT 並約束「直線距離 ≥ 對角線×minSepFrac」＝確保穿越夠遠、不抽到旁邊的點；剩餘存 spawnPoints（增援/第三方/潰逃日後接）。
-  access: { minSepFrac: 0.55 },
   hysteresisBonus: 25,
   squadSize: 1,             // TITHE：教廷送**一個人**進地獄。場上永遠只有騎士（見 startMission）
   // 跨關回復：每場戰鬥開始時，存活成員「缺血」回復的比例。
@@ -162,7 +156,6 @@ const CONFIG = {
   // --- 額外佔位 ---
   unitRadius: 12,
   nodeReach: 22,
-  extractRadius: 34,
   sweepAmpDeg: 70,
   sweepSpeed: 35,
   wanderAmpDeg: 28,         // WANDER：相對「進入閒置時正前方」的最大偏擺（度，視野不離正前方）
@@ -226,7 +219,6 @@ const CONFIG = {
      跟隨 follow  錨點＝騎士（動態）        繩長中   只打進繩長的敵人
      守住 hold    錨點＝下令當下的座標      繩長短   打進來的，不追出去
      專注 focus   錨點＝指定的那隻敵人      繩長長   全力打它
-     撤離 extract 沿用既有的 EXTRACTING 自走
    ※ 使用者定案：**扈從沒有自保行為**（不會低血自動後撤）——死生完全由指令負責。
      因此扈從的狀態可讀性是必要配套（血條/指令標記畫得醒目），否則會變成「他死了而我沒注意到」。
    ===================================================================== */
@@ -962,7 +954,7 @@ const ITEM_STACK_MAX = 3;   // 消耗品一疊上限；取得即一疊(3)，休�
 function giveItemStack(id) { warehouse.push({ kind: 'item', id, count: ITEM_STACK_MAX }); }   // 取得道具＝整疊進倉庫
 
 /* =====================================================================
-   待機行為 KNIGHT_IDLE — 單一設定（TITHE：只剩騎士自走撤離時會用到）。
+   待機行為：TITHE 只操作騎士本人，已無「待機 AI 人格」這回事。
    早期版本按「待機原型」分三型（磐石固守 / 先鋒壓上 / 遊獵繞側），還在人物 UI 上標籤化。
    這版扈從全由**指令層**（錨點＋繩長＋交戰規則）驅動，待機性格的區分已無必要，故收斂成一份預設、
    也不再顯示於人物 UI。兵種（classId）才是每名扈從真正的差異來源（身體＋裝備＋崩潰門檻）。
@@ -971,9 +963,6 @@ function giveItemStack(id) { warehouse.push({ kind: 'item', id, count: ITEM_STAC
      fireMode:   AGGRESSIVE = 視野內有目標就開火（否則遠程扈從會顯得很被動）
      aiPersonality＝與敵人共用的那套 CONFIG.ai（scoreNode 已陣營中立）——flanker＝在騎士附近怎麼站
    ===================================================================== */
-/* TITHE C1：扈從移除後，這張表只剩一個用途——騎士**自走撤離**（按 H）期間的自動接敵行為，
-   見 extractTick → idleTick。不再是「扈從的待機人格」。 */
-const KNIGHT_IDLE = { facing: 'TRACK', discipline: 'TAP', fireMode: 'AGGRESSIVE', aiPersonality: 'flanker' };
 
 /* =====================================================================
    被動／升階系統已整個移除（使用者定案）。
@@ -1125,7 +1114,7 @@ function encounterAnchorsOf(map) {
     const key = Math.round(p.x / 120) + ',' + Math.round(p.y / 120);
     if (seen.has(key)) continue; seen.add(key); out.push({ x: p.x, y: p.y });
   }
-  return out.length ? out : [{ x: (ENTRY.x + EXTRACT.x) / 2, y: (ENTRY.y + EXTRACT.y) / 2 }];
+  return out.length ? out : [{ x: WORLD.w / 2, y: WORLD.h / 2 }];
 }
 // 把一組單位聚在錨點周圍放下（環狀排開，避免疊在一起）。回傳放好的敵人陣列。
 function spawnGroup(units, anchor, faction, opening, facePos) {
@@ -1252,7 +1241,6 @@ function makeRecruit(used, noble) {
   let name = rngPick(pool);
   if (used) { let g = 0; while (used.has(name) && g++ < 50) name = rngPick(pool); used.add(name); }
   // 招募＝擲一個**兵種**：兵種是身體＋裝備（hp/體幹/移速/武器/盾/甲），也決定崩潰門檻。
-  // 待機行為已統一（見 KNIGHT_IDLE），不再有「弓手打法卻是陷陣」那種原型分歧。
   const classId = rngPick(RECRUIT_CLASS_IDS);
   const kit = classLoadout(classId);
   return { name, uid: rosterUidSeq++, hue: rngPick(HUE_POOL), strength: rngPick([0.8, 1.0, 1.2]), classId,
@@ -2011,7 +1999,7 @@ const MAPS = {
 
 let MAP = MAPS.alpha;        // 目前作用中的戰鬥地圖（startMission 依節點切換）
 const MAXD = Math.hypot(WORLD.w, WORLD.h);
-let EXTRACT, ENTRY, spawnPoints = [], N, adj, nodeVis, extractNodeId, nextHop;   // spawnPoints＝多進出點抽完剩下的閒置點（增援/第三方/潰逃日後用）
+let ENTRY, N, adj, nodeVis;   // ENTRY＝騎士的進場點（TITHE C6：撤離點與追兵整套移除，出口改成「清場」）
 const wp = (id) => MAP.waypoints[id];
 
 /* =====================================================================
@@ -2066,46 +2054,19 @@ function nearestNode(pos, requireLoS = false) {
   if (best < 0) return nearestNode(pos, false);
   return best;
 }
-function buildNextHop() {
-  const arr = new Array(N).fill(null);
-  const d = new Array(N).fill(Infinity);
-  const q = [extractNodeId]; d[extractNodeId] = 0;
-  while (q.length) { const c = q.shift(); for (const nb of adj[c]) if (d[nb] === Infinity) { d[nb] = d[c] + 1; q.push(nb); } }
-  for (let n = 0; n < N; n++) {
-    if (n === extractNodeId) { arr[n] = n; continue; }
-    let best = null, bd = d[n];
-    for (const nb of adj[n]) if (d[nb] < bd) { bd = d[nb]; best = nb; }
-    arr[n] = best != null ? best : n;
-  }
-  return arr;
-}
-// 切換作用中地圖並重建衍生表（N/adj/nodeVis/nextHop/EXTRACT/ENTRY/extractNodeId）
-function pickAccessPoints(P, w, h) {
-  const minSep = Math.hypot(w || 1280, h || 720) * CONFIG.access.minSepFrac;
-  const ei = Math.floor(srand() * P.length);                                     // 抽 ENTRY（吃 srand＝每局不同、可重現）
-  const far = []; for (let i = 0; i < P.length; i++) if (i !== ei && dist(P[ei], P[i]) >= minSep) far.push(i);
-  let xi;
-  if (far.length) xi = far[Math.floor(srand() * far.length)];                    // 夠遠的裡面抽 EXTRACT
-  else { let bd = -1; xi = (ei + 1) % P.length; for (let i = 0; i < P.length; i++) if (i !== ei && dist(P[ei], P[i]) > bd) { bd = dist(P[ei], P[i]); xi = i; } }   // 都不夠遠→取最遠一對（保底）
-  return { entry: P[ei], extract: P[xi], spawn: P.filter((_, i) => i !== ei && i !== xi) };
-}
-// 切換作用中地圖並重建衍生表（N/adj/nodeVis/nextHop/EXTRACT/ENTRY/extractNodeId）
+// 切換作用中地圖並重建衍生表（N / adj / nodeVis / ENTRY）
 function buildMapDerived(key) {
   MAP = MAPS[key] || MAPS.alpha;
-  // 多通用進出點：有 accessPoints 池(≥2) → 抽 ENTRY/EXTRACT(距離約束、可重現)、剩餘存 spawnPoints；否則沿用固定 entry/extract（舊圖/事件圖）
   if (MAP.accessPoints && MAP.accessPoints.length >= 2) {
-    const r = pickAccessPoints(MAP.accessPoints, MAP.width, MAP.height);
-    ENTRY = r.entry; EXTRACT = r.extract; spawnPoints = r.spawn;
+    ENTRY = MAP.accessPoints[Math.floor(srand() * MAP.accessPoints.length)];   // 進場點：池裡隨機一個
   } else {
-    EXTRACT = MAP.extractionPoints[0]; ENTRY = MAP.entryPoints[0]; spawnPoints = [];
+    ENTRY = MAP.entryPoints[0];
   }
   N = MAP.waypoints.length;
   adj = Array.from({ length: N }, () => []);
   for (const [a, b] of MAP.edges) { adj[a].push(b); adj[b].push(a); }
   nodeVis = Array.from({ length: N }, () => new Array(N).fill(false));
   for (let i = 0; i < N; i++) { nodeVis[i][i] = true; for (let j = i + 1; j < N; j++) { const v = clearLineWalls(wp(i).pos, wp(j).pos); nodeVis[i][j] = v; nodeVis[j][i] = v; } }
-  extractNodeId = nearestNode(EXTRACT, false);
-  nextHop = buildNextHop();
 }
 buildMapDerived('alpha');   // 載入時先建好預設圖，讓全域衍生值存在
 
@@ -2146,8 +2107,8 @@ function updateCamera(dt) {
   if (!cam) return;   // 安全防護：非戰鬥場景 cam 可能尚未建立
   // 演出固定機位（cutscene.cam 非 null）：俯視框住場面，不跟單位
   if (cutscene && cutscene.cam) { camTarget.x = cutscene.cam.x; camTarget.y = cutscene.cam.y; camTarget.angle = cutscene.cam.angle; }
-  // 跟隨騎士：手動控制(CONTROLLED) 或 自走撤離中(EXTRACTING) 都跟（撤出/陣亡後 controlledId 會被清空，鏡頭定住）
-  else if (controlledId != null && (players[controlledId].state === 'CONTROLLED' || players[controlledId].state === 'EXTRACTING')) {
+  // 跟隨騎士（陣亡後 controlledId 會被清空，鏡頭定住）
+  else if (controlledId != null && players[controlledId].state === 'CONTROLLED') {
     const f = players[controlledId];
     camTarget.x = f.pos.x; camTarget.y = f.pos.y;
     camTarget.angle = -Math.PI / 2 - f.facing;   // facing → 螢幕上方
@@ -2179,14 +2140,16 @@ let flashFx = [];            // 閃光彈爆閃視覺 [{x,y,t,max}]（純特效�
 // controlledId 保留為讀取接縫（渲染/HUD/開火回饋等 20+ 處沿用），但只會是 KNIGHT_ID 或 null（騎士離場後）。
 const KNIGHT_ID = 0;
 const knight = () => (players && players[KNIGHT_ID]) || null;
-const knightAlive = () => { const k = knight(); return !!k && k.state !== 'DEAD' && k.state !== 'EXTRACTED'; };
+const knightAlive = () => { const k = knight(); return !!k && k.state !== 'DEAD'; };
 let controlledId, reservations, enemyIdSeq;
 let patrolClaims = new Map(), patrolPool = [];   // IDLE 巡邏：點認領集（node→enemyId）/ 本場巡邏點池
 let searchFocusNode = null, searchSet = null, searchCleared = null, searchFocusLeadT = -Infinity, searchConsumedT = -Infinity;   // 交戰後搜索焦點（最後已知位置那區）
-let simTime, reinforceTimer, extractedCount, deadCount;
+let simTime, deadCount;
+// TITHE C6：本房是否已清空。取代 Homeward 的「騎士走到撤離點＝過關」——
+// 出口是房間中央的洞（DESIGN.md §5.3），洞在清場那一刻才開，所以過關條件就是清場本身。
+let roomCleared = false;
 let result;
 let scene = 'MAP';           // 場景：MAP | COMBAT | REST | RUNEND | RUNWIN | EDITOR
-let curTimeBudget = 90;      // 本場軟計時上限（節點 > 地圖 > 全域預設）
 let forcedMap = null;        // 非 null 時 startMission 強制用此地圖鍵（關卡編輯器試玩用）
 let finaleActive = false;    // 此場戰鬥＝最終真相挑戰（鐵人；結束走 resolveFinale 播結局而非一般結算）
 let endingSeq = null;        // 結局/揭示純文字序列（scene ENDING）：{lines,shown,t,pace,onDone,title}
@@ -2246,7 +2209,6 @@ let introCast = null;        // 序章三人陣容 configs（主角+2守衛；�
 let introGuards = [];        // 演出中的守衛 actor [{pos,facing,hue,name}]（密語後轉真單位）
 let introConsole = null;     // 控制台互動點 {x,y,used}（取得機密檔案）
 let restTutorial = false;    // REST 是否顯示教學說明面板（僅序章休息）
-// 騎士自走撤離＝knight().state === 'EXTRACTING'：自動導航到撤離點 + 滑鼠仍可轉視野，任一指令奪回手動
 
 // 建一個武器槽（副武器/換槍用）：完整自帶彈藥/換彈/bloom 狀態
 function makeWeaponSlot(weaponId, reserve, fx, enhRec) {
@@ -2277,7 +2239,6 @@ function makePlayer(i, cfg, pos) {
   // 跨關回復：以攜帶的當前血量為底，回復「缺口 × interMissionHealFrac」（frac=1 → 滿血，與舊行為一致）
   const carried = clamp(cfg.hp != null ? cfg.hp : maxHp, 0, maxHp);
   const startHp = clamp(Math.round(carried + (maxHp - carried) * CONFIG.interMissionHealFrac), 1, maxHp);
-  const disc = cfg.disciplineOverride || KNIGHT_IDLE.discipline;  // 搜刮可把某員紀律提升為 TAP（per-member 覆蓋）
   // 彈藥備量＝休息關分配的量（底線武器無限）
   const reserve = isInfiniteAmmo(cfg.weaponId) ? 9999 : (cfg.allocatedAmmo != null ? cfg.allocatedAmmo : CONFIG.ammo.defaultAlloc);
   const magazine = Math.round(W.magazine * (fx.magMul || 1));   // 裝備可改彈夾容量
@@ -2313,10 +2274,7 @@ function makePlayer(i, cfg, pos) {
     hp: startHp, maxHp,
     state: i === 0 ? 'CONTROLLED' : 'IDLE',
     disciplineOverride: cfg.disciplineOverride || null,
-    idleStrategy: { fireMode: KNIGHT_IDLE.fireMode, targeting: 'NEAREST_IN_LOS', facing: KNIGHT_IDLE.facing, discipline: disc },
     cmd: { mode: 'follow', pos: null, target: null },   // 指令層：預設跟隨騎士
-    personality: CONFIG.ai[KNIGHT_IDLE.aiPersonality],
-    basePersonality: CONFIG.ai[KNIGHT_IDLE.aiPersonality],
     currentNode: null, targetNode: null,                       // 節點導航（與敵人同一套）
     // 以下是「當前主手」的鏡像（既有戰鬥碼只認得這些欄位；換 set 由 equipActiveSet 重寫）
     weaponId: mainSlot.weaponId, weapon: mainSlot.weapon, quality: mainSlot.quality, enh: mainSlot.enh, magazine: mainSlot.magazine, ammoInMag: mainSlot.ammoInMag, ammoReserve: mainSlot.ammoReserve, reloadT: 0, reloadDur: 0, bloom: 0,
@@ -2421,11 +2379,11 @@ function ensureFileCarrier() {
 // 休息關指派攜帶者（單選；點某員＝把遺物移到他身上）
 function assignFileCarrier(mi) { if (!CONFIG.relicEnabled || mi < 0 || mi >= roster.length) return; roster.forEach((r, i) => { r.carriesFile = (i === mi); }); restSel = null; }
 function fileCarrierIndex() { return roster ? roster.findIndex(r => r.carriesFile) : -1; }
-// 我方重生點：圍著作用中地圖的進入點(ENTRY)成隊形展開，而非固定在地圖左邊（自訂地圖好設計）。
-// 隊形軸＝垂直於「ENTRY→地圖內部(EXTRACT)」方向；整體稍往內挪避免貼外牆（卡牆由 collide/separate 收尾）。
+// 騎士的出生點：圍著地圖的進場點(ENTRY)展開。
+// 軸＝垂直於「ENTRY→地圖中央」方向；整體稍往內挪避免貼外牆（卡牆由 collide/separate 收尾）。
 function spawnPos(i, n) {
   const base = ENTRY || { x: 180, y: 360 };
-  let dx = EXTRACT ? EXTRACT.x - base.x : 1, dy = EXTRACT ? EXTRACT.y - base.y : 0;
+  let dx = WORLD.w / 2 - base.x, dy = WORLD.h / 2 - base.y;
   const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;            // 朝地圖內部的單位向量
   const inset = 40, spread = (i - (n - 1) / 2) * 34;                 // 往內 40、以隊伍中心對齊 ENTRY
   return { x: base.x + dx * inset - dy * spread, y: base.y + dy * inset + dx * spread };
@@ -2616,14 +2574,12 @@ function startMission() {
   cutscene = null; introActive = false;          // 一般戰鬥/沙盒/編輯試玩：清掉任何殘留的序章演出（只有 startIntro 才設 cutscene）
   buildMapDerived(mapKey);                       // 切換到此節點指定的戰鬥地圖（重建衍生表）
   const nodeTB = (roadCurrent != null && roadNode(roadCurrent).timeBudget);
-  // 追兵軟取消時把上限拉到超長（追兵的觸發條件 simTime > curTimeBudget 幾乎永不成立）
-  curTimeBudget = CONFIG.reinforce.enabled ? (nodeTB || MAP.timeBudget || CONFIG.timeBudget) : 1e9;
   for (const d of MAP.doors) d.open = false;     // 每場戰鬥門重置為關閉
   for (const d of (MAP.destructibles || [])) { d.cur = d.intact; d.curHp = d.hp; }   // 破壞物重置為初始形態/滿 HP
   // TITHE C1：場上永遠只有騎士。roster 仍是陣列（配裝資料掛在 roster[0]），
   // 但**只有第 0 位會被生成**——即使舊的事件碼往 roster push 了人，也不會有第二個我方單位。
   players = [makePlayer(KNIGHT_ID, roster[KNIGHT_ID], spawnPos(0, 1))];
-  const faceInto = EXTRACT && ENTRY ? angTo(ENTRY, EXTRACT) : 0;   // 開場面向地圖內部（右/上緣進入點才不會對著牆）
+  const faceInto = ENTRY ? angTo(ENTRY, { x: WORLD.w / 2, y: WORLD.h / 2 }) : 0;   // 開場面向地圖內部
   for (const p of players) { p.facing = faceInto; p.idleAnchor = faceInto; }
   controlledId = 0;
   enemies = []; bullets = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; shakeAmt = 0; kickY = 0; hitstopT = 0;
@@ -2653,8 +2609,8 @@ function startMission() {
   if (pendingRescueKnight) { injectKnightRescue(); pendingRescueKnight = false; }   // B面「救援落難騎士」：注入接觸點 + 圍攻他的劫掠隊（一次性）
   patrolPool = computePatrolPool();   // 本場巡邏點池（IDLE grunt 巡邏用）
   searchFocusNode = null; searchSet = null; searchCleared = null; searchConsumedT = -Infinity;   // 重置交戰後搜索
-  simTime = 0; reinforceTimer = 0;
-  extractedCount = 0; deadCount = 0; result = null;
+  simTime = 0; roomCleared = false;
+  deadCount = 0; result = null;
   scene = 'COMBAT';
   Input.aim = players[controlledId].facing;
   initCamera(players[controlledId]);
@@ -2664,15 +2620,15 @@ function startMission() {
 
 // 戰鬥結算：撤出者帶入後續（→回路線圖）；0 撤出則 run 結束
 function endMission() {
-  { const kn0 = knight(); Hooks.fire('missionEnd', { win: !!(kn0 && kn0.state === 'EXTRACTED') }); }
-  if (fromSandbox) { fromSandbox = false; forcedMap = null; sandboxLast = { extracted: players.filter(p => p.state === 'EXTRACTED').length, dead: players.filter(p => p.state === 'DEAD').length, total: players.length }; if (playtestMode) { playtestMode = false; try { location.href = 'editor.html'; } catch (e) {} return; } enterSandbox(); return; }
+  Hooks.fire('missionEnd', { win: roomCleared && knightAlive() });
+  if (fromSandbox) { fromSandbox = false; forcedMap = null; sandboxLast = { cleared: roomCleared, dead: players.filter(p => p.state === 'DEAD').length, total: players.length }; if (playtestMode) { playtestMode = false; try { location.href = 'editor.html'; } catch (e) {} return; } enterSandbox(); return; }
   if (fromEditor) { fromEditor = false; forcedMap = null; scene = 'EDITOR'; editMsg = '試玩結束 — 回到編輯器'; releasePointer(); return; }
   if (introActive) { finishIntro(); return; }   // 第0關：撤離 → 序章休息（含教學），不走一般結算
-  const survivors = players.filter(p => p.state === 'EXTRACTED');
+  const survivors = players.filter(p => p.state !== 'DEAD');
   const fileSafe = CONFIG.relicEnabled ? survivors.some(p => p.hasFile) : true;   // 遺物須由撤出者帶出（Phase 0 機制關閉＝恆真）
-  // HOMEWARD 勝負判定：**騎士親自抵達撤離點＝過關；騎士陣亡＝run 結束**。扈從的生死不影響過關。
+  // TITHE 勝負判定：**清場＝過關；騎士陣亡＝run 結束**。
   const kn = knight();
-  const win = !!kn && kn.state === 'EXTRACTED' && (finaleActive || fileSafe);
+  const win = roomCleared && !!kn && kn.state !== 'DEAD' && (finaleActive || fileSafe);
   const cacheReveal = [];   // 密封容器開封＝事後抽選（排除基本階、含未解鎖、run 限定進倉庫）：僅過關時開
   if (win) { const cachesOut = survivors.reduce((n, p) => n + (p.caches || 0), 0); for (let i = 0; i < cachesOut; i++) cacheReveal.push(rollMysteryLoot()); }
   lastSummary = { mission: missionIndex + 1, extracted: survivors.map(p => p.name), dead: players.filter(p => p.state === 'DEAD').map(p => p.name), fileSafe, cacheReveal };
@@ -2685,7 +2641,7 @@ function endMission() {
     scene = 'DEBRIEF'; releasePointer(); return;   // 戰後結算畫面（前進→advanceNode）
   }
   if (finaleActive) { resolveFinale(false); return; }   // 最終挑戰全滅＝Bad End（不走一般 RUNEND）
-  scene = 'RUNEND'; result = 'LOSE'; loseReason = (kn && kn.state !== 'EXTRACTED' && !fileSafe) ? '遺物遺失' : '騎士陣亡'; metaOnRunEnd(false); releasePointer();   // 一般 run 失敗：局外結算
+  scene = 'RUNEND'; result = 'LOSE'; loseReason = '騎士陣亡'; metaOnRunEnd(false); releasePointer();   // 一般 run 失敗：局外結算
 }
 
 /* =====================================================================
@@ -2879,7 +2835,7 @@ function arenaResetFight() {
   });
   controlledId = KNIGHT_ID;
   corpses = []; decals = []; particles = []; bullets = []; drops = [];
-  extractedCount = 0; deadCount = 0; simTime = 0;
+  deadCount = 0; simTime = 0; roomCleared = false;
 }
 
 /* 戰果升階（SETTLE）已整個移除——見上面「被動／升階系統」的說明。
@@ -3213,8 +3169,8 @@ function startIntro() {
   corpses.push({ x: 840, y: 434, enemy: false }); pushDecal(840, 430, 16, 'rgba(96,20,20,0.5)');
   enemies = [wolf, soldier];
   if (CONFIG.devLootRack) spawnDevRack();
-  curTimeBudget = 1e9; simTime = 0; reinforceTimer = 0;
-  extractedCount = 0; deadCount = 0; result = null;
+  simTime = 0; roomCleared = false;
+  deadCount = 0; result = null;
   scene = 'COMBAT'; Input.aim = players[0].facing;
   initCamera(players[0]);
   cutscene = { beats: introBeats(), i: 0, line: null, subtitle: '', lock: true, gate: null,
@@ -3252,7 +3208,7 @@ function introBeats() {
     { kind: 'sub', text: '擊敗敵兵' },
     { kind: 'gate', on: 'clear' },
     { kind: 'sub', text: '前往撤離點（走過去，或按 H 自走）' },
-    { kind: 'gate', on: 'extract' },                          // 由 endMission（場上無我方）收尾
+    { kind: 'gate', on: 'clearRoom' },                        // 由 endMission（清場）收尾
   ];
 }
 function gateSatisfied(g) {
@@ -3260,7 +3216,7 @@ function gateSatisfied(g) {
   if (g === 'wolf') return cs.victim && cs.victim.dead;
   if (g === 'approach') return cs.soldier && !cs.soldier.dead && dist(players[0].pos, cs.soldier.pos) < 175;
   if (g === 'clear') return cs.soldier && cs.soldier.dead;
-  return false;   // 'extract'：由 endMission（場上無我方）收尾
+  return false;   // 'clearRoom'：由 endMission（清場）收尾
 }
 function cutsceneTick(dt) {
   const cs = cutscene; if (!cs) return;
@@ -3329,10 +3285,10 @@ function beatDone(cs, b, dt) {
 }
 // 處決用的視覺子彈（一發、貼臉，僅做演出火花；傷害已由 damageUnit 直接結算）
 function spawnMuzzleBullet(p, v) { spawnHit(v.pos); for (let i = 0; i < 3; i++) particles.push(mkPart(p.pos, 60, 0.15, '#ffe08a')); }
-// 結束序章 → 序章休息（含教學）。陣容＝撤出者（與 introCast 一致），失敗保底用 introCast。
+// 結束序章 → 序章休息（含教學）。陣容＝生還者（與 introCast 一致），失敗保底用 introCast。
 function finishIntro() {
-  const survivors = players.filter(p => p.state === 'EXTRACTED');
-  if (survivors.length) roster = survivors.map(rosterFromPlayer);   // 帶著撤出的騎士進正式 run（保留血量等）
+  const survivors = players.filter(p => p.state !== 'DEAD');
+  if (survivors.length) roster = survivors.map(rosterFromPlayer);   // 帶著活下來的騎士進正式 run（保留血量等）
   introActive = false; cutscene = null; introGuards = []; introConsole = null;
   missionIndex = 0;
   scene = 'MAP'; releasePointer();   // 序章結束＝直接進路線圖（不再走舊的「序章休息」）
@@ -3655,31 +3611,10 @@ function allocAmmo(mi, dir, slot = 1) {
 /* =====================================================================
    Possession
    ===================================================================== */
-const activePlayers = () => players.filter(p => p.state === 'CONTROLLED' || p.state === 'IDLE' || p.state === 'EXTRACTING');
+const activePlayers = () => players.filter(p => p.state !== 'DEAD');
 
-/* HOMEWARD — 無附身：本節只剩「騎士自走撤離」與「命令扈從先行撤離」。
-   已移除：possess()（切換附身）、autoPossess()（控制者離場後自動接手）、數字鍵切換、CONFIG.switchHandoverMs。
-   保留：自走撤離 EXTRACTING（＝自動導航到撤離點的便利機能，任一指令即奪回），Phase 3 的指令層由此擴充。 */
-
-// 騎士自走撤離中收到任一指令 → 奪回手動、撤離中斷
-function seizeIfEscorting() {
-  const u = knight();
-  if (!u || u.state !== 'EXTRACTING') return false;
-  u.state = 'CONTROLLED'; u.extractNode = null;
-  return true;
-}
-function toggleExtract() {   // H：騎士自走撤離 ↔ 取消（自走期間滑鼠仍可轉視野）
-  const u = knight();
-  if (!u) return;
-  if (u.state === 'CONTROLLED') {
-    u.idleAnchor = u.facing;  // 撤離途中的 overwatch 也以當前正前方為錨
-    u.state = 'EXTRACTING'; u.extractNode = null;
-    Input.aim = u.facing;
-  } else if (u.state === 'EXTRACTING') {
-    u.state = 'CONTROLLED'; u.extractNode = null;   // 自走中再按 H → 取消撤離回手動
-  }
-}
-// Shift+H：命令扈從先行撤離（騎士不受影響，仍由玩家操作）。Phase 3「先行撤離」指令的雛形。
+/* 無附身：全程只操作騎士本人。已移除 possess()／autoPossess()／數字鍵切換／
+   自走撤離（TITHE C6：撤離整套沒了，過關條件改成清場）。 */
 
 /* =====================================================================
    Combat — 開火(發散) / 換彈 / 彈藥 / 子彈 / 傷害 / 死亡
@@ -4706,75 +4641,6 @@ function navMoveTo(u, goalPos, step) {
   moveToward(u, waypoint, step);
   if (dist(u.pos, waypoint) < CONFIG.nodeReach && u.navPath && u.navPath.length) u.currentNode = u.navPath.shift();
 }
-function idleTick(u, dt, lockFacing) {
-  if (u.staggerT > 0) return;   // 硬直中不動作（扈從也吃）
-  const W = u.weapon, st = u.idleStrategy;
-  const turn = (u.turnSpeed || W.turnSpeed) * Math.PI / 180 * dt;
-
-  // 感知到的最近威脅（近身或視錐內）
-  let nearest = null, nd = Infinity;
-  for (const e of enemies) { if (e.dead) continue; if (!canSee(u, e.pos)) continue; const d = dist(u.pos, e.pos); if (d < nd) { nd = d; nearest = e; } }
-
-  // 視線（個性軸）。lockFacing＝true 時沿用外部設定的朝向（撤離：面向移動方向）
-  if (lockFacing) {
-    // 不改朝向
-  } else if (st.facing === 'SWEEP') {
-    u.sweepPhase += CONFIG.sweepSpeed * Math.PI / 180 * dt * u.sweepDir;
-    const amp = CONFIG.sweepAmpDeg * Math.PI / 180;
-    if (u.sweepPhase > amp) { u.sweepPhase = amp; u.sweepDir = -1; }
-    if (u.sweepPhase < -amp) { u.sweepPhase = -amp; u.sweepDir = 1; }
-    u.facing = u.idleAnchor + u.sweepPhase;                 // 以閒置正前方為中心掃視
-  } else if (st.facing === 'TRACK') {
-    if (nearest) u.facing = rotToward(u.facing, angTo(u.pos, nearest.pos), turn);
-  } else if (st.facing === 'WANDER') {
-    // 只在閒置正前方附近小幅擺動（視野不離正前方）、緩慢轉動
-    u.wanderTimer -= dt;
-    if (u.wanderTimer <= 0) { u.wanderTarget = u.idleAnchor + (Math.random() * 2 - 1) * CONFIG.wanderAmpDeg * Math.PI / 180; u.wanderTimer = 1.2 + Math.random() * 1.8; }
-    u.facing = rotToward(u.facing, u.wanderTarget, CONFIG.wanderSpeed * Math.PI / 180 * dt);
-  } // HOLD：維持閒置正前方
-  if (u.alertTimer > 0) u.alertTimer -= dt;
-
-  // 自動接敵（TITHE C1：扈從移除後，這裡只服務「騎士自走撤離」）：
-  // 看得到、在射程內就還擊。移動由 extractTick 負責（往撤離點走），這裡不再自己導航。
-  let fireTarget = null;
-  if (st.targeting !== 'NONE') {
-    let bestScore = -Infinity;
-    for (const e of enemies) {
-      if (e.dead) continue;
-      if (!canSee(u, e.pos)) continue;
-      if (dist(u.pos, e.pos) > W.range) continue;
-      const s = (e.state === 'ENGAGED' ? 1e6 : 0) - dist(u.pos, e.pos);   // 已交戰的優先
-      if (s > bestScore) { bestScore = s; fireTarget = e; }
-    }
-  }
-  const target = fireTarget;         // 以下開火碼沿用 target
-  let mayFire = false;
-  if (fireTarget) {
-    if (st.fireMode === 'AGGRESSIVE' || st.fireMode === 'SUPPRESSIVE') mayFire = true;
-    else if (st.fireMode === 'DEFENSIVE') mayFire = (u.alertTimer > 0 || (nearest && nd < CONFIG.ghostCloseRange));
-  }
-
-  u.engageTimer = mayFire ? u.engageTimer + dt : 0;
-  const reactDelay = CONFIG.idleReactionDelay;
-  if (mayFire && u.engageTimer >= reactDelay) {
-    const ang = angTo(u.pos, target.pos);
-    // 友軍誤傷：扈從的自動攻擊要避開自己人——遠程看射線、近戰看揮擊扇形（別把騎士砍了）
-    if (!u.weapon.melee && friendlyInLineOfFire(u, target.pos)) { u.holdFireT = 0.2; u.aimT = 0; return; }
-    if (u.weapon.melee && friendlyInSwingArc(u, target.pos)) { u.holdFireT = 0.2; return; }
-    if (u.weapon.melee && !tryAcquireToken(u, target)) { releaseAttackToken(u); return; }   // 扈從也吃攻擊權（現在是以目標為單位的池）
-    // 瞄準閘門：扈從與敵人一樣要瞄（對稱），瞄準期間畫出彈道預告＝FF 開啟下你看得到別站進去
-    if (!aimGate(u, dt, st.discipline !== 'AUTO' && u.burstLeft < CONFIG.idleTap.size)) return;
-    if (st.discipline === 'AUTO') {
-      idleEngageFire(u, ang);                              // 扣到底：持續噴、bloom 拉滿、耗彈快
-    } else {                                               // TAP 點放：短 burst + 停頓讓 bloom 回復
-      if (u.burstCd > 0) u.burstCd -= dt;
-      else {
-        if (u.burstLeft <= 0) u.burstLeft = CONFIG.idleTap.size;
-        if (idleEngageFire(u, ang)) { u.burstLeft--; if (u.burstLeft <= 0) u.burstCd = CONFIG.idleTap.gap; }
-      }
-    }
-  } else { u.burstCd = 0; u.burstLeft = CONFIG.idleTap.size; }
-}
 
 /* =====================================================================
    EnemyAI — waypoint 選點(tag+位置+暴露+hysteresis+reservation)
@@ -4846,7 +4712,7 @@ function computePatrolPool() {
   const tagged = MAP.waypoints.filter(n => (n.tags || []).includes('patrol')).map(n => n.id);
   if (tagged.length >= 2) return tagged;
   const R = CONFIG.patrol.autoBandFromEnds;
-  const auto = MAP.waypoints.filter(n => dist(n.pos, ENTRY) >= R && dist(n.pos, EXTRACT) >= R).map(n => n.id);
+  const auto = MAP.waypoints.filter(n => dist(n.pos, ENTRY) >= R).map(n => n.id);   // 離進場點夠遠的點
   if (auto.length >= 2) return auto;
   return MAP.waypoints.map(n => n.id);
 }
@@ -5055,21 +4921,7 @@ function enemyTick(e, dt) {
 }
 
 /* =====================================================================
-   Extraction — EXTRACTING 自走（沿圖直線、保留 overwatch）
    ===================================================================== */
-function extractTick(u, dt) {
-  if (u.extractNode == null) u.extractNode = nearestNode(u.pos, true);
-  if (u.extractNode !== extractNodeId && dist(u.pos, wp(u.extractNode).pos) < CONFIG.nodeReach) {
-    const nx = nextHop[u.extractNode]; if (nx != null) u.extractNode = nx;
-  }
-  const goal = (u.extractNode === extractNodeId) ? EXTRACT : wp(u.extractNode).pos;
-  const turn = (u.turnSpeed || u.weapon.turnSpeed) * Math.PI / 180 * dt;
-  if (u.id === controlledId) u.facing = rotToward(u.facing, Input.aim, turn);         // 騎士自走撤離：滑鼠自由轉視野（不中斷撤離）
-  else u.facing = rotToward(u.facing, angTo(u.pos, goal), turn);                      // 自走：面向移動方向
-  moveToward(u, goal, spdOf(u) * lowWallSpeedMult(u.pos) * (u.moveMul || 1) * dt);   // 低矮牆減速 + 裝備
-  for (const d of MAP.doors) if (!d.open && distToDoor(u.pos, d) <= CONFIG.interactRadius) { d.open = true; Sfx.play('door'); }   // 自走撤離也會開路上的門（不被關門卡死＝softlock）
-  idleTick(u, dt, true);   // 保留待機開火，但不改朝向（朝向已由上方決定）
-}
 
 /* =====================================================================
    Movement helpers
@@ -5281,7 +5133,7 @@ cv.addEventListener('mousedown', e => {
     if (e.button === 0) mouse.down = true;
     return;
   }
-  if (e.button === 0) { seizeIfEscorting(); mouse.down = true; }          // 左鍵開火（護送中→立刻奪回、同幀開火）
+  if (e.button === 0) mouse.down = true;                                  // 左鍵開火
   else if (e.button === 2) { if (CONFIG.scope.toggle) scopeToggled = !scopeToggled; else scopeHeld = true; }   // 右鍵＝望遠/偵察（按住；技能改空白鍵）
 });
 window.addEventListener('mouseup', e => { if (scene === 'EDITOR' && e.button === 0) { editorMouseUp(); return; } if (scene === 'REST') { if (e.button === 0) { const p = canvasPos(e); restMouseUp(p.x, p.y); } return; } if (e.button === 0) mouse.down = false; else if (e.button === 2 && !CONFIG.scope.toggle) scopeHeld = false; });
@@ -5298,7 +5150,7 @@ function editorMouseUp() {
 }
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('wheel', e => {   // 戰鬥中滾輪＝換槍(主↔副)；swapT 冷卻自動防連刷
-  if (scene === 'COMBAT' && Input.locked && controlledId != null) { seizeIfEscorting(); swapWeapon(players[controlledId]); e.preventDefault(); }
+  if (scene === 'COMBAT' && Input.locked && controlledId != null) { swapWeapon(players[controlledId]); e.preventDefault(); }
 }, { passive: false });
 
 // 路線圖：游標下的可選節點 id（無則 null）
@@ -5395,13 +5247,12 @@ window.addEventListener('keydown', e => {
   if (fromSandbox && k === 'backspace') { fromSandbox = false; forcedMap = null; sandboxLast = { aborted: true }; if (playtestMode) { playtestMode = false; try { location.href = 'editor.html'; } catch (e) {} } else enterSandbox(); e.preventDefault(); return; }
   if (fromEditor && k === 'backspace') { fromEditor = false; forcedMap = null; scene = 'EDITOR'; releasePointer(); editMsg = '已中止試玩，回到編輯器'; e.preventDefault(); return; }
   // 數字鍵 1~N＝施展第 N 個自由位（道具/習得）＝PoE 對齊（使用者定案）；換武器組改用滾輪/X，數字鍵不再切裝
-  if (k >= '1' && k <= '9') { const kn = knight(); if (kn && kn.state === 'CONTROLLED') { const fi = parseInt(k, 10) - 1; if (fi < memberFreeSlots(KNIGHT_ID)) { seizeIfEscorting(); useFreeSlot(kn, 2 + fi); e.preventDefault(); } } }
-  if (k === 'h') toggleExtract();                                                          // H 騎士自走撤離
+  if (k >= '1' && k <= '9') { const kn = knight(); if (kn && kn.state === 'CONTROLLED') { const fi = parseInt(k, 10) - 1; if (fi < memberFreeSlots(KNIGHT_ID)) { useFreeSlot(kn, 2 + fi); e.preventDefault(); } } }
   if (k === ' ') { if (controlledId != null && useOathSkill(players[controlledId])) e.preventDefault(); }   // 預留鍵：綁定誓約的主動技能（目前 no-op；未實作前不吃事件）
-  if (k === 'r') { seizeIfEscorting(); if (controlledId != null) startReload(players[controlledId]); } // 換彈；護送中→奪回
-  if (k === 'x') { seizeIfEscorting(); if (controlledId != null) swapWeapon(players[controlledId]); }   // 換槍(主↔副)；護送中→奪回
-  if (k === 'c') { seizeIfEscorting(); if (controlledId != null) useItem(players[controlledId]); }     // 道具(原 Q)；護送中→奪回
-  if (k === 'f') { seizeIfEscorting(); tryInteract(); }                                                // 互動：開關門/按鈕(原 E)；護送中→奪回
+  if (k === 'r') { if (controlledId != null) startReload(players[controlledId]); } // 換彈
+  if (k === 'x') { if (controlledId != null) swapWeapon(players[controlledId]); }   // 換槍(主↔副)
+  if (k === 'c') { if (controlledId != null) useItem(players[controlledId]); }     // 道具(原 Q)
+  if (k === 'f') { tryInteract(); }                                                // 互動：開關門/按鈕(原 E)
   // --- 近戰試作場專用熱鍵（只在 arenaMode 生效，不影響戰役）---
   if (arenaMode) {
     // 試作場的主手輪盤讓位給 1-4 槽位 → 改用 Tab / Shift+Tab 循環（見下），數字鍵不再選武器
@@ -5450,12 +5301,6 @@ function update(dt) {
   for (const e of enemies) { if (e.dead) continue; if (e.fireCooldown > 0) e.fireCooldown -= dt; if (e.muzzle > 0) e.muzzle -= dt; if (e.flash > 0) e.flash = Math.max(0, e.flash - CONFIG.flash.decay * dt); juiceDecay(e); tickAmmo(e, dt); tickMelee(e, dt); tickReactiveBlock(e, dt); tickResources(e, dt); meleeFxDecay(e); }
   pruneAttackTokens();   // 攻擊權：過期的釋放出來給別隻
 
-  // 0) 自走撤離 seize：騎士自走撤離時，移動或開火 → 奪回手動、撤離中斷（滑鼠轉視野不算）
-  if (knight() && knight().state === 'EXTRACTING') {
-    const moveCmd = Input.held('w') || Input.held('a') || Input.held('s') || Input.held('d');
-    if (moveCmd || Input.fire) seizeIfEscorting();
-  }
-
   // 1) 騎士（唯一受控單位）：滑鼠轉向(turnSpeed) + 相對角色移動 + 左鍵開火
   if (controlledId != null) {
     const u = players[controlledId];
@@ -5497,27 +5342,9 @@ function update(dt) {
     }
   }
 
-  // 2) 騎士自走撤離（按 H）。扈從移除後這裡只可能是騎士本人。
-  for (const p of players) {
-    if (p.state === 'IDLE') idleTick(p, dt); else if (p.state === 'EXTRACTING') extractTick(p, dt);
-  }
-
   // 3) 敵人 AI（先更新共享情報/搜索焦點，再逐一行動）
   updateThreatKnowledge();
   for (const e of enemies) if (!e.dead) enemyTick(e, dt);
-
-  // 4) 軟計時 → 追兵（事件地圖不召追兵）
-  if (CONFIG.reinforce.enabled && !MAP.eventMap && simTime > curTimeBudget) {
-    reinforceTimer -= dt;
-    if (reinforceTimer <= 0) {
-      const e = makeEnemy(nearestNode(ENTRY, false), 'rusher', true);
-      e.pos = { x: ENTRY.x, y: ENTRY.y };
-      e.state = 'ENGAGED';                 // 追兵是來獵殺的：直接交戰
-      enemies.push(e);
-      const ramps = Math.floor((simTime - curTimeBudget) / CONFIG.reinforce.rampEvery);
-      reinforceTimer = Math.max(CONFIG.reinforce.minInterval, CONFIG.reinforce.startInterval + CONFIG.reinforce.rampDelta * ramps);
-    }
-  }
 
   // 5) 子彈 / 特效
   updateBullets(dt); updateGrenades(dt); updateFlashFx(dt); updateParticles(dt);
@@ -5542,23 +5369,16 @@ function update(dt) {
     if (!knightAlive()) arenaResetFight();   // 試作場：騎士倒下＝原地重來，不結束
     return;
   }
-  for (const p of players) {
-    if ((p.state === 'CONTROLLED' || p.state === 'IDLE' || p.state === 'EXTRACTING') && dist(p.pos, EXTRACT) < CONFIG.extractRadius) {
-      p.state = 'EXTRACTED'; extractedCount++;
-      if (controlledId === p.id) controlledId = null;   // 騎士脫離＝本場結束（見 8），鏡頭定住不再接手他人
-    }
-  }
 
-  // 7.5) 騎士抵達撤離點 → 尚在場的扈從隨之脫離。
-  // Phase 3 加「跟隨」指令之前，扈從待機不會自己跟上；若判定為損失，等於每場都全滅扈從（永久死亡只該由陣亡觸發）。
-  if (knight() && knight().state === 'EXTRACTED') {
-    for (const p of activePlayers()) { p.state = 'EXTRACTED'; extractedCount++; }
-  }
+  // 7.5) 清場判定（TITHE C6）：場上再無活著的敵人＝本房結束。
+  // 這取代了 Homeward 的「走到撤離點」——出口是房間中央的洞，洞在清場那一刻才開，
+  // 所以「開洞」和「過關」是同一件事，不必再讓玩家走一段路。
+  // （D6 會在這裡接上開洞演出與洞口三選一；現在先直接結算。）
+  if (!roomCleared && enemies.length && enemies.every(e => e.dead)) roomCleared = true;
 
-  // 8) 計時 + 結算。HOMEWARD：**騎士**離場即本場結束——抵達撤離點＝過關、陣亡＝run 結束。
-  // 扈從的生死不結束戰鬥（保底：騎士不存在的異常情況沿用原版「場上無我方」）。
+  // 8) 計時 + 結算。清場＝過關；騎士陣亡＝run 結束。
   simTime += dt;
-  if (!knight() || !knightAlive() || activePlayers().length === 0) endMission();
+  if (!knight() || !knightAlive() || roomCleared) endMission();
 }
 
 /* =====================================================================
@@ -5972,13 +5792,8 @@ function drawWaypoints() {
   for (const [a, b] of MAP.edges) { ctx.beginPath(); ctx.moveTo(wp(a).pos.x, wp(a).pos.y); ctx.lineTo(wp(b).pos.x, wp(b).pos.y); ctx.stroke(); }
   for (const n of MAP.waypoints) { const sp = isSpecial(n.id); ctx.fillStyle = sp ? 'rgba(180,160,90,0.30)' : 'rgba(120,140,160,0.18)'; ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, sp ? 5 : 3, 0, Math.PI * 2); ctx.fill(); }
 }
-function drawZonesWorld() {
-  const pulse = 0.5 + 0.5 * Math.sin(simTime * 4);
-  ctx.strokeStyle = hsl(140, 80, 55, 0.5 + pulse * 0.4); ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(EXTRACT.x, EXTRACT.y, CONFIG.extractRadius, 0, Math.PI * 2); ctx.stroke();
-  ctx.fillStyle = hsl(140, 70, 50, 0.10); ctx.fill();
-  const reinforcing = simTime > curTimeBudget;
-  ctx.strokeStyle = reinforcing ? hsl(8, 90, 55, 0.5 + pulse * 0.5) : hsl(30, 70, 55, 0.5); ctx.lineWidth = 3;
+function drawZonesWorld() {   // 進場點（撤離圈隨 C6 移除；D6 之後這裡會改畫「清場後開啟的洞」）
+  ctx.strokeStyle = hsl(30, 70, 55, 0.5); ctx.lineWidth = 3;
   ctx.beginPath(); ctx.arc(ENTRY.x, ENTRY.y, 22, 0, Math.PI * 2); ctx.stroke();
 }
 function drawBullets() {
@@ -6089,7 +5904,7 @@ function drawTelegraph(u) {
 
 function drawMeleeFx(list) {
   for (const u of list) {
-    if (u.dead || u.state === 'DEAD' || u.state === 'EXTRACTED') continue;
+    if (u.dead || u.state === 'DEAD') continue;
     drawTelegraph(u);   // AI 的出手預告（畫在武器特效之前＝在最底層）
     const W = u.weapon; if (!W || !W.melee) continue;
     const reach = W.reach || W.range, half = (W.arcDeg || 90) * Math.PI / 360;
@@ -6159,7 +5974,7 @@ function drawMeleeFx(list) {
 function drawStaggerMarks(list) {
   for (const u of list) {
     if (!(u.staggerT > 0)) continue;
-    if (u.dead || u.state === 'DEAD' || u.state === 'EXTRACTED') continue;
+    if (u.dead || u.state === 'DEAD') continue;
     const blink = 0.5 + 0.5 * Math.sin(simTime / CONFIG.melee.staggerFlashT * Math.PI * 2);
     ctx.fillStyle = `rgba(255,215,110,${0.5 + 0.5 * blink})`;
     ctx.font = 'bold 14px Consolas'; ctx.textAlign = 'center';
@@ -6227,7 +6042,7 @@ function drawUnitBody(u, fill, ringColor, ringW) {
 }
 function drawPlayers() {
   for (const p of players) {
-    if (p.state === 'DEAD' || p.state === 'EXTRACTED') continue;
+    if (p.state === 'DEAD') continue;
     const controlled = (p.state === 'CONTROLLED');
     const low = p.hp / p.maxHp <= CONFIG.lowHpFrac;
     if (low) { const a = 0.35 + 0.35 * Math.sin(simTime * 16); ctx.strokeStyle = `rgba(255,60,60,${a})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.pos.x, p.pos.y, p.radius + 8, 0, Math.PI * 2); ctx.stroke(); }
@@ -6337,7 +6152,7 @@ function edgeMarker(worldPos, color, label, filled) {
 /* 騎士的兩條資源（畫面中下，交戰時掃一眼就看得到）：
    耐力＝能不能再揮/再擋；體幹＝再挨幾下會被打崩。這兩條就是新的戰鬥語言，必須醒目。 */
 function drawKnightResources() {
-  const k = knight(); if (!k || k.state === 'DEAD' || k.state === 'EXTRACTED') return;
+  const k = knight(); if (!k || k.state === 'DEAD') return;
   const w = 220, h = 9, x = cv.width / 2 - w / 2, y = cv.height - 148;
   const bar = (yy, f, col, bg, label) => {
     ctx.fillStyle = bg; ctx.fillRect(x, yy, w, h);
@@ -6373,9 +6188,7 @@ function drawKnightResources() {
    氣勢畫成半透明的推擠段＝看得出「這段是暫時的、會退回去」，而不是以為自己真的掉了那麼多。 */
 function drawScreenOverlays() {
   // 區域標記（永遠正立、離場時夾到邊緣）
-  const reinforcing = simTime > curTimeBudget;
-  edgeMarker(EXTRACT, '#5fd06b', 'EXTRACT', false);
-  edgeMarker(ENTRY, reinforcing ? '#ff5d5d' : '#caa05a', reinforcing ? 'INBOUND' : 'ENTRY', false);
+  edgeMarker(ENTRY, '#caa05a', 'ENTRY', false);
 
   // 我方單位：血條 + 編號（永遠可見）
   for (const p of activePlayers()) {
@@ -6390,7 +6203,7 @@ function drawScreenOverlays() {
     if (p.reloadT > 0) screenBar(s, 1 - p.reloadT / (p.reloadDur || p.weapon.reloadTime), '#7fa8ff', -p.radius * cam.scale - 2);
     ctx.font = 'bold 10px Consolas'; ctx.textAlign = 'center';
     ctx.fillStyle = (p.state === 'CONTROLLED') ? '#ffffff' : hsl(p.hue, 60, 72);
-    let tag = `${p.id + 1}`; if (p.state === 'EXTRACTING') tag += '→撤離';
+    let tag = `${p.id + 1}`;
     ctx.fillText(tag, s.x, s.y + p.radius * cam.scale + 14);
     if (p.id !== KNIGHT_ID && low) {   // 危險：血條上方大字閃爍 + 螢幕邊緣同色箭頭（下面 edgeMarker 已處理）
       ctx.font = 'bold 12px Consolas';
@@ -6451,35 +6264,10 @@ function drawHUD() {
   // 關卡數（左上）；名冊改以底部單位卡片呈現
   ctx.textAlign = 'left'; ctx.font = 'bold 14px Consolas'; ctx.fillStyle = '#9fb3c8';
   ctx.fillText(`MISSION ${missionIndex + 1}`, 16, 24);
-  // 計時器（上中）——追兵軟取消時整條隱藏（沒有追兵就沒有倒數的意義）
-  ctx.textAlign = 'center';
-  const remain = curTimeBudget - simTime;
-  if (!CONFIG.reinforce.enabled) {
-    /* 隱藏計時條 */
-  } else if (remain > 0) {
-    ctx.fillStyle = '#cdd6e0'; ctx.font = '16px Consolas';
-    ctx.fillText(`TIME ${simTime.toFixed(1)} / ${curTimeBudget}s`, cv.width / 2, 26);
-    const bw = 320, bx = cv.width / 2 - bw / 2;
-    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(bx, 34, bw, 6);
-    ctx.fillStyle = remain < 15 ? '#e0c24a' : '#7fe3ff'; ctx.fillRect(bx, 34, bw * clamp(simTime / curTimeBudget, 0, 1), 6);
-  } else {
-    const blink = Math.sin(simTime * 8) > 0;
-    ctx.fillStyle = blink ? '#ff5d5d' : '#ff9b5a'; ctx.font = 'bold 18px Consolas';
-    ctx.fillText(`⚠ REINFORCEMENTS INBOUND  (+${(simTime - curTimeBudget).toFixed(0)}s)`, cv.width / 2, 30);
-  }
-
   // 計數（右上）
   ctx.textAlign = 'right'; ctx.font = '13px Consolas'; ctx.fillStyle = '#cdd6e0';
-  ctx.fillText(`EXTRACTED ${extractedCount}   ON FIELD ${activePlayers().length}   DEAD ${deadCount}   ENEMIES ${enemies.filter(e => !e.dead).length}`, cv.width - 16, 22);
+  ctx.fillText(`ENEMIES ${enemies.filter(e => !e.dead).length}${roomCleared ? '   · 已清場' : ''}`, cv.width - 16, 22);
   if (drops.length || backpack.length) { ctx.fillStyle = '#ffe08a'; ctx.fillText(`BACKPACK ${backpack.length}${drops.length ? `   · 地上 ${drops.length} 件可撿` : ''}`, cv.width - 16, 40); }
-
-  // 護送撤離提示（controlledId 指向 EXTRACTING 單位＝護送中）
-  if (controlledId != null && players[controlledId] && players[controlledId].state === 'EXTRACTING') {
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(95,208,107,0.16)'; ctx.fillRect(cv.width / 2 - 200, 14, 400, 30);
-    ctx.fillStyle = '#7fffa8'; ctx.font = 'bold 14px Consolas';
-    ctx.fillText('⟳ 自走撤離中 — 滑鼠轉視野 · 移動/攻擊/技能=奪回控制', cv.width / 2, 34);
-  }
 
   // 機密檔案掉落警示（公平性：醒目提示 + 螢幕邊框指向掉落點的箭頭）
   if (fileDrop) {
@@ -6590,7 +6378,7 @@ function drawHotkeyBar() {
 }
 function drawCard(p, x, y, w, h, i) {
   const ctrl = (p.id === KNIGHT_ID);   // HOMEWARD：卡片高亮＝騎士本人（不再是「當前附身對象」）
-  const inactive = (p.state === 'DEAD' || p.state === 'EXTRACTED');
+  const inactive = (p.state === 'DEAD');
   const sh = cardShakeOf(p);
   x += sh.dx; y += sh.dy;
   const pad = 9, bw = w - 2 * pad, bx = x + pad;
@@ -6606,8 +6394,8 @@ function drawCard(p, x, y, w, h, i) {
   ctx.fillStyle = inactive ? '#7a828c' : (ctrl ? '#ffffff' : hsl(p.hue, 60, 74));
   ctx.fillText(`${p.id === KNIGHT_ID ? '⚔ ' : ''}${p.name}`, bx, y + 15);   // 騎士＝劍記；扈從無編號（已無附身切換熱鍵）
   ctx.textAlign = 'right'; ctx.font = '9px Consolas';
-  ctx.fillStyle = p.state === 'EXTRACTED' ? '#5fd06b' : p.state === 'DEAD' ? '#8a6a6a' : 'rgba(205,214,224,0.65)';
-  ctx.fillText(p.state === 'EXTRACTED' ? 'EXTRACTED' : p.state === 'EXTRACTING' ? 'EXTRACTING' : p.state, x + w - pad, y + 14);
+  ctx.fillStyle = p.state === 'DEAD' ? '#8a6a6a' : 'rgba(205,214,224,0.65)';
+  ctx.fillText(p.state, x + w - pad, y + 14);
 
   // 兵種（取代舊的待機原型標籤）
   ctx.textAlign = 'left'; ctx.font = 'bold 11px Consolas';
@@ -7154,7 +6942,7 @@ function drawRest() {
   ctx.textAlign = 'left'; ctx.fillStyle = '#7fe3ff'; ctx.font = 'bold 24px Consolas'; ctx.fillText('REST · 休息關', 32, 44);
   if (lastSummary) {
     ctx.font = '12px Consolas'; ctx.fillStyle = '#9fb3c8';
-    let s = `第 ${lastSummary.mission} 關肅清 · 撤出 ${lastSummary.extracted.join(', ') || '—'}`;
+    let s = `第 ${lastSummary.mission} 關肅清`;
     if (lastSummary.dead.length) s += ` · 陣亡 ${lastSummary.dead.join(', ')}`;
     ctx.fillText(s, 32, 66);
   }
@@ -8093,7 +7881,7 @@ function addMemberRow(m) {
 function renumberMembers() { sandboxRows.forEach((r, i) => { const idx = r.row.querySelector('.idx'); if (idx) idx.textContent = '#' + (i + 1); }); }
 function buildSandboxForm() {
   if (!sandboxEl || !sandboxMembersEl) return;
-  if (sandboxResultEl) sandboxResultEl.textContent = !sandboxLast ? '' : sandboxLast.aborted ? '上一場：已中止' : `上一場結果：撤離 ${sandboxLast.extracted} / 陣亡 ${sandboxLast.dead}（共 ${sandboxLast.total}）`;
+  if (sandboxResultEl) sandboxResultEl.textContent = !sandboxLast ? '' : sandboxLast.aborted ? '上一場：已中止' : `上一場結果：${sandboxLast.cleared ? '清場' : '未清場'} / 陣亡 ${sandboxLast.dead}（共 ${sandboxLast.total}）`;
   sandboxMembersEl.innerHTML = ''; sandboxRows = [];
   const cfg = sandboxCfg || loadSandboxCfg();
   const mems = (cfg && cfg.members && cfg.members.length) ? cfg.members : [defaultMember(), defaultMember(), defaultMember()];

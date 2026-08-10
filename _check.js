@@ -280,13 +280,18 @@ function dragFoeToBlade() {
   e.facing = k.facing + Math.PI;   // 面向騎士＝牠也會還手（順便走到我方受傷的路徑）
 }
 
-// 行為探針：跑完 900 幀之後，場上應該真的打過架。
-// 純粹「不丟例外」不足以證明拆解沒把 AI 弄啞——這條確認敵人確實有受傷或陣亡。
+// 行為探針：這一場模擬應該真的打過架。
+// 純粹「不丟例外」不足以證明拆解沒把 AI 弄啞——這條確認敵人確實受過傷或陣亡。
+// ⚠️ 逐幀累積，**不是**看結束時的快照：試作場在騎士倒下時會 arenaResetFight()，
+//    把所有敵人補回滿血，快照式的檢查會漏掉明明發生過的戰鬥（踩過一次）。
+let sawEnemyHurt = false;
+function sampleCombat() {
+  if (!sawEnemyHurt) sawEnemyHurt = (T.enemies || []).some(e => e.dead || e.hp < e.maxHp);
+}
 function combatHappened() {
   const es = T.enemies || [];
   if (!es.length) return null;                      // 沒敵人的情境不判
-  const hurt = es.some(e => e.dead || e.hp < e.maxHp);
-  return hurt ? null : '900 幀下來沒有任何敵人受傷或陣亡——AI 可能被拆啞了';
+  return sawEnemyHurt ? null : '900 幀下來沒有任何敵人受傷或陣亡——AI 可能被拆啞了';
 }
 
 function pokeCombat(i) {
@@ -323,6 +328,7 @@ for (const s of list) {
   let stage = 'enter', i = 0;
   try {
     seedRng(0x51ED + sIdx);   // 每個情境固定種子＝失敗可以原地重現
+    sawEnemyHurt = false;
     s.enter();
     grabPointer();
     stage = 'loop';
@@ -332,6 +338,7 @@ for (const s of list) {
       T.update(FIXED);
       T.draw();
       T.drawSeedTag();
+      sampleCombat();
     }
     releaseKeys();
     for (const inv of (s.invariants || [])) {
