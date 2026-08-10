@@ -10,7 +10,7 @@
    全部用 stub。因為原始碼的頂層是 const/let（走語彙環境、不掛在 global 上），
    所以在原始碼尾端「附加一段 epilogue」把要驅動的東西暴露到 globalThis。
 
-   本檔 gitignore（`_check*.js`），永遠不要 git add。
+   本檔**有進版控**（見 CLAUDE.md）：index.html 正在被大規模拆解，harness 要跟著走。
    ===================================================================== */
 'use strict';
 const fs = require('fs');
@@ -183,7 +183,7 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat },
+  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight] },
   { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
@@ -207,8 +207,14 @@ for (const k of Object.keys(T.MAPS)) {
   SCENARIOS.push({
     name: 'map-' + k, frames: 240,
     enter: () => { bootCampaignToMap(); T.forceMap(k); T.startMission(); },
-    poke: pokeCombat,
+    poke: pokeCombat, invariants: [soloKnight],
   });
+}
+
+// TITHE C1 的回歸守門員：教廷送一個人進地獄，場上永遠只有騎士。
+function soloKnight() {
+  const n = (T.players || []).length;
+  return n === 1 ? null : `場上有 ${n} 個我方單位，應該只有騎士`;
 }
 
 function pokeCombat(i) {
@@ -226,14 +232,11 @@ function pokeCombat(i) {
   if (i % 83 === 11) { key('keydown', 'x'); key('keyup', 'x'); }   // 換武器組
   if (i % 89 === 17) { key('keydown', 'r'); key('keyup', 'r'); }   // 換彈
   if (i % 53 === 23) { key('keydown', 'f'); key('keyup', 'f'); }   // 互動
-  if (i % 101 === 3) { key('keydown', 'q'); key('keyup', 'q'); }   // 扈從姿態
-  if (i === 200) key('keydown', 'g');                              // 指令輪盤
-  if (i === 230) key('keyup', 'g');
   fire(listeners.window, 'mousemove', { movementX: (i % 7) - 3, movementY: (i % 5) - 2, clientX: 640, clientY: 360, preventDefault() {} });
 }
 
 /* ── 7. 執行 ─────────────────────────────────────────────────────────── */
-function releaseKeys() { for (const k of ['w', 'a', 's', 'd', 'Shift', 'g']) key('keyup', k); mouseEv('mouseup', 0); mouseEv('mouseup', 2); }
+function releaseKeys() { for (const k of ['w', 'a', 's', 'd', 'Shift']) key('keyup', k); mouseEv('mouseup', 0); mouseEv('mouseup', 2); }
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -253,6 +256,10 @@ for (const s of list) {
       T.drawSeedTag();
     }
     releaseKeys();
+    for (const inv of (s.invariants || [])) {
+      const msg = inv();
+      if (msg) throw new Error('不變式失敗：' + msg);
+    }
     pass++;
     process.stdout.write(`\x1b[32m✓\x1b[0m ${s.name} \x1b[90m(${s.frames}f → ${T.scene})\x1b[0m\n`);
   } catch (e) {
