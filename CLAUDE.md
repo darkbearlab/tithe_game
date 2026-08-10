@@ -47,7 +47,11 @@ node _check.js -v           # 失敗時印完整堆疊
 > 實際上一次都沒生效（滑鼠事件掛在 canvas 不是 window、`pointerLocked` 是總閘門、
 > 敵人根本不在刀口上），所以整場模擬連一次 `damageUnit` 都沒進去，測試卻全綠。
 > **加新情境時，斷言「結果」而不只是「沒丟例外」**——用 `invariants` 欄位放行為探針
-> （現有的 `combatHappened` / `soloKnight` / `noMorale` 就是範例）。
+> （現有的 `combatHappened` / `soloKnight` / `noMorale` / `noStealth` 就是範例）。
+
+`Math.random` 在沙箱裡被換成**可重設的 mulberry32**，每個情境開始前依序號重設種子。
+所以 harness 是決定論的：**失敗一定重現得出來**。看到偶發性失敗，先懷疑是探針本身有競態，
+不要用「多跑幾次就過了」帶過。
 
 ### 2. 零依賴、單檔、開檔即玩
 

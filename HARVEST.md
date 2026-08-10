@@ -71,8 +71,8 @@
 |---|---|---|---|
 | 1 | ✅ **扈從 / 指令層** | ~~`CONFIG.command`／`CMD_LIST`／`CMD_META`／`RETAINER_BEHAVIOR`／`anchorOf`／`issueCommand`／`allyMoveTick`／`spaceOutAllies`／`cmdWheel`＋`wheelAimTarget`＋`commitWheelCommand`／`drawCommandWheel`／`drawAllyCard`／`extractAll`／`arenaAllies`~~ | 教廷送**一個人**進地獄。**已完成**：`startMission` 現在只生成騎士一人，Q/G/Shift+H/B 熱鍵移除，`idleTick` 縮成「自走撤離時的自動還擊」，`scoreNode` 的繩長懲罰移除。`navMoveTo` **保留**（敵人的有序後撤 `retreat` 還在用）。harness 加了 `soloKnight` 不變式當回歸守門員。 |
 | 2 | ✅ **士氣質量模型** | ~~`CONFIG.morale`／`BREAK_PCT`／`QBASE`／`MORALE_STATE`／28 個函式（`quality`／`structMass`／`knightAnchor`／`ralliedMass`／`effMass`／`moraleLine`／`refreshMoraleState`／`tickMorale`／`tickFactionMorale`／`fleeUnit`／`rallyUnit`／`drawFactionMorale`／`drawMoraleFlag`／momentum 全套）～~ | 敵人會潰逃而不是死掉＝反 loot、反資源迴圈。**已完成**：拉鋸線、崩潰門檻、震盪、騎士錨點、聚攏度、`panicType`（潰逃／捨身／呆立／轉進）全數移除；敵人現在戰到死。連帶處理跨戰鬥氣勢層（S1 `runMomentumMods`）與它在護送／女巫／事件的四個消費點。harness 加了 `noMorale` 不變式。 |
-| 3 | **潛行 / 警覺 / 識別** | `CONFIG.stealth` ~164、`isRevealed` ~2254、`inBush`/`inSmoke`/`concealAt` ~2238 | 房間是亮的、門是鎖的。⚠️ **只砍潛行判定，不砍視錐/迷霧本身**（那個移到 B 表） |
-| 4 | **聽覺 / 聲音漣漪** | `CONFIG.hearing` ~131、`CONFIG.soundRipple` ~181、`pingSound` ~5770、`drawSoundEdges` ~6564、`drawSoundRipples` ~6698、`alertEnemiesNear` ~4365 | 潛行的配套。（視覺化的漣漪日後若要給暗房用可回收） |
+| 3 | ✅ **潛行 / 警覺 / 識別** | ~~`CONFIG.stealth`／識別空窗 `detect`／開火現形 `revealT`／`concealAt`＋`inConceal`＋`inSmoke`（遮蔽）／全隊靜默 `squadRevealed`／煙罐 `smokepot`~~ | 房間是亮的、門是鎖的。**已完成**：敵人改成「看到就交戰」；`canSee` 拿掉遮蔽判定與 IDLE 視錐縮減，**視錐/迷霧本身完整保留**（B 表）。草叢只剩移動減速。煙罐因遮蔽消失而失去作用，整個術移除、舊存檔別名指向火油罐。⚠️ **過渡狀態**：牠們現在只靠看見醒來，繞過視錐仍過得去——D6 房間流程會讓進房即鎖門、全員 ENGAGED。 |
+| 4 | ✅ **聽覺 / 聲音漣漪** | ~~`CONFIG.hearing`／`CONFIG.enemyHearRadius`／`CONFIG.soundEdge`／`CONFIG.soundRipple`／`alertEnemiesNear`／`pingSound`＋`SOUND_PINGS`＋`swingPingR`／`visStep`／`drawSoundEdges`／`drawSoundRipples`／`bushRustleMult`~~ | 潛行的配套，一起走。**已完成**：腳步聲、求援連鎖、命中/陣亡驚動全部移除；`Sfx.play` 留著當未來接 WebAudio 的接縫（pos/r 參數保留給空間化）。⚠️ 喪鐘的 `loud` 旗標因此失效，待內容階段處理。 |
 | 5 | **waypoint 戰術 AI** | `scoreNode` ~5313、`watchPoint` ~5346、`reservations`/`commitReservation` ~5309、`patrolStep` ~5407、`claimPatrolPoint` ~5387、`huntStep` ~5498、`searchMoveTo` ~5485、`updateThreatKnowledge` ~5449、`bfsPath` ~5399、`buildNextHop` ~2193、`CONFIG.ai` ~234、`CONFIG.hunt` ~170、`CONFIG.patrol` ~167 | 封閉房間用不上。**換成直接操舵**，順便解鎖程序生成房間 |
 | 6 | **進出點 / 撤離 / 追兵** | `ENTRY`/`EXTRACT` ~2138、`pickAccessPoints` ~2207、`CONFIG.access` ~109、`extractTick` ~5622、`toggleExtract` ~3866、`extractAll` ~3878、`CONFIG.reinforce` ~107 | 出口是房間中央的洞 |
 | 7 | **休息關 / 配裝 UI** | ~3676–3900（rest 全套）、~7558–8110（`drawKnightPanel`/`drawWarehousePanel`/拖曳穿脫/`drawRest*`）、`warehouse`/`backpack` ~2343 | 掉落改成即時吃 + 洞口三選一，不需要背包畫面 |
@@ -108,14 +108,14 @@
 ## E. 建議的動刀順序
 
 > **進度**：✅ = 已完成。動工前先看這裡，別重做。
-> 目前完成到 **2（士氣）**；下一項是 **3+4（潛行＋聽覺）**。
+> 目前完成到 **3+4（潛行＋聽覺）**；下一項是 **6（進出點／撤離）**。
 
 一次砍一塊、每塊砍完都要能跑起來。沿用 Homeward 的守則：**改完一定要跑 headless 驗證**
 （逐幀跑遍所有場景的 `update()` + `draw()`，不只在戰鬥跑）。
 
 1. ✅ **C1 扈從** — 最獨立，砍完立刻少掉一堆交互
 2. ✅ **C2 士氣** — 最大一塊，但邊界清楚（`hasMorale`/`moraleEligible` 是總開關）
-3. **C3+C4 潛行 + 聽覺** — ⚠️ 小心別把視錐/迷霧一起帶走（那個要留）
+3. ✅ **C3+C4 潛行 + 聽覺** — 視錐/迷霧已確認保留
 4. **C6 進出點 / 撤離** — 場景流程要先改成「清場開洞」才好接後面
 5. **C5 waypoint AI → 直接操舵**（D7）— **砍與寫同時發生**，這批裡最需要小心的一塊
 6. **C7+C8 休息關 / 事件經濟**

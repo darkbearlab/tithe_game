@@ -96,6 +96,22 @@ const localStorage = {
 };
 let NOW = 0;
 const rafQueue = [];
+
+// 決定論：遊戲到處用 Math.random（發散、粒子、招募…），不換掉的話同一份程式碼
+// 每次跑的結果都不同——失敗會變成「十次有一次」，重現不了也就查不動。
+// 這裡給沙箱一份自己的 Math，random 換成可重設的 mulberry32；每個情境開始前重設種子。
+let _rngState = 0x2F6E2B1 >>> 0;
+function seedRng(n) { _rngState = (n >>> 0) || 1; }
+function seededRandom() {
+  _rngState = (_rngState + 0x6D2B79F5) >>> 0;
+  let t = _rngState;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const SEEDED_MATH = {};
+for (const k of Object.getOwnPropertyNames(Math)) SEEDED_MATH[k] = Math[k];
+SEEDED_MATH.random = seededRandom;
 const sandboxGlobals = {
   document, localStorage, cv,
   performance: { now: () => NOW },
@@ -104,7 +120,7 @@ const sandboxGlobals = {
   location: { search: '', href: '' },
   navigator: { userAgent: 'node' },
   console,
-  Math, JSON, Date, Object, Array, String, Number, Boolean, Set, Map, Error,
+  Math: SEEDED_MATH, JSON, Date, Object, Array, String, Number, Boolean, Set, Map, Error,
   isNaN, isFinite, parseInt, parseFloat,
   Uint8ClampedArray, Float32Array,
   setTimeout, clearTimeout, setInterval, clearInterval,
@@ -197,9 +213,9 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, noMorale] },
-  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, noMorale] },
-  { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale] },
+  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, noMorale, noStealth] },
+  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth] },
+  { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
   { name: 'armory',          frames: 60,  enter: () => { bootCampaignToMap(); T.enterArmory(); } },
@@ -221,7 +237,7 @@ for (const k of Object.keys(T.MAPS)) {
   SCENARIOS.push({
     name: 'map-' + k, frames: 240,
     enter: () => { bootCampaignToMap(); T.forceMap(k); T.startMission(); },
-    poke: pokeCombat, invariants: [soloKnight, noMorale],
+    poke: pokeCombat, invariants: [soloKnight, noMorale, noStealth],
   });
 }
 
@@ -237,6 +253,16 @@ const MORALE_FIELDS = ['moraleState', 'panicType', 'moraleFxT', 'rallyT', 'break
 function noMorale() {
   for (const u of [...(T.players || []), ...(T.enemies || [])]) {
     for (const f of MORALE_FIELDS) if (u && u[f] !== undefined) return `單位帶著已移除的士氣欄位 ${f}`;
+  }
+  return null;
+}
+
+// TITHE C3+C4 的回歸守門員：潛行（識別空窗、遮蔽、開火現形）與聽覺整套移除。
+// 房間是亮的、門是鎖的——沒有可以潛的東西，也沒有「用聲音引怪」這種玩法。
+const STEALTH_FIELDS = ['detect', 'revealT', 'stepT', '_stepR', '_stride', 'calledHelp'];
+function noStealth() {
+  for (const u of [...(T.players || []), ...(T.enemies || [])]) {
+    for (const f of STEALTH_FIELDS) if (u && u[f] !== undefined) return `單位帶著已移除的潛行/聽覺欄位 ${f}`;
   }
   return null;
 }
@@ -264,7 +290,7 @@ function combatHappened() {
 }
 
 function pokeCombat(i) {
-  if (i > 20 && i % 12 === 0) dragFoeToBlade();   // 持續把敵人塞到刀口前＝這場模擬真的會見血
+  if (i > 20) dragFoeToBlade();   // 每幀都把敵人釘在刀口前＝揮擊判定窗一定咬得到（不然會是十次過九次）
   if (i === 1) { key('keydown', 'w'); key('keydown', 'Shift'); }
   if (i === 90) key('keyup', 'Shift');
   if (i === 150) { key('keyup', 'w'); key('keydown', 'd'); }
@@ -291,9 +317,12 @@ const failures = [];
 const list = SCENARIOS.filter(s => !FILTER || s.name.includes(FILTER));
 if (!list.length) { console.error(`沒有情境符合 "${FILTER}"`); process.exit(1); }
 
+let scenarioIdx = 0;
 for (const s of list) {
+  const sIdx = scenarioIdx++;
   let stage = 'enter', i = 0;
   try {
+    seedRng(0x51ED + sIdx);   // 每個情境固定種子＝失敗可以原地重現
     s.enter();
     grabPointer();
     stage = 'loop';

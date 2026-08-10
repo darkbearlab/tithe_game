@@ -126,22 +126,11 @@ const CONFIG = {
 
   // 地形 / 互動（門、按鈕、低矮牆）
   interactRadius: 40,             // 互動(開關門/按鈕)距離；門以「到門線段最近點」量距，整扇門寬都好按
-  enemyHearRadius: 320,           // 玩家開火驚動半徑（半徑內 IDLE 敵人 → ENGAGED；不論命中）
-  // 聲音→敵人聽覺（皆＝半徑內 IDLE 敵人轉 ENGAGED）。**數值先佔位、待實測調**。
-  hearing: {
-    hit: 170,        // 命中的聲響半徑（活著挨打/兵刃相交＝被聽見；潛行一擊斃命對未察覺者＝無聲、不在此列）
-    death: 260,      // 交戰中陣亡的聲響（非交戰死＝潛行擊殺，不驚動＝潛行成立）
-    callHelp: 240,   // 交戰的敵人「求援」半徑（附近同陣營也轉交戰；每人只喊一次，避免全圖連鎖）
-    stepBase: 24,    // 步行聲基礎半徑
-    stepPerSpeed: 0.32, // 每點移速加的半徑（越快越響）
-    sprintMul: 1.9,  // 衝刺額外倍率（明顯更響）
-    stepInterval: 0.36, // 每幾秒一步（發一次聲）；衝刺更頻繁
-  },
   // 低矮牆＝掩體：玩家穿越減速、敵人視為實體繞行、不擋視線、子彈「遠距機率擋／貼牆可越射」
   lowWall: { slow: 0.3, touchR: 12, closeRange: 90, blockChance: 0.55 },
-  // 草叢：踏在真草叢(非煙幕)內＝隨負重減速。減速率 = 負重 × slowPerWeight，上限 slowMax（重甲在叢間更難行）。
-  // 步行聲掛在同一個減速率上：叢內步行聲 ×(1 + 減速率×rustleFromSlow + rustleBonus)＝重甲更吵、踏進草叢本身也加一點成數。
-  bush: { slowPerWeight: 0.05, slowMax: 0.4, rustleFromSlow: 1.0, rustleBonus: 0.2 },
+  // 草叢：踏進去＝隨負重減速（重甲在叢間更難行）。TITHE 只保留這個地形效果——
+  // 「躲進草叢＝隱形」的遮蔽機制隨潛行一起移除了（C3）。
+  bush: { slowPerWeight: 0.05, slowMax: 0.4 },
   // 牆體厚度（px，全域固定）：渲染描邊寬＝此值；子彈/視線阻擋以「離中心線 ≤ 半厚」判定（撞渲染牆面而非中心線）。
   // 40px=1公尺，故 8px≈20cm（室內牆）。承重牆在編輯器平行畫兩條即可，不在資料上分型。移動退避仍走單位半徑（已比牆厚）。
   wallThick: 8,
@@ -157,11 +146,6 @@ const CONFIG = {
   // 側翼/突襲（敵我皆適用）：依攻擊來向 vs 目標視野錐。flank＝錐外(側後)＝×flankMult 且無視所有裝甲；
   // surprise＝閒置敵人正面＝×surpriseMult（僅對敵）；兩者皆中取較高、不相乘。
   flank: { flankMult: 2.0, surpriseMult: 1.5 },
-  // 潛行/警覺層（Stage 1）：IDLE 敵人視野較短；發現玩家後需「識別」累滿才交戰（快速閃過＝沒事）。
-  //   idleConeMul＝IDLE 錐角倍率(×coneHalfDeg)；idleViewRange＝IDLE 視錐有限視距(超出只剩近身感知)。
-  //   identifyTime＝識別滿值(秒@基準)；distNearMul＝貼臉(senseRadius)識別加速倍率(近乎瞬識)；
-  //   concealMul＝在遮蔽區(草叢)時識別速率倍率(Stage 2 用)；decay＝失去視線後識別衰退速率。
-  stealth: { idleConeMul: 0.6, idleViewRange: 360, identifyTime: 0.8, distNearMul: 6, concealMul: 0.25, decay: 1.5, fireReveal: 0.6 },   // fireReveal＝敵人非消音開火後對玩家現形的秒數（槍口火光暴露位置，含草叢內）
   // IDLE 巡邏（只有 type.patrols 的單位＝grunt 巡，重裝/狗守原地）。巡邏池：地圖有 patrol 標籤點(≥2)用之，否則自動取「距入口/撤離口都 ≥autoBandFromEnds」的點。
   // 認領制：每個沒目標的巡邏兵隨機認領一個未被認領的點→沿圖走→到點停 dwell 秒(緩慢掃視)→放掉再認領。點>兵＝輪換不可預測。speedMul＝巡邏走速倍率。
   patrol: { dwell: 2.0, speedMul: 0.7, autoBandFromEnds: 200 },
@@ -174,11 +158,6 @@ const CONFIG = {
     hitFlash: 0.12, flinch: 5,                                              // 受擊：閃白時長 / 後仰位移(px)
     cardHit: 0.45, cardShake: 4,                                            // 狀態卡受擊：紅框時長 / 震幅(px)
     deathHitstop: 0.06 },   // 我方陣亡：只保留短頓幀「頓一下」（已取消死亡鏡頭＝相機不轉去死亡點，激戰中不干擾操作）
-  // 視覺化聲音：控制角色「視線外」方向有聲音時，畫面邊框朝該方向發光（無音效的替代提示；arcade 亦沿用）。
-  soundEdge: { alpha: 0.6, frame: 0.07 },   // alpha＝發光最大不透明度；frame＝常駐外框淡度
-  // 世界空間「聲音漣漪」：每次發聲在原地擴散的淡環（和 soundEdge 併行，用同一份 soundPings）。enabled 可關做 A/B 比較。
-  // alpha＝峰值淡度；width＝環線寬；strideDist＝走多遠發一次視覺腳步；hearRange＝聽覺範圍(內清楚含牆後、外淡出＝穿透迷霧但非全知)；softMul＝「只是移動」的軟腳步淡度倍率
-  soundRipple: { enabled: true, alpha: 0.34, width: 3, strideDist: 60, hearRange: 600, softMul: 0.55 },
 
   // --- 額外佔位 ---
   unitRadius: 12,
@@ -699,8 +678,6 @@ const ARTS = {
   // ── 學不會的實體：只有卷軸(消耗品)那一欄 ──────────────────────────
   firepot:  { name: '火油罐', kind: 'thrown', rarity: 'uncommon', learnable: false, scrollUses: 3,
               grenade: { pellets: 40, dmg: 9, range: 120, projSpeed: 600, throwRange: 230, throwSpeed: 520, fuse: 1.5 } },
-  smokepot: { name: '煙罐',   kind: 'thrown', rarity: 'common',   learnable: false, scrollUses: 3,
-              smoke: { throwRange: 230, throwSpeed: 520, radius: 110, dur: 5 } },
   tonic:    { name: '藥劑',   kind: 'self',   rarity: 'common',   learnable: false, scrollUses: 3, heal: 60 },
   quiver:   { name: '箭袋',   kind: 'self',   rarity: 'common',   learnable: false, scrollUses: 3, refill: true },
   draught:  { name: '烈酒',   kind: 'self',   rarity: 'uncommon', learnable: false, scrollUses: 3,
@@ -711,7 +688,7 @@ const ART_IDS = Object.keys(ARTS);
    舊存檔的 roster/倉庫、以及手刻地圖的掉落物仍在用左邊那組。 */
 const LEGACY_ART_ALIAS = {
   heal: 'mend', medkit: 'salve', firstaid: 'bandage', surge: 'miracle',
-  grenade: 'firepot', smoke: 'smokepot', flash: 'holylight',
+  grenade: 'firepot', smoke: 'firepot', smokepot: 'firepot', flash: 'holylight',   // 煙罐隨遮蔽機制一起移除（C3）；舊存檔指向火油罐
   stim: 'tonic', ammobox: 'quiver', adrenaline: 'draught',
 };
 const _legacyArtWarned = new Set();
@@ -2133,24 +2110,18 @@ function buildMapDerived(key) {
 buildMapDerived('alpha');   // 載入時先建好預設圖，讓全域衍生值存在
 
 // 感知模型（敵我共用）：有視線，且（近身內 360° 或 前方 90° 視錐內）。視錐距離無限，靠牆截斷。
-// 遮蔽區（草叢）：目標所在的 bush（無則 null）。inConceal 給識別速率/可見度用。
+// 草叢：目標所在的 bush（無則 null）。TITHE 只用它做移動減速，不再有遮蔽/隱蔽效果。
 function inBush(pos) { for (const b of (MAP.bushes || [])) if (pos.x >= b.x && pos.x <= b.x + b.w && pos.y >= b.y && pos.y <= b.y + b.h) return b; return null; }
 // 煙幕＝暫時草叢：點在半徑內、且與落點之間無牆阻隔（視線截斷）才算入煙＝有效區域不穿牆
-function inSmoke(pos) { for (const s of smokes) { const dx = pos.x - s.x, dy = pos.y - s.y; if (dx * dx + dy * dy <= s.r * s.r && clearLine({ x: s.x, y: s.y }, pos)) return s; } return null; }
-function concealAt(pos) { return inBush(pos) || inSmoke(pos) || null; }   // 統一遮蔽區（草叢或煙幕）：用於 MOBA 式隱蔽判定
-function inConceal(pos) { return !!concealAt(pos); }
 function canSee(observer, targetPos) {
   if (!clearLine(observer.pos, targetPos)) return false;
   const d = dist(observer.pos, targetPos);
   if (d <= observer.senseRadius) return true;                                          // 近身感知（360°，潛行的貼太近保底）
-  const tb = concealAt(targetPos); if (tb && concealAt(observer.pos) !== tb) return false;   // 草叢/煙幕：目標在遮蔽區、觀察者不在同一區 → 隱蔽（MOBA 草叢）
   if ((observer.flash || 0) > 0 && d > CONFIG.flash.rangeMax - flashF(observer) * (CONFIG.flash.rangeMax - CONFIG.flash.rangeMin)) return false;   // 閃光暈眩：視距變短
-  const idleEnemy = observer.faction === 'enemy' && observer.state === 'IDLE';         // 守點未警覺＝短錐、有限視距
-  if (idleEnemy && d > CONFIG.stealth.idleViewRange) return false;
-  const baseHalf = (observer.coneHalfDeg || CONFIG.vision.coneHalfDeg) * (idleEnemy ? CONFIG.stealth.idleConeMul : 1) * (1 - flashF(observer) * CONFIG.flash.coneShrink);   // 閃光暈眩：視錐變窄
+  const baseHalf = (observer.coneHalfDeg || CONFIG.vision.coneHalfDeg) * (1 - flashF(observer) * CONFIG.flash.coneShrink);   // 閃光暈眩：視錐變窄
   return Math.abs(angDiff(angTo(observer.pos, targetPos), observer.facing)) <= baseHalf * Math.PI / 180;
 }
-function isRevealed(enemy) { return arenaNoFog || enemy.revealT > 0 || activePlayers().some(p => canSee(p, enemy.pos)); }   // 開火現形 或 被任一我方看到（試作場：全可見）
+function isRevealed(enemy) { return arenaNoFog || activePlayers().some(p => canSee(p, enemy.pos)); }   // 被任一我方看到（試作場：全可見）
 
 /* =====================================================================
    Camera — 旋轉視角（跟隨置中騎士、使其朝上）
@@ -2203,7 +2174,6 @@ function w2s(p) {
    ===================================================================== */
 let players, enemies, bullets, particles;
 let grenades = [];           // 飛行中的手榴彈/煙霧彈 [{x,y,vx,vy,dist,max,faction,G|smoke,spin}]（手榴彈落點等引信炸開；煙霧落地即成煙）
-let smokes = [];             // 作用中的煙幕 [{x,y,r,t,max}]＝暫時草叢遮蔽（inSmoke 以落點視線截斷＝不穿牆）
 let flashFx = [];            // 閃光彈爆閃視覺 [{x,y,t,max}]（純特效；暈眩效果在 u.flash + canSee/移動/發散）
 // HOMEWARD：無附身。players[KNIGHT_ID] 恆為騎士＝唯一受控單位；players[1..] 恆為 AI 扈從（IDLE，跑 archetype 人格）。
 // controlledId 保留為讀取接縫（渲染/HUD/開火回饋等 20+ 處沿用），但只會是 KNIGHT_ID 或 null（騎士離場後）。
@@ -2248,7 +2218,6 @@ let cacheGround = [];        // 地上的密封容器 [{x,y}]（任務配置/運
 let loseReason = '';         // RUN FAILED 原因：'騎士陣亡'（Phase 4 遺物機制復活後可再增）
 let corpses = [];            // 陣亡標記 [{x,y,enemy}]（地上叉叉，整場保留）
 let decals = [];             // 地上血漬/痕跡 [{x,y,r,col}]（上限淘汰、整場保留）
-let soundPings = [];         // 視覺化聲音：[{x,y,life,max,r,col}]（控制角色視線外的聲音→畫面邊框朝該方向發光）
 let prisoners;               // 戰鬥中的俘虜 [{pos, freed}]（E 釋放→加入我方，撤離成功才入隊）
 let restPhase;               // 休息關流程：CHOICE | OFFERS | TARGET | DONE
 let restOffers, restPick, restPendingUpgrade;  // 搜刮抽選 / 已選 / 待指定目標的升級
@@ -2409,8 +2378,6 @@ function makeEnemy(nodeId, personalityName, isReinforce = false, facing = Math.P
     stamMax: 0, stam: 0, stamT: -99,   // 敵人不管理耐力（AI 不會用；壓力靠體幹 + 攻擊權）
     poiseBreakFxT: 0, guardBreakFxT: 0, flinchFxT: 0, noStamFxT: 0,
     fireCooldown: 0, engageTimer: 0, muzzle: 0, isReinforce, watchFacing: facing,
-    detect: 0,   // 識別進度 0~1：感知到玩家時累積、滿則轉 ENGAGED（潛行空窗）
-    revealT: 0,   // 開火現形倒數：>0 時對玩家可見（即使躲草叢/在霧中）＝槍口火光暴露
     patrols: !!TYPE.patrols,   // IDLE 是否巡邏（grunt=true；重裝/狗守原地）
     patrolTarget: null, patrolPath: null, patrolDwell: 0, patrolAnchor: facing, patrolSweepPh: 0, patrolSweepDir: 1,
     searchTarget: null, searchPath: null,   // 交戰後失去視線時的搜索目標節點
@@ -2491,7 +2458,7 @@ const ORIGINS = {
   ranger:  { name: '遊獵',   title: '長弓', hue: 110,
              desc: '長弓與短刀。拉開距離放箭，但雙手武器不能帶盾，被貼上就只能靠走位。',
              kit: { classId: 'knight', weaponId: 'longbow', offId: null, armorId: 'gambeson',
-                    weaponId2: 'knife', offId2: 'buckler', itemId: 'smokepot', abilityId: 'mend' } },
+                    weaponId2: 'knife', offId2: 'buckler', itemId: 'firepot', abilityId: 'mend' } },
   adept:   { name: '習術',   title: '火矢', hue: 285,
              desc: '**開局就會火矢**（唯一一開始就有「習得」的出身）。高穿甲專治重裝，代價是甲最薄。',
              kit: { classId: 'knight', weaponId: 'sword', offId: 'buckler', armorId: 'gambeson',
@@ -2508,7 +2475,7 @@ const ORIGINS = {
   mageknight:{ name: '術士', title: '法杖', hue: 250, locked: true,
              desc: '法杖射魔法彈，彈藥無限、持續壓制——但甲最薄，被貼上就脆。',
              kit: { classId: 'knight', weaponId: 'staff', offId: null, armorId: 'gambeson',
-                    weaponId2: 'knife', offId2: null, itemId: 'smokepot', abilityId: 'firebolt' } },
+                    weaponId2: 'knife', offId2: null, itemId: 'firepot', abilityId: 'firebolt' } },
 };
 const ORIGIN_IDS = Object.keys(ORIGINS);
 const originAvailable = (id) => { const O = ORIGINS[id]; return !!O && (!O.locked || isAvailable('origin', id)); };   // base 4 恆可選；locked 的要榮譽解鎖過
@@ -2659,7 +2626,7 @@ function startMission() {
   const faceInto = EXTRACT && ENTRY ? angTo(ENTRY, EXTRACT) : 0;   // 開場面向地圖內部（右/上緣進入點才不會對著牆）
   for (const p of players) { p.facing = faceInto; p.idleAnchor = faceInto; }
   controlledId = 0;
-  enemies = []; bullets = []; grenades = []; smokes = []; flashFx = []; particles = []; corpses = []; decals = []; soundPings = []; shakeAmt = 0; kickY = 0; hitstopT = 0;
+  enemies = []; bullets = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; shakeAmt = 0; kickY = 0; hitstopT = 0;
   reservations = new Map(); patrolClaims = new Map(); attackTokens = new Map(); enemyIdSeq = 1; drops = []; fileDrop = null;
   cacheGround = (MAP.caches || []).map(c => ({ x: c.x, y: c.y }));   // 密封容器：本場地圖配置的（撿走撤離才開封）
   for (const p of players) p.caches = 0;
@@ -2688,7 +2655,6 @@ function startMission() {
   searchFocusNode = null; searchSet = null; searchCleared = null; searchConsumedT = -Infinity;   // 重置交戰後搜索
   simTime = 0; reinforceTimer = 0;
   extractedCount = 0; deadCount = 0; result = null;
-  squadRevealed = false;   // 每場開局＝還沒有人知道我們在這（見 revealSquad）
   scene = 'COMBAT';
   Input.aim = players[controlledId].facing;
   initCamera(players[controlledId]);
@@ -3223,8 +3189,8 @@ function startIntro() {
   for (const d of MAP.doors) d.open = false;
   for (const d of (MAP.destructibles || [])) { d.cur = d.intact; d.curHp = d.hp; }
   reservations = new Map(); patrolClaims = new Map(); patrolPool = []; enemyIdSeq = 1;
-  bullets = []; grenades = []; smokes = []; flashFx = []; particles = []; drops = []; fileDrop = null;
-  cacheGround = []; prisoners = []; corpses = []; decals = []; soundPings = []; shakeAmt = 0; kickY = 0; hitstopT = 0;
+  bullets = []; grenades = []; flashFx = []; particles = []; drops = []; fileDrop = null;
+  cacheGround = []; prisoners = []; corpses = []; decals = []; shakeAmt = 0; kickY = 0; hitstopT = 0;
   searchFocusNode = null; searchSet = null; searchCleared = null; searchConsumedT = -Infinity;
   introGuards = []; introConsole = null;
   // 騎士＝出身選定的孤身一人；醒來處在戰場左側
@@ -3248,7 +3214,7 @@ function startIntro() {
   enemies = [wolf, soldier];
   if (CONFIG.devLootRack) spawnDevRack();
   curTimeBudget = 1e9; simTime = 0; reinforceTimer = 0;
-  extractedCount = 0; deadCount = 0; result = null; squadRevealed = false;
+  extractedCount = 0; deadCount = 0; result = null;
   scene = 'COMBAT'; Input.aim = players[0].facing;
   initCamera(players[0]);
   cutscene = { beats: introBeats(), i: 0, line: null, subtitle: '', lock: true, gate: null,
@@ -3864,7 +3830,6 @@ function applyArt(u, A) {
   if (A.refill) { u.ammoInMag = unitMag(u); if (!isInfiniteAmmo(u.weaponId)) u.ammoReserve += unitMag(u) * 2; spawnPickup(u.pos); }
   if (A.buff) { u.buffT = A.buff.dur; u.buffMove = A.buff.moveMul || 1; u.buffFire = A.buff.fireRateMul || 1; spawnHeal(u.pos); }
   if (A.grenade) throwGrenade(u, A.grenade);
-  if (A.smoke) throwSmoke(u, A.smoke);
   if (A.flash) throwFlash(u, A.flash);
   if (A.bolt) castBolt(u, A.bolt);
 }
@@ -4008,7 +3973,7 @@ function startSwing(u, fireRateMult) {
   u.blocking = false;   // 揮擊即放下盾
   if (arenaMode && u.id === KNIGHT_ID && u.faction === 'player') { arenaStats.swings++; arenaStats.lastHits = 0; arenaStats.lastDmg = 0; }
   Hooks.fire('attackStart', { u, W, melee: true });
-  Sfx.play('swing', u.pos, swingPingR(u.weapon));   // 揮擊聲半徑隨武器重量
+  Sfx.play('swing', u.pos);
   return true;
 }
 // 判定窗內的進度 0→1（前搖期間為 0＝刀停在起始側，後搖期間為 1＝刀停在收尾側）
@@ -4185,20 +4150,14 @@ function fireUnit(u, angle, spreadDeg, fireRateMult, bloomAdd) {
   u.fireCooldown = (1 / W.fireRate) / (fireRateMult * (u.buffFire || 1));   // 道具(烈酒)可加射速
   if (bloomAdd) u.bloom = Math.min(W.spreadMax, u.bloom + bloomAdd);
   u.muzzle = W.silent ? 0.02 : 0.05;
-  if (u.faction === 'enemy' && !W.silent) u.revealT = CONFIG.stealth.fireReveal;   // 敵人開火＝槍口火光暴露位置（對玩家現形，含草叢/霧中）
   u.recoil = CONFIG.juice.recoil;   // 開火後座（繪製時往後彈、快速回正）
   if (u.faction === 'player' && u.id === controlledId) { kickY += CONFIG.juice.camKick; addShakeAt(u.pos, CONFIG.juice.shakeFire); }   // 你的槍＝相機踢+微震
   Sfx.play(W.silent ? 'silshot' : (W.pellets ? 'shotgun' : 'shot'), u.pos);   // 射擊音效接縫（pos→邊框聲音提示）
   if (u.ammoInMag <= 0) startReload(u);
-  if (u.faction === 'player' && !W.silent) alertEnemiesNear(u.pos, W.loud ? 1e9 : CONFIG.enemyHearRadius);   // 聲響驚動半徑；loud(喪鐘)=全場聽得見
   Hooks.fire('attackStart', { u, W, melee: false });
   return true;
 }
 // 玩家開火的「槍聲」：半徑內 IDLE 敵人轉入 ENGAGED（latch）
-function alertEnemiesNear(pos, radius) {
-  const r = radius || CONFIG.enemyHearRadius;
-  for (const e of enemies) if (!e.dead && e.state === 'IDLE' && dist(e.pos, pos) <= r) e.state = 'ENGAGED';
-}
 const unitMag = (u) => u.magazine || u.weapon.magazine;   // 有效彈夾（裝備可改）
 function startReload(u) {
   if (u.reloadT > 0 || u.ammoReserve <= 0 || u.ammoInMag >= unitMag(u)) return;
@@ -4250,21 +4209,6 @@ function detonateGrenade(x, y, faction, G) {
   addShakeAt({ x, y }, CONFIG.juice.shakeKill);   // 震動(目前 config 為 0，可面板開)
   Sfx.play('grenade', { x, y });                  // 音效接縫 + 邊框聲音提示
 }
-// 煙霧彈：朝瞄準方向丟出（沿用手榴彈飛行管線；smoke 標記＝落地即生成煙幕、不走引信/散射）
-function throwSmoke(u, S) {
-  const ang = u.facing;
-  const land = rayHit(u.pos, ang, S.throwRange || 230);          // 落點（被牆截斷＝不穿牆）
-  const max = Math.max(0, dist(u.pos, land) - 6);
-  const spd = S.throwSpeed || 520;
-  grenades.push({ x: u.pos.x, y: u.pos.y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, dist: 0, max, faction: u.faction, smoke: S, spin: 0, landed: false });
-  Sfx.play('throw', u.pos);
-}
-function spawnSmoke(x, y, S) {   // 落地即生成煙幕（暫時草叢遮蔽）
-  smokes.push({ x, y, r: S.radius || 110, t: S.dur || 5, max: S.dur || 5 });
-  for (let i = 0; i < 14; i++) particles.push(mkPart({ x, y }, 110, 0.6, i % 2 ? '#b6bac0' : '#9aa0a6'));   // 噴煙粒子
-  Sfx.play('smoke', { x, y });
-}
-function updateSmokes(dt) { for (let i = smokes.length - 1; i >= 0; i--) { smokes[i].t -= dt; if (smokes[i].t <= 0) smokes.splice(i, 1); } }
 // 閃光彈：朝瞄準方向丟出（沿用手榴彈飛行+引信管線；flash 標記＝引信燒完噴不傷害的閃光彈丸）
 function throwFlash(u, S) {
   const ang = u.facing;
@@ -4305,7 +4249,6 @@ function updateGrenades(dt) {
       g.x += g.vx * dt; g.y += g.vy * dt; g.dist += Math.hypot(g.vx, g.vy) * dt; g.spin += dt * 14;
       if (g.dist >= g.max) {
         g.landed = true; g.vx = 0; g.vy = 0;
-        if (g.smoke) { spawnSmoke(g.x, g.y, g.smoke); grenades.splice(i, 1); continue; }   // 煙霧：落地即生效（無引信、無散射）
       }
     } else { g.spin += dt * 4; }   // 落地後慢慢轉
     if (!g.smoke) {   // 手榴彈/閃光彈：引信燒完才爆
@@ -4332,18 +4275,6 @@ function drawGrenades() {
   }
 }
 // 煙幕雲：灰色柔光、生成時擴張、消散前淡出（畫在牆之前→牆會蓋住＝視覺上也不穿牆）
-function drawSmoke() {
-  for (const s of smokes) {
-    const grow = clamp((s.max - s.t) / 0.45, 0, 1);   // 0.45s 內擴張到滿
-    const fade = clamp(s.t / 1.2, 0, 1);              // 最後 1.2s 淡出
-    const r = s.r * (0.55 + 0.45 * grow);
-    const g = ctx.createRadialGradient(s.x, s.y, r * 0.15, s.x, s.y, r);
-    g.addColorStop(0, `rgba(184,188,194,${0.74 * fade})`);
-    g.addColorStop(0.65, `rgba(150,154,160,${0.56 * fade})`);
-    g.addColorStop(1, 'rgba(140,144,150,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
-  }
-}
 
 // 手動：基礎+連射 bloom（玩家扳機紀律＝技巧）。敵人：同手動會 bloom。
 const manualFire = (u, ang) => fireUnit(u, ang, (u.weapon.spreadBase + u.bloom) * (isScoping() ? CONFIG.scope.spreadMul : 1), 1, u.weapon.spreadPerShot);   // 望遠＝降發散穩定
@@ -4386,7 +4317,6 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
   if (opts) u.lastKnock = opts.knock || 0;   // 給 breakPoise 算「體幹破當下」的大幅擊退
   // **見血＝全隊曝光**放在最前面：被攻擊（即使被甲彈開或盾格擋）都算「已經被發現」，
   // 不能等流血才算——否則板甲騎士被彈開的那一擊會在 return 前跳過曝光（第三方互毆仍不算）。
-  if (!squadRevealed && (u.faction === 'player' || (opts && opts.attacker && opts.attacker.faction === 'player'))) revealSquad();
   if ((u.invulnT || 0) > 0) { spawnBlock(u.pos); return false; }   // meta 升級「不屈」的無敵窗：完全免傷（撐過致命連段）
   // ---- 盾格：正面 blockArcDeg 內才成立；舉盾後 parryWindow 內＝招架（完全格擋 + 攻擊者硬直）----
   // ---- 武器招架（無盾）：判定窗內接到攻擊＝完全格擋 + 重創對方，與盾招架同等回報 ----
@@ -4503,7 +4433,6 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
   u.flinchX = Math.cos(pa) * CONFIG.juice.flinch; u.flinchY = Math.sin(pa) * CONFIG.juice.flinch;   // 後仰（繪製偏移）
   spawnBlood(u.pos, pa); pushDecal(u.pos.x, u.pos.y, 3 + Math.random() * 3, 'rgba(122,20,28,0.5)');  // 血霧 + 地上血漬
   // 交戰聲：命中會被聽見（驚動附近 IDLE 敵）——但「潛行一擊斃命(對未察覺者)」＝無聲擊殺(hp<=0 那條由 killUnit 依 combatDeath 判定)。
-  if (opts && opts.attacker && u.hp > 0) alertEnemiesNear(u.pos, CONFIG.hearing.hit);   // 活著挨打/兵刃相交＝有聲
   if (u.hp <= 0) killUnit(u, (opts && opts.attacker) || null);
   return blocked;   // 近接判定用：true＝被盾格擋下（決定火花顏色/頓幀種類）
 }
@@ -4534,7 +4463,6 @@ function killUnit(u, killer) {
     }
   }
   spawnDeath(u.pos);
-  if (u.faction !== 'player' && u.combatDeath) alertEnemiesNear(u.pos, CONFIG.hearing.death);   // 交戰中陣亡＝聲響驚動附近；潛行擊殺(未察覺者)＝無聲，潛行成立
   hitstop(CONFIG.juice.hitstopKill); addShakeAt(u.pos, CONFIG.juice.shakeKill);   // 擊殺：頓幀 + 較大震動
   pushDecal(u.pos.x, u.pos.y, 8 + Math.random() * 3, 'rgba(92,15,22,0.5)');       // 死亡血池
   corpses.push({ x: u.pos.x, y: u.pos.y, enemy: u.faction !== 'player' });   // 地上留陣亡叉叉（任一 AI 陣營＝敵屍）
@@ -4764,18 +4692,6 @@ function updateBullets(dt) {
    ⚠️ 不要因為「戰鬥感覺太順」就把它加回來。要調張力請走 DESIGN.md §2.8 的四條推論
    （威脅來自傷害與速度、變難靠組合而非數值膨脹），不要走士氣。 */
 
-/* ── 全隊靜默／曝光（使用者定案，取代舊的逐人 E/Q stance）─────────────────
-   維持靜默的條件很單純：**還沒有人知道我們在這**。所以扈從在「跟隨/守住」時只會
-   反擊已經在打的敵人（不主動破壞潛行），但**一旦見血或被敵人發現，靜默自動解除**、
-   之後就全力交戰，不需要玩家再下一次令。這是全隊一個開關，不是逐個單位——玩家想的是隊伍。
-
-   ★ 關鍵區分：「敵人 ENGAGED」不等於「敵人在打**我方**」。第三方互毆時敵人也是 ENGAGED，
-   但那不該解除我方靜默（你要能站在旁邊看他們拼）。所以只有兩個觸發：
-     1. 敵人**視覺識別到我方單位**（detect 滿）——見於 enemyTick 的識別路徑，不含 aiFoe 那條
-     2. 任何我方單位**造成或承受傷害**（見血）——見於 damageUnit 的 Hooks
-   「集中攻擊」指令永遠無視靜默（你明確指了目標＝當然打）。 */
-let squadRevealed = false;
-function revealSquad() { squadRevealed = true; }
 let lastEncounter = null;   // 本場抽到的遭遇 id（HUD 可顯示「攔路賊」等；null＝烤死的 spawn 或王）
 /* 扈從節點導航：直線可達＝直接走（開闊地）；否則走 waypoint 圖 BFS 最短路徑（比照敵人接近方式，
    避免直線卡牆）。使用者定案：取代舊的「跟隨直線 + 交戰 scoreNode 選點」。
@@ -5052,29 +4968,16 @@ function huntStep(e, dt) {   // 沒有已知目標：有焦點區→清查；否
 
 function enemyTick(e, dt) {
   if (e.introFrozen) return;    // 序章：文字卡結束前，搜刮的敵兵不行動、不偵測（腳本化開打）
-  // 交戰＝自主求援：一進入交戰就朝四周喊一聲（附近同陣營 IDLE 也轉交戰）。每人只喊一次＝不會全圖無限連鎖，
-  // 但一支巡邏隊會一起警覺、聚過來（＝「叫一個就來一群」）。喊聲半徑有限，隔開的另一群不會被牽動。
-  if (e.state === 'ENGAGED' && !e.calledHelp && !e.dead) { e.calledHelp = true; alertEnemiesNear(e.pos, CONFIG.hearing.callHelp); }
   if (e.staggerT > 0) return;   // 硬直（被戰鎚打中/招架失敗）：完全不行動
   if (e.dummy) return;          // 訓練假人（近戰試作場）：只挨打，不思考
   const f = nearestFriendly(e.pos);
   const aiFoe = nearestHostileAI(e);   // 多陣營：看得到的他陣營 AI
-  // 識別空窗（潛行）：IDLE 時看到玩家不立刻交戰，先累積 detect；滿才 ENGAGED。快速閃過＝累不滿。
-  // （槍聲 alertEnemiesNear / 被擊中 damageUnit 仍是瞬間 ENGAGED，繞過此空窗。）
+  // 看到就交戰（TITHE C3：識別空窗／潛行整套移除）。
+  // ⚠️ 過渡狀態：牠們現在只靠**看見**醒來——聲音驚動（C4）與求援連鎖都拆掉了，
+  //    所以繞過視錐仍然過得去。這是暫時的：D6 房間流程會讓進房即鎖門、全員 ENGAGED。
   if (e.state !== 'ENGAGED') {
-    if (aiFoe) { e.detect = 1; e.state = 'ENGAGED'; }   // 暴動：看到他陣營 AI＝立即交戰（無潛行空窗、武裝集團互毆很明顯）
-    else if (f && canSee(e, f.pos)) {
-      const d = dist(e.pos, f.pos);
-      let rate = 1 / CONFIG.stealth.identifyTime;
-      if (d <= e.senseRadius) rate *= CONFIG.stealth.distNearMul;                          // 貼臉近乎瞬識
-      else rate *= clamp(1.4 - d / CONFIG.stealth.idleViewRange, 0.3, 1.4);                // 近快遠慢
-      if (typeof inConceal === 'function' && inConceal(f.pos)) rate *= CONFIG.stealth.concealMul;  // (Stage 2) 遮蔽放慢
-      e.detect += rate * dt;
-      if (e.detect >= 1) { e.detect = 1; e.state = 'ENGAGED'; if (f.faction === 'player') revealSquad(); }   // 敵人看清了我方＝全隊曝光
-    } else {
-      e.detect = Math.max(0, e.detect - CONFIG.stealth.decay * dt);   // 失去視線 → 識別衰退
-    }
-    if (e.state !== 'ENGAGED') { enemyIdleTick(e, dt); return; }   // 仍守點被動
+    if (aiFoe || (f && canSee(e, f.pos))) e.state = 'ENGAGED';
+    else { enemyIdleTick(e, dt); return; }   // 仍守點被動
   }
 
   // --- ENGAGED：共享情報 → KNOWN(追已知位置/親眼才開火) 或 HUNT(搜索焦點 / 全場巡邏) ---
@@ -5189,7 +5092,6 @@ function moveToward(u, goal, step) {
   if (u.faction === 'player') step *= bushSpeedMult(u) * rangedActionMoveMul(u);   // 草叢減速 + 遠程裝填/瞄準減速（我方 AI 扈從；騎士在 WASD 位移分支自行套用）
   const moved = Math.min(step, d), k = moved / d;
   u.pos.x += (goal.x - u.pos.x) * k; u.pos.y += (goal.y - u.pos.y) * k;
-  visStep(u, moved);   // 視覺腳步漣漪（扈從/敵人走這條；騎士走 WASD 位移分支）
 }
 function pushOutSeg(u, x1, y1, x2, y2) {
   const cp = closestOnSeg(u.pos, { x: x1, y: y1 }, { x: x2, y: y2 });
@@ -5230,7 +5132,6 @@ const lowWallSpeedMult = (pos) => onLowWall(pos, CONFIG.unitRadius + CONFIG.lowW
 const bushSlowFrac = (u) => inBush(u.pos) ? Math.min(CONFIG.bush.slowPerWeight * carriedWeight(u), CONFIG.bush.slowMax) : 0;
 const bushSpeedMult = (u) => 1 - bushSlowFrac(u);
 // 草叢步行聲倍率：叢內＝1 + 減速率×rustleFromSlow + 固定 rustleBonus（重甲更吵、踏進草叢本身也加成）；叢外＝1。
-const bushRustleMult = (u) => inBush(u.pos) ? (1 + bushSlowFrac(u) * CONFIG.bush.rustleFromSlow + CONFIG.bush.rustleBonus) : 1;
 // 遠程「動作中」移動倍率：裝填優先於瞄準；近接/無武器＝不受限。騎士無瞄準窗(aimT 恆 0)＝只吃裝填。
 function rangedActionMoveMul(u) {
   const W = u.weapon; if (!W || W.melee) return 1;
@@ -5269,40 +5170,8 @@ function spawnSwingFx(u, t, blocked) {
 function spawnBlood(pos, ang) { for (let i = 0; i < 7; i++) { const a = ang + (Math.random() * 2 - 1) * 0.55, s = 70 + Math.random() * 180; particles.push({ x: pos.x, y: pos.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.25 + Math.random() * 0.25, max: 0.5, col: i % 3 ? '#b41f2a' : '#7a1420' }); } }   // 血霧：沿彈道噴濺
 function pushDecal(x, y, r, col) { decals.push({ x, y, r, col }); if (decals.length > 160) decals.shift(); }   // 地上血漬（上限淘汰）
 // 視覺化聲音：依音效 id 給「邊框發光」提示（控制角色看不到的方向才提示）。SLEEPER/arcade 共用。
-const SOUND_PINGS = {
-  step:    { r: 26,  life: 0.45, col: '170,205,225' },   // 腳步：淡冷色；r 由實際步行聲半徑覆寫（草叢/衝刺＝更大的漣漪）
-  // 遠程：弓弩本就相對輕聲（使用者定案調小）；消音更小。
-  shot:    { r: 70,  life: 0.45, col: '255,180,90', hear: CONFIG.enemyHearRadius },   // hear＝真實驚動半徑（漣漪擴散到這＝聲音傳多遠；r 仍給邊框提示用）
-  shotgun: { r: 100, life: 0.55, col: '255,150,70', hear: CONFIG.enemyHearRadius },
-  silshot: { r: 45,  life: 0.32, col: '180,200,220' },
-  death:   { r: 110, life: 0.7,  col: '255,90,90', hear: CONFIG.hearing.death },     // 陣亡/爆炸/開門＝維持不動
-  door:    { r: 80,  life: 0.5,  col: '160,210,255' },
-  grenade: { r: 175, life: 0.75, col: '255,170,60' },
-  // 交戰聲（納入視覺化）：揮擊半徑與武器重量掛勾（swingPingR 動態覆寫 r）；打擊/格擋/招架/背刺各有色。
-  swing:   { r: 44,  life: 0.28, col: '200,200,210' },   // r 由 swingPingR(武器重量) 覆寫
-  hit:     { r: 55,  life: 0.30, col: '255,210,140', hear: CONFIG.hearing.hit },
-  block:   { r: 66,  life: 0.34, col: '190,210,255' },   // 兵刃相交/擋格的「鏘」
-  parry:   { r: 62,  life: 0.32, col: '190,210,255' },
-  crit:    { r: 84,  life: 0.4,  col: '255,110,120', hear: CONFIG.hearing.hit },   // 背刺/重擊＝較響
-};
-const swingPingR = (W) => clamp(26 + ((W && W.weight) || 1) * 16, 28, 78);   // 揮擊聲半徑＝隨武器重量（短刀 ≈29、長劍 ≈50、戰鎚 ≈64、喪鐘 ≈71）
-function pingSound(id, pos, rOverride, soft) {
-  const s = SOUND_PINGS[id]; if (!s || !pos) return;
-  const r = rOverride || s.r;
-  soundPings.push({ x: pos.x, y: pos.y, life: s.life, max: s.life, r, hearR: s.hear || r, col: s.col, soft: !!soft });   // r＝邊框提示視覺半徑；hearR＝漣漪擴散的真實傳播半徑
-  if (soundPings.length > 40) soundPings.shift();
-}
 // 視覺腳步：距離累積制（走過 strideDist 才發一次漣漪）＝比時間制稀疏、也不隨當下位置漂移。只發漣漪、不驚動 AI。
 // 騎士用真實步行聲半徑（u._stepR，含草叢/衝刺）；扈從/敵人用基礎半徑。敵人只在被我方感知時才發（不從迷霧洩漏巡邏位置）。
-function visStep(u, moved) {
-  const C = CONFIG.soundRipple; if (!C || !C.enabled || !u || u.dummy) return;
-  u._stride = (u._stride || 0) + moved;
-  if (u._stride < C.strideDist) return;
-  u._stride = 0;
-  const soft = !(u.faction === 'player' && u.id === KNIGHT_ID);   // soft＝只是移動、不進邊框提示（腳步交給世界漣漪）；含迷霧中，故聽得到牆後行動
-  const r = u._stepR || (CONFIG.hearing.stepBase + (u.moveSpeed || CONFIG.moveSpeed) / CONFIG.tempo * CONFIG.hearing.stepPerSpeed);   // 敵/扈從無 _stepR＝依自身移速估，讓漣漪大小與騎士相當（敵我一致）
-  pingSound('step', u.pos, r, soft);
-}
 function updateParticles(dt) { for (let i = particles.length - 1; i >= 0; i--) { const q = particles[i]; q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; if (q.life <= 0) particles.splice(i, 1); } }
 
 /* =====================================================================
@@ -5334,7 +5203,9 @@ const Input = {
   get aim() { return aimDir; }, set aim(v) { aimDir = v; },   // 砲塔目標朝向（世界角）
   get mx() { return mouse.mx; }, get my() { return mouse.my; },
 };
-const Sfx = { play(id, pos, r) { /* no-op 音訊佔位（未來接 WebAudio）；給了 pos 就同時做「視覺化聲音」邊框提示（r＝可選半徑覆寫，如揮擊依重量） */ if (pos) pingSound(id, pos, r); } };
+// 音訊佔位（未來接 WebAudio）。C4 之前它還兼著「視覺化聲音」的邊框/漣漪提示，那套隨聽覺一起拆了。
+// pos / r 參數保留：呼叫點到處都在傳，而且接真音效時正好要用來做空間化。
+const Sfx = { play(id, pos, r) { /* no-op */ } };
 
 // 點擊：戰鬥→鎖定滑鼠開始；路線圖→選節點；結算畫面→重開
 cv.addEventListener('click', () => {
@@ -5539,7 +5410,7 @@ window.addEventListener('keydown', e => {
     if (k === 'u') { enterArena(arenaNextMode()); e.preventDefault(); return; }   // U 切換試作場（近戰 ↔ 射擊；之後的 gimmick 場照樣循環）
     if (k === 'tab') { arenaSetWeapon(arenaWIdx + (e.shiftKey ? -1 : 1)); e.preventDefault(); }   // Tab／Shift+Tab 循環主手武器
     if (k === 't') arenaResetFight();                                    // T 重來
-    if (k === 'y') for (const e of enemies) if (!e.dead && !e.dummy) { e.state = 'ENGAGED'; e.detect = 1; }   // Y 叫敵人立刻開戰（不用走過去引怪）
+    if (k === 'y') for (const e of enemies) if (!e.dead && !e.dummy) e.state = 'ENGAGED';   // Y 叫敵人立刻開戰
     if (k === 'c') { arenaSetArmor(arenaArmorIdx + 1); e.preventDefault(); return; }   // C 換身上的甲（蓋掉道具鍵；試作場用不到道具）
     if (k === 'n') arenaNoFog = !arenaNoFog;                             // N 迷霧開關
     if (k === 'escape' || k === 'backspace') { enterArenaSelect(); e.preventDefault(); return; }   // Esc 回試作場入口（換場地）
@@ -5576,7 +5447,7 @@ function update(dt) {
   const juiceDecay = (u) => { if (u.recoil > 0) u.recoil = Math.max(0, u.recoil - CONFIG.juice.recoilDecay * dt); if (u.hitFlash > 0) u.hitFlash -= dt; if (u.cardHitT > 0) u.cardHitT -= dt; if ((u.invulnT || 0) > 0) u.invulnT -= dt; if (u.flinchX) { u.flinchX *= Math.exp(-22 * dt); u.flinchY *= Math.exp(-22 * dt); } };
   const meleeFxDecay = (u) => { for (const k of ['parryFxT', 'poiseBreakFxT', 'guardBreakFxT', 'flinchFxT', 'noStamFxT', 'atkRestT']) if (u[k] > 0) u[k] -= dt; };
   for (const p of players) { if (p.fireCooldown > 0) p.fireCooldown -= dt; if (p.muzzle > 0) p.muzzle -= dt; juiceDecay(p); if (p.abilityCd > 0) p.abilityCd -= dt; tickArtSlots(p, dt); tickCast(p, dt); tickAmmo(p, dt); tickMelee(p, dt); tickReactiveBlock(p, dt); tickResources(p, dt); meleeFxDecay(p); }
-  for (const e of enemies) { if (e.dead) continue; if (e.fireCooldown > 0) e.fireCooldown -= dt; if (e.muzzle > 0) e.muzzle -= dt; if (e.revealT > 0) e.revealT -= dt; if (e.flash > 0) e.flash = Math.max(0, e.flash - CONFIG.flash.decay * dt); juiceDecay(e); tickAmmo(e, dt); tickMelee(e, dt); tickReactiveBlock(e, dt); tickResources(e, dt); meleeFxDecay(e); }
+  for (const e of enemies) { if (e.dead) continue; if (e.fireCooldown > 0) e.fireCooldown -= dt; if (e.muzzle > 0) e.muzzle -= dt; if (e.flash > 0) e.flash = Math.max(0, e.flash - CONFIG.flash.decay * dt); juiceDecay(e); tickAmmo(e, dt); tickMelee(e, dt); tickReactiveBlock(e, dt); tickResources(e, dt); meleeFxDecay(e); }
   pruneAttackTokens();   // 攻擊權：過期的釋放出來給別隻
 
   // 0) 自走撤離 seize：騎士自走撤離時，移動或開火 → 奪回手動、撤離中斷（滑鼠轉視野不算）
@@ -5620,10 +5491,6 @@ function update(dt) {
           const l = Math.hypot(mx, my) || 1;
           const spd = spdOf(u) * (u.sprinting ? sprintMult(u) : 1) * lowWallSpeedMult(u.pos) * bushSpeedMult(u) * rangedActionMoveMul(u) * (isScoping() ? scopeMoveMul(u) : 1) * (u.moveMul || 1) * (u.buffMove || 1) * swingMoveMul(u);  // 低矮牆/草叢減速 + 裝填/望遠 + 裝備/道具 + 被動 + 揮擊/舉盾
           u.pos.x += mx / l * spd * dt; u.pos.y += my / l * spd * dt;
-          // 步行聲（遊戲性驚動，時間制不變）：每 stepInterval 秒一次，半徑隨速度/衝刺/草叢 → 驚動附近 IDLE 敵（走路可潛近、衝刺會被聽見）。
-          u.stepT = (u.stepT || 0) - dt;
-          if (u.stepT <= 0) { const H = CONFIG.hearing, r = (H.stepBase + spd * H.stepPerSpeed) * (u.sprinting ? H.sprintMul : 1) * (u.stealthMul || 1) * bushRustleMult(u); alertEnemiesNear(u.pos, r); u._stepR = r; u.stepT = H.stepInterval / (u.sprinting ? 1.4 : 1); }   // meta「潛蹤」腳步更輕；草叢/衝刺更響；r 存起來給視覺腳步用
-          visStep(u, spd * dt);   // 視覺腳步漣漪（距離制＝較稀疏、短命不拖在身後；吃 u._stepR 反映草叢/衝刺）
         }
         if (Input.fire && !u.blocking) manualFire(u, u.facing);   // 舉盾時不出招（放開右鍵才能揮）
       }
@@ -5653,8 +5520,7 @@ function update(dt) {
   }
 
   // 5) 子彈 / 特效
-  updateBullets(dt); updateGrenades(dt); updateSmokes(dt); updateFlashFx(dt); updateParticles(dt);
-  for (let i = soundPings.length - 1; i >= 0; i--) { soundPings[i].life -= dt; if (soundPings[i].life <= 0) soundPings.splice(i, 1); }   // 視覺化聲音衰減
+  updateBullets(dt); updateGrenades(dt); updateFlashFx(dt); updateParticles(dt);
 
   // 6) 擊退位移 + 分離 + 牆面碰撞 + 掉落物拾取（擊退走位移而非瞬移＝仍吃 collideWalls，不會被推穿牆）
   const movers = [...activePlayers(), ...enemies.filter(e => !e.dead)];
@@ -5733,7 +5599,7 @@ function draw() {
 
   // ---- 世界（鏡頭變換）----
   ctx.save(); applyCam();
-  drawGrid(); drawBushes(); drawSmoke(); drawAreas(); drawLowWalls(); drawDestructibles(); drawWalls(); drawDoors(); drawButtons(); drawWaypoints(); drawZonesWorld();
+  drawGrid(); drawBushes(); drawAreas(); drawLowWalls(); drawDestructibles(); drawWalls(); drawDoors(); drawButtons(); drawWaypoints(); drawZonesWorld();
   drawDecals(); drawCorpses(); drawDrops(); drawPrisoners(); drawIntroActors(); drawParticles(); drawBullets(); drawGrenades();
   drawMeleeFx([...enemies.filter(e => !e.dead && isRevealed(e)), ...players]);   // 近接弧畫在單位之下（不遮血條/身體）；敵人比照 drawEnemies 只畫已感知者
   drawEnemies(); drawPlayers(); drawFlashFx();
@@ -5745,10 +5611,10 @@ function draw() {
   if (!debugView) drawFog();
 
   // ---- 霧上：淡牆骨架（空間參考）+ 機密檔案掉落標記（永遠可見）----
-  ctx.save(); applyCam(); drawSoundRipples(); drawSkeleton(); drawFileDrop(); drawCacheDrops(); ctx.restore();   // 漣漪畫在迷霧之上＝穿透迷霧、聽得到牆後的行動
+  ctx.save(); applyCam(); drawSkeleton(); drawFileDrop(); drawCacheDrops(); ctx.restore();
 
   // ---- 螢幕層：血條/標記/HUD/卡片 ----（演出鎖控制時隱藏＝乾淨電影感；gate 解鎖時照常）
-  if (!(cutscene && cutscene.lock)) { drawScreenOverlays(); drawHUD(); drawCards(); drawHotkeyBar(); drawSoundEdges(); }
+  if (!(cutscene && cutscene.lock)) { drawScreenOverlays(); drawHUD(); drawCards(); drawHotkeyBar(); }
   if (arenaMode) drawArenaHUD();  // 試作場：武器參數表 + 即時命中數據 + 熱鍵
   if (cutscene) drawCutscene();   // 第0關：對話泡 + 字幕（最上層）
 }
@@ -6048,29 +5914,6 @@ function drawDecals() {   // 地上血漬（在屍體/單位之下）
   for (const d of decals) { ctx.fillStyle = d.col; ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill(); }
 }
 // 視覺化聲音：畫面外框 + 控制角色「視線外」聲音方向的發光（螢幕空間；無音效的替代提示）
-function drawSoundEdges() {
-  const W = cv.width, H = cv.height;
-  ctx.save();
-  ctx.strokeStyle = `rgba(150,170,190,${CONFIG.soundEdge.frame})`; ctx.lineWidth = 2; ctx.strokeRect(1, 1, W - 2, H - 2);   // 常駐淡外框
-  const u = (controlledId != null && players[controlledId]) ? players[controlledId] : null;
-  if (u && (u.state === 'CONTROLLED' || u.state === 'EXTRACTING') && soundPings.length) {
-    const cx = W / 2, cy = H / 2;
-    ctx.globalCompositeOperation = 'lighter';
-    for (const s of soundPings) {
-      if (s.soft) continue;         // 「只是移動」的軟腳步不進邊框提示＝邊框留給會驚動的聲音、腳步交給世界漣漪
-      if (canSee(u, s)) continue;   // 控制角色看得到該方向＝不提示
-      const sp = w2s(s); let dx = sp.x - cx, dy = sp.y - cy; const len = Math.hypot(dx, dy); if (len < 1) continue; dx /= len; dy /= len;
-      const tx = dx > 0 ? (W - cx) / dx : dx < 0 ? -cx / dx : Infinity;   // 射線打到邊框
-      const ty = dy > 0 ? (H - cy) / dy : dy < 0 ? -cy / dy : Infinity;
-      const t = Math.min(tx, ty), ex = cx + dx * t, ey = cy + dy * t;
-      const a = clamp(s.life / s.max, 0, 1) * CONFIG.soundEdge.alpha, rad = s.r * (0.6 + 0.4 * a);
-      const g = ctx.createRadialGradient(ex, ey, 0, ex, ey, rad);
-      g.addColorStop(0, `rgba(${s.col},${a})`); g.addColorStop(1, `rgba(${s.col},0)`);
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(ex, ey, rad, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-  ctx.restore();
-}
 // 機密檔案掉落標記：畫在迷霧之上＝永遠可見（公平回收）；世界座標，由 draw() 套 applyCam 後呼叫
 function drawFileDrop() {
   if (!fileDrop) return;
@@ -6179,23 +6022,6 @@ function drawBullets() {
 function drawParticles() {
   for (const q of particles) { ctx.globalAlpha = Math.max(0, q.life / q.max); ctx.fillStyle = q.col; ctx.fillRect(q.x - 1.5, q.y - 1.5, 3, 3); }
   ctx.globalAlpha = 1;
-}
-// 聲音漣漪（世界空間）：把既有 soundPings 畫成「原地擴散、邊擴邊淡」的淡環＝每次發聲都看得到、且環的大小＝聲音傳多遠。
-// 和 soundEdge（畫面外框指向）併行；CONFIG.soundRipple.enabled 可關做 A/B 比較。近接/腳步/開火/陣亡各自帶自己的 ping 顏色。
-function drawSoundRipples() {
-  const C = CONFIG.soundRipple; if (!C || !C.enabled || !soundPings.length) return;
-  // 世界座標繪製（draw() 在迷霧之上再套一次 applyCam 後呼叫＝穿透迷霧、聽得到牆後）。半徑用世界單位、不 w2s/×cam.scale。
-  ctx.lineWidth = C.width;
-  const kn = knight();
-  for (const s of soundPings) {
-    const frac = clamp(1 - s.life / s.max, 0, 1);           // 0→1 隨壽命向外擴散
-    const rad = (s.hearR || s.r) * (0.15 + 0.85 * frac);    // 擴散到「真實傳播半徑」＝聲音能吵醒多遠的敵人
-    let a = C.alpha * (1 - frac);                            // 邊擴邊淡（敵我同一種樣式：實線、同淡度）
-    if (kn && C.hearRange) { const dd = dist(kn.pos, s); a *= clamp(1 - (dd - C.hearRange) / (C.hearRange * 0.6), 0, 1); }   // 聽覺範圍：近＝清楚（含牆後）、遠＝淡出（非全知）
-    if (a <= 0.004) continue;
-    ctx.strokeStyle = `rgba(${s.col},${a.toFixed(3)})`;
-    ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(1, rad), 0, Math.PI * 2); ctx.stroke();
-  }
 }
 /* ---- 近接可讀性：揮斬扇形 / 盾格弧 / 硬直標記（世界座標，draw() 已套 applyCam）----
    前搖＝暗色細弧「預告」揮擊範圍；判定窗＝亮色實心扇形（就是實際判定的形狀）；後搖＝淡出。 */
@@ -6407,17 +6233,9 @@ function drawPlayers() {
     if (low) { const a = 0.35 + 0.35 * Math.sin(simTime * 16); ctx.strokeStyle = `rgba(255,60,60,${a})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.pos.x, p.pos.y, p.radius + 8, 0, Math.PI * 2); ctx.stroke(); }
     if (controlled) { ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.pos.x, p.pos.y, p.radius + 5, 0, Math.PI * 2); ctx.stroke(); }
     drawUnitBody(p, hsl(p.hue, 55, controlled ? 62 : 48), controlled ? '#ffffff' : hsl(p.hue, 60, 75), controlled ? 3 : 2);
-    if (!squadRevealed && !controlled && p.state !== 'DEAD') {   // 靜默中：扈從還在守勢、只反擊已交戰的敵
-      ctx.fillStyle = 'rgba(150,190,255,0.9)'; ctx.font = 'bold 11px Consolas'; ctx.textAlign = 'center';
-      ctx.fillText('🤫', p.pos.x, p.pos.y - p.radius - 5); ctx.textAlign = 'left';
-    }
     if (p.hasFile) {   // 機密檔案攜帶者：頭頂金色資料夾標記（讓玩家隨時知道檔案在誰身上）
       ctx.fillStyle = 'rgba(255,210,90,0.97)'; ctx.font = 'bold 13px Consolas'; ctx.textAlign = 'center';
-      ctx.fillText('📁', p.pos.x, p.pos.y - p.radius - (!squadRevealed ? 18 : 6)); ctx.textAlign = 'left';
-    }
-    if (inConceal(p.pos)) {   // 我方在草叢內＝隱蔽中（虛線綠圈）
-      ctx.strokeStyle = 'rgba(120,220,140,0.8)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.arc(p.pos.x, p.pos.y, p.radius + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillText('📁', p.pos.x, p.pos.y - p.radius - 6); ctx.textAlign = 'left';
     }
   }
 }
@@ -6438,14 +6256,6 @@ function drawEnemies() {
       ctx.beginPath(); ctx.arc(e.pos.x, e.pos.y, e.radius + 6, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = `rgba(255,255,210,${0.6 + 0.4 * pul})`; ctx.font = 'bold 11px Consolas'; ctx.textAlign = 'center';
       ctx.fillText('✦', e.pos.x, e.pos.y - e.radius - 7); ctx.textAlign = 'left';
-    }
-    // 識別回饋（公平性）：未交戰但正在識別你 → 頭頂漸滿的黃→紅警示弧 + 驚嘆號
-    if (e.state !== 'ENGAGED' && e.detect > 0.001) {
-      const r = e.radius + 9, a0 = -Math.PI / 2 - 0.9, a1 = a0 + 1.8 * clamp(e.detect, 0, 1);
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(e.pos.x, e.pos.y, r, -Math.PI / 2 - 0.9, -Math.PI / 2 + 0.9); ctx.stroke();
-      ctx.strokeStyle = hsl(50 - 50 * e.detect, 95, 55); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(e.pos.x, e.pos.y, r, a0, a1); ctx.stroke();
-      ctx.fillStyle = hsl(50 - 50 * e.detect, 95, 60); ctx.font = 'bold 12px Consolas'; ctx.textAlign = 'center';
-      ctx.fillText(e.detect > 0.66 ? '！' : '?', e.pos.x, e.pos.y - r - 4); ctx.textAlign = 'left';
     }
   }
 }
@@ -6495,7 +6305,6 @@ function drawFog() {
       for (let i = 1; i < poly.length; i++) { const s = w2s(poly[i]); fctx.lineTo(s.x, s.y); }
       fctx.closePath(); fctx.fill();
     }
-    for (const e of enemies) if (!e.dead && e.revealT > 0) { const c = w2s(e.pos); fctx.beginPath(); fctx.arc(c.x, c.y, (e.radius + 28) * cam.scale, 0, Math.PI * 2); fctx.fill(); }   // 開火現形：在霧上挖出開火敵人（草叢內也露出）
   }
   fctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(fogCanvas, 0, 0);
