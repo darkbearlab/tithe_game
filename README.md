@@ -50,10 +50,19 @@
 改完**一定要跑** headless 驗證（承襲原版守則：逐幀跑遍所有場景的 `update()` + `draw()`，不要只在戰鬥跑）：
 
 ```bash
-node _check.js
+node _check.js              # 全部情境
+node _check.js combat       # 只跑名字含 "combat" 的
+node _check.js -v           # 失敗時印完整堆疊
 ```
 
-（`_check.js` 為本地暫存、已 gitignore，永不 `git add`。）
+作法：抽出 `index.html` 的 `<script>`，在 Node `vm` 裡跑，DOM / Canvas / localStorage 全用 stub；
+鍵盤滑鼠走**真正的事件處理器**（合成事件），所以輸入分支也涵蓋得到。
+每個場景跑固定幀數的 `update()` + `draw()`，任何例外即失敗。地圖是逐張各跑一遍的。
+
+流程：**改 → `node _check.js` 全綠 → 連跑 ×3 穩定 → commit**。
+
+> 和 Homeward 不同，`_check.js` 在這個 repo **有進版控**：
+> 這裡要對 `index.html` 做大規模手術，harness 必須跟著程式碼一起走。
 
 ## 狀態
 
