@@ -145,7 +145,8 @@ const CONFIG = {
      （若之後自動吸取讓袋子太大，把 kitTime 改成 base + 每件 N 秒即可，一行的事。） */
   descent: {
     kitTime: 30,     // 整備階段的秒數
-    vacuum: 0.85,    // 跳下去之前把地上剩的東西全部捲進來的演出長度
+    seq: { hold: 0.5, pull: 0.85, hold2: 0.5, sink: 0.45 },   // 跳下去那一段的四拍（見 descend 狀態機）
+    riseRate: 26,    // 下墜畫面上「往上飛」的粒子生成速率（顆/s）＝你正在往下掉
   },
   /* ── 層與房間（DESIGN.md §5.5）────────────────────────────────────────
      一層 rooms 間房，打完往下一層。房間目前是**手刻輪播**（pool 裡的地圖輪流用）——
@@ -2336,8 +2337,19 @@ let waveIdx = 0, waveTotal = 1;   // 這一房打到第幾波 / 總共幾波
 let wavePending = null;           // { at:{x,y}, t } ＝門已經亮了，t 秒後湧出
 let floorNo = 1, roomNo = 1;      // 第幾層 · 這層的第幾間房
 let roomBannerT = 0;              // 進房橫幅的剩餘秒數
-let vacuumT = 0;              // >0＝正在把地上的東西捲進來（按下「跳」之後、真的掉下去之前）
+/* 跳下去的節奏（使用者定案）：踩進洞口之後不是「唰一下就換幕」，而是一段有呼吸的序列
+     ① hold  —— 頓半秒（你踩到了，畫面先停一下）
+     ② pull  —— 地上剩的東西全部飛過來
+     ③ hold  —— 再頓半秒（吸乾淨了，最後看一眼這個房間）
+     ④ sink  —— 騎士的身體快速縮到 1px，然後才換幕
+   每一段都是可調的常數（CONFIG.descent.seq），因為這種節奏只能用眼睛調。 */
+let descend = null;           // { phase:'hold'|'pull'|'hold2'|'sink', t } ＝非 null 就是正在跳
+const descending = () => !!descend;
 let descentT = 0;             // 整備階段的剩餘秒數（只有 KIT 階段在跑）
+/* 下墜畫面的「往上飛」粒子（螢幕座標）：整個 DESCENT 階段都在跑。
+   這是唯一告訴玩家「你現在正在往下掉」的東西——沒有它，三選一和整備看起來
+   就只是兩個停在半空的選單。碎屑往上＝你在往下。 */
+let descentMotes = [];
 let descentPhase = null;      // null＝不在這個畫面 / 'REWARD' / 'KIT'
 let descentOffers = null;     // 三選一（全揭露）
 let descentBag = [];          // 這一房撿到的 + 剛選的獎勵。**離開這個畫面就沒了**（§6.2b）
@@ -2895,11 +2907,35 @@ function enterKitPhase() {
   descentMsg = '裝上或丟掉——袋子帶不到下一房。';
   if (!descentBag.length) descentLand();
 }
-// 整備倒數：歸零＝沒裝上的直接丟掉、自動落地（這就是限時的意思）
+/* 下墜畫面每幀：粒子（兩個階段都跑）＋ 整備倒數（只有 KIT 跑）。
+   注意這支不是從 update() 呼叫的——update 只跑 COMBAT，這裡掛在主迴圈上。 */
 function tickDescent(dt) {
-  if (scene !== 'DESCENT' || descentPhase !== 'KIT') return;
+  if (scene !== 'DESCENT') { if (descentMotes.length) descentMotes.length = 0; return; }
+  const D = CONFIG.descent;
+  // 生成：從畫面下緣冒出來，往上飛（速度/大小/亮度都抖一下，不然會像下雨的貼圖）
+  let n = D.riseRate * dt;
+  while (n > 0) {
+    if (n >= 1 || Math.random() < n) {
+      descentMotes.push({ x: Math.random() * cv.width, y: cv.height + 8,
+        v: 120 + Math.random() * 380, r: 0.8 + Math.random() * 2.2, a: 0.25 + Math.random() * 0.5,
+        hue: Math.random() < 0.25 ? '255,180,120' : '210,150,110' });
+    }
+    n -= 1;
+  }
+  for (let i = descentMotes.length - 1; i >= 0; i--) {
+    const m = descentMotes[i];
+    m.y -= m.v * dt;
+    if (m.y < -10) descentMotes.splice(i, 1);
+  }
+  if (descentPhase !== 'KIT') return;
   descentT -= dt;
   if (descentT <= 0) { descentT = 0; descentLand(); }
+}
+function drawDescentMotes() {
+  for (const m of descentMotes) {
+    ctx.fillStyle = `rgba(${m.hue},${m.a})`;
+    ctx.fillRect(m.x - m.r / 2, m.y - m.r * 2, m.r, m.r * 4);   // 拉長成短條＝速度感
+  }
 }
 // 把袋子裡的第 i 件裝到身上（改 roster；下一房 makePlayer 會照它重建）
 function descentEquip(i) {
@@ -4308,27 +4344,37 @@ function guardBreak(u, fromAng, by) {
    移掉「我是不是漏撿了什麼」這個焦慮，順便給落地一個視覺節拍。
    演出跑完才真的 endMission()。 */
 function startVacuum() {
-  if (!drops.length) { endMission(); return; }
-  vacuumT = CONFIG.descent.vacuum;
-  Sfx.play('pickup', knight() ? knight().pos : ENTRY);
+  if (descend) return;
+  descend = { phase: 'hold', t: CONFIG.descent.seq.hold };
+  const kn = knight(); if (kn) { kn.sinkScale = 1; kn.swing = null; kn.blocking = false; kn.blockT = null; }
 }
 function tickVacuum(dt) {
-  if (vacuumT <= 0) return;
-  const kn = knight();
-  vacuumT -= dt;
-  for (let i = drops.length - 1; i >= 0; i--) {
-    const d = drops[i];
-    if (!kn) { drops.splice(i, 1); continue; }
-    const dx = kn.pos.x - d.pos.x, dy = kn.pos.y - d.pos.y, L = Math.hypot(dx, dy) || 1;
-    const step = Math.max(280, L * 6) * dt;
-    if (L <= step) {   // 到手：進袋子（和走過去撿是同一份資料，強化不能掉）
-      backpack.push({ kind: d.kind, id: d.id, ammo: d.ammo, quality: d.quality, enh: (d.enh || []).slice() });
-      spawnPickup(d.pos); drops.splice(i, 1); continue;
+  if (!descend) return;
+  const S = CONFIG.descent.seq, kn = knight();
+  descend.t -= dt;
+  if (descend.phase === 'pull') {
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const d = drops[i];
+      if (!kn) { drops.splice(i, 1); continue; }
+      const dx = kn.pos.x - d.pos.x, dy = kn.pos.y - d.pos.y, L = Math.hypot(dx, dy) || 1;
+      const step = Math.max(280, L * 6) * dt;
+      if (L <= step) {   // 到手：進袋子（和走過去撿是同一份資料，強化不能掉）
+        backpack.push({ kind: d.kind, id: d.id, ammo: d.ammo, quality: d.quality, enh: (d.enh || []).slice() });
+        spawnPickup(d.pos); drops.splice(i, 1); continue;
+      }
+      d.pos.x += dx / L * step; d.pos.y += dy / L * step;
+      if (Math.random() < 0.3) particles.push(mkPart(d.pos, 60, 0.3, '#ffd27a'));
     }
-    d.pos.x += dx / L * step; d.pos.y += dy / L * step;
-    if (Math.random() < 0.3) particles.push(mkPart(d.pos, 60, 0.3, '#ffd27a'));
+    if (!drops.length) descend.t = Math.min(descend.t, 0);   // 提早吸完就提早進下一拍
+  } else if (descend.phase === 'sink' && kn) {
+    // 身體快速縮到 1px＝「掉進去了」。用比例而不是絕對值，才不會因為 radius 不同而不一致。
+    kn.sinkScale = Math.max(1 / Math.max(1, kn.radius), descend.t / Math.max(0.01, S.sink));
   }
-  if (vacuumT <= 0 || !drops.length) { vacuumT = 0; endMission(); }
+  if (descend.t > 0) return;
+  if (descend.phase === 'hold') { descend = { phase: 'pull', t: S.pull }; Sfx.play('pickup', kn ? kn.pos : ENTRY); }
+  else if (descend.phase === 'pull') { descend = { phase: 'hold2', t: S.hold2 }; }
+  else if (descend.phase === 'hold2') { descend = { phase: 'sink', t: S.sink }; }
+  else { descend = null; if (kn) kn.sinkScale = 1; endMission(); }
 }
 
 /* ── 波次 ─────────────────────────────────────────────────────────────
@@ -5840,6 +5886,7 @@ function update(dt) {
   if (cutscene && cutscene.lock) return;   // 演出鎖控制：只跑鏡頭/演出，不跑常規 sim
   /* 處決特寫：其餘的一切凍結（見 CONFIG.melee.exec.focusFreeze）。
      只推進處決動作本身與純視覺的東西——飄字/粒子/相機還要動，不然畫面看起來像當機。 */
+  if (descending()) { tickVacuum(dt); updateParticles(dt); updateFloaters(dt); return; }   // 跳下去的四拍：只跑序列與純視覺
   const execFocus = CONFIG.melee.exec.focusFreeze && knight() && knight().exec;
   if (execFocus) {
     const k = knight();
@@ -5952,7 +5999,6 @@ function update(dt) {
     }
   }
   tickWave(dt);
-  tickVacuum(dt);
   if (roomBannerT > 0) roomBannerT -= dt;
   tickExitPortal(dt);
 
@@ -5961,7 +6007,7 @@ function update(dt) {
   const kn = knight();
   if (!kn || !knightAlive()) endMission();
   else if (roomCleared && !exitPortal) endMission();                                  // 序章等不開洞的情境：沿用清場即結束
-  else if (exitPortalReady() && kn.state === 'CONTROLLED' && vacuumT <= 0) {
+  else if (exitPortalReady() && kn.state === 'CONTROLLED' && !descending()) {
     /* 站上洞口＝直接跳。**確認框拿掉了**：它當初存在是為了防「還沒撿完就踩進去」，
        但自動吸取（startVacuum）之後，地上的東西一件都不會留下——踩進去已經沒有任何損失，
        那個框就只剩摩擦。少一次確認，節奏也更順。 */
@@ -6665,6 +6711,14 @@ function drawPrisoners() {
 }
 function drawUnitBody(u, fill, ringColor, ringW) {
   const rec = u.recoil || 0, cx = u.pos.x - Math.cos(u.facing) * rec, cy = u.pos.y - Math.sin(u.facing) * rec;   // 後座：繪製往後彈（不動實際座標）
+  // 跳進洞裡的最後一拍：身體快速縮到 1px（只動繪製，實際 radius 不變）
+  if (u.sinkScale != null && u.sinkScale < 1) {
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(u.sinkScale, u.sinkScale); ctx.translate(-cx, -cy);
+    ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(cx, cy, u.radius, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = ringColor; ctx.lineWidth = ringW / Math.max(0.05, u.sinkScale); ctx.beginPath(); ctx.arc(cx, cy, u.radius, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+    return;
+  }
   // 朝向指示：我方＝綠色雷射線（外暈+亮芯）；敵人＝前方一個小點
   if (u.faction === 'player') {
     const ex = cx + Math.cos(u.facing) * (u.radius + 13), ey = cy + Math.sin(u.facing) * (u.radius + 13);
@@ -7835,6 +7889,7 @@ function drawDescent() {
   const g = ctx.createLinearGradient(0, 0, 0, cv.height);
   g.addColorStop(0, '#160d0a'); g.addColorStop(1, '#070506');
   ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
+  drawDescentMotes();   // 畫在背景之上、內容之下＝碎屑從版面後面往上竄
   ctx.textAlign = 'center';
   ctx.fillStyle = '#ffcd96'; ctx.font = 'bold 26px Consolas';
   ctx.fillText('下墜中', cv.width / 2, 74);

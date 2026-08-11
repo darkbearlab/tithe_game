@@ -156,7 +156,7 @@ const EPILOGUE = `
   get execCount() { return execCount; },
   get knight() { return knight(); },
   get exitPortal() { return exitPortal; },
-  get vacuumT() { return vacuumT; },
+  get descend() { return descend; },
   get floaters() { return floaters; },
   setScene(s) { scene = s; },
   forceMap(k) { forcedMap = k; },
@@ -225,7 +225,7 @@ const SCENARIOS = [
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
   // 一間房現在是**三波**（CONFIG.waves.perRoom），所以「打到開洞」需要的幀數比單波多得多。
-  { name: 'combat',          frames: 3300, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noStuckSwing, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat',          frames: 3600, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, descendSeqWorks, noStuckSwing, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI] },
   { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, wrathGainHappened, noStuckSwing, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
   { name: 'wrath',           frames: 240, enter: () => T.enterArena('melee'), poke: pokeWrath, invariants: [wrathRules] },
   { name: 'wrath-ult',       frames: 60,  enter: () => T.enterArena('melee'), poke: pokeUlt,   invariants: [ultimateWorks] },
@@ -346,7 +346,7 @@ function dashHappened() { return sawDash ? null : '整場沒有 dash 過——�
 let sawPortal = false, sawVacuum = false;
 function samplePortal() {
   if (!sawPortal && T.exitPortal && T.exitPortal.open) sawPortal = true;
-  if (!sawVacuum && T.vacuumT > 0) sawVacuum = true;
+  if (T.descend && T.descend.phase === 'pull') sawVacuum = true;   // 「吸取」那一拍真的跑過
 }
 function portalRun() {
   if (!sawPortal) return '清場之後沒有開出口的洞';
@@ -543,6 +543,20 @@ function pokeDescent(i) {
   if (i === 10) key('keydown', 'Enter');                  // 落地
   if (i === 12) { descProbe.sceneEnd = T.scene; descProbe.bagEnd = T.descentBag.length; }
 }
+/* 跳下去那一段是四拍（頓 → 吸 → 頓 → 縮），少一拍都會讓節奏塌掉而且沒有任何紅字。
+   這條釘住「四拍都走過」，以及「縮到最後身體真的接近 0」。 */
+const seqProbe = { seen: {}, minScale: 1 };
+function sampleSeq() {
+  const d = T.descend; if (d) seqProbe.seen[d.phase] = true;
+  const k = T.knight;
+  if (k && k.sinkScale != null && k.sinkScale < seqProbe.minScale) seqProbe.minScale = k.sinkScale;
+}
+function descendSeqWorks() {
+  for (const ph of ['hold', 'pull', 'hold2', 'sink']) if (!seqProbe.seen[ph]) return `跳下去的序列少了「${ph}」這一拍`;
+  if (seqProbe.minScale > 0.2) return `身體只縮到 ${seqProbe.minScale.toFixed(2)}，應該縮到接近 0`;
+  return null;
+}
+
 function descentFlowWorks() {
   const P = descProbe;
   if (P.phase0 !== 'REWARD') return `進來的時候不是三選一階段（${P.phase0}）——順序應該是先選獎勵`;
@@ -803,6 +817,7 @@ for (const s of list) {
     sawGuardBreak = false; sawWaveWarn = false; maxWaveIdx = 0;
     stuckSwing = null; swingStarts = 0; prevSwinging = false;
     maxCrystal = 0; sawCrystal = false;
+    seqProbe.seen = {}; seqProbe.minScale = 1;
     toProbe.entered = toProbe.ticked = false; toProbe.sceneEnd = null; toProbe.bagEnd = -1;
     msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
     dropProbe.got = null;
@@ -819,7 +834,7 @@ for (const s of list) {
       T.tickDescent(FIXED);   // 下墜整備的倒數不在 update 裡（那只跑 COMBAT），主迴圈另外推
       T.draw();
       T.drawSeedTag();
-      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves(); sampleSwing(); sampleCrystal();
+      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves(); sampleSwing(); sampleCrystal(); sampleSeq();
     }
     releaseKeys();
     for (const inv of (s.invariants || [])) {
