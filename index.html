@@ -5262,6 +5262,10 @@ cv.addEventListener('mousedown', e => {
     if (e.button === 0) mouse.down = true;
     return;
   }
+  if (scene === 'COMBAT' && exitPrompt) {   // 洞口確認框：右鍵＝取消（Esc 會解除 pointer lock，不能用）
+    if (e.button === 2) { exitPrompt = false; if (exitPortal) exitPortal.declined = true; }
+    return;
+  }
   if (e.button === 0) mouse.down = true;                                  // 左鍵開火
   else if (e.button === 2) { if (CONFIG.scope.toggle) scopeToggled = !scopeToggled; else scopeHeld = true; }   // 右鍵＝望遠/偵察（按住；技能改空白鍵）
 });
@@ -5344,11 +5348,13 @@ window.addEventListener('keydown', e => {
     if (k >= '1' && k <= '9') { const id = oathPickList[parseInt(k, 10) - 1]; if (id) toggleOathEquip(id); return; }
     return;
   }
-  // 洞口確認框：擋在所有戰鬥熱鍵之前。**刻意不收空白鍵**——空白是 dash，
-  // 用它確認等於把「誤觸」從走路換到按鍵上，正是這個框要防的事。
+  /* 洞口確認框：擋在所有戰鬥熱鍵之前。
+     **刻意不收空白鍵**——空白是 dash，用它確認等於把「誤觸」從走路換到按鍵上，正是這個框要防的事。
+     **刻意不收 Esc**——瀏覽器會在 Esc 解除 pointer lock，畫面會直接掉回「未鎖定」的黑幕，
+     看起來像當機。取消一律用 Backspace（或右鍵）。 */
   if (scene === 'COMBAT' && exitPrompt) {
     if (k === 'enter') { exitPrompt = false; endMission(); e.preventDefault(); return; }
-    if (k === 'escape' || k === 'backspace') { exitPrompt = false; if (exitPortal) exitPortal.declined = true; e.preventDefault(); return; }
+    if (k === 'backspace') { exitPrompt = false; if (exitPortal) exitPortal.declined = true; e.preventDefault(); return; }
     e.preventDefault(); return;   // 框開著的時候吞掉其餘輸入
   }
   if (scene === 'RUNEND' || scene === 'RUNWIN') { if (k === 'r') goMenu(); return; }
@@ -6523,7 +6529,7 @@ function drawHUD() {
     ctx.fillText('往下一層。這一房不會再回來了。', cv.width / 2, y + 70);
     ctx.font = 'bold 14px Consolas';
     ctx.fillStyle = '#ffd27a'; ctx.fillText('[Enter] 跳', cv.width / 2 - 82, y + 106);
-    ctx.fillStyle = '#9fb3c8'; ctx.fillText('[Esc] 還沒', cv.width / 2 + 82, y + 106);
+    ctx.fillStyle = '#9fb3c8'; ctx.fillText('[Backspace/右鍵] 還沒', cv.width / 2 + 92, y + 106);
     ctx.textAlign = 'left';
     return;   // 框開著就不畫其餘 HUD＝畫面乾淨、注意力在這一個決定上
   }
