@@ -140,8 +140,9 @@ const EPILOGUE = `
   get enemies() { return enemies; },
   get roadmap() { return roadmap; },
   get roster() { return roster; },
-  CONFIG, WEAPONS, ARENA_MODES, MAPS, ORIGIN_IDS, ENCOUNTER_IDS,
+  CONFIG, WEAPONS, ENEMY_TYPES, ARENA_MODES, MAPS, ORIGIN_IDS, ENCOUNTER_IDS,
   ARENA_WEAPON_IDS, ARENA_OFF_IDS, arenaSetWeapon, arenaSetOff,
+  get drops() { return drops; }, get backpack() { return backpack; }, updateDrops,
   update, draw, drawSeedTag,
   goMenu, initRun, chooseOrigin, departFromOrigin, enterOrigin, enterOathLoadout,
   selectNode, startMission, endMission, advanceNode,
@@ -226,6 +227,7 @@ const SCENARIOS = [
   { name: 'guard-break',     frames: 300, enter: () => T.enterArena('melee'), poke: pokeGuard, invariants: [guardBreakWorks, noPlayerPoise] },
   { name: 'moveset-2h',      frames: 200, enter: () => T.enterArena('melee'), poke: pokeTwoHand, invariants: [twoHandHeavyWorks] },
   { name: 'moveset-dual',    frames: 200, enter: () => T.enterArena('melee'), poke: pokeDual,    invariants: [dualOffhandWorks] },
+  { name: 'drop-enh',        frames: 30,  enter: bootCombat, poke: pokeDrop, invariants: [dropKeepsEnh, executionWindowExists] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
@@ -388,6 +390,61 @@ function oneHandSet() {
 
 function noPlayerPoise() {
   for (const p of (T.players || [])) if (p && p.poiseMax) return `騎士帶著體幹上限 ${p.poiseMax}——體幹只有敵人該有`;
+  return null;
+}
+
+/* **處決窗必須開得出來**——這是整個資源迴圈的存亡條件，不是平衡的細節。
+   處決是唯一的回血手段（DESIGN §2.4），而處決只能對踉蹌中的敵人做。
+   所以對每一個「一刀砍不死」的武器×敵人組合，**破體幹必須嚴格早於打死**；
+   否則敵人會在踉蹌之前先流血流死，窗根本不會出現，push-forward 就斷了。
+
+   這條是靜態算的（期望值，不跑模擬）：
+     每刀傷害 = damage × dmgMul × (1−flatResist) × (1−整發彈開機率)
+     每刀體幹 = poiseDmg × (被彈開時 ×armorPoiseMul 的期望加成)
+   一刀就砍死的組合（nKill===1）跳過——那不需要窗，秒殺本身就是回報。
+   這是玩測前唯一能自動守住的那一條；手感仍然要玩過才知道。 */
+function executionWindowExists() {
+  const C = T.CONFIG;
+  if (!T.ENEMY_TYPES || !T.WEAPONS) return 'ENEMY_TYPES/WEAPONS 沒有從沙箱丟出來，這條探針量不到東西';
+  const bad = [];
+  for (const id of Object.keys(T.ENEMY_TYPES)) {
+    const E = T.ENEMY_TYPES[id];
+    if (E.dummy) continue;
+    const hp = E.hp, poise = E.poise || C.melee.poiseDefault, armor = E.armor || 0;
+    for (const wid of Object.keys(T.WEAPONS)) {
+      const W = T.WEAPONS[wid];
+      if (!W.melee || !W.moves) continue;
+      for (const mk of Object.keys(W.moves)) {
+        const M = W.moves[mk];
+        const resist = Math.min(armor * C.armor.flatResist * (1 - W.pierce * C.armor.pierceBypass), C.armor.resistCap);
+        const blockP = armor * (1 - W.pierce);
+        const dmg = W.damage * (M.dmgMul || 1) * (1 - resist) * (1 - blockP);
+        const pd = M.poiseDmg * (1 + blockP * (C.melee.armorPoiseMul - 1));
+        const nKill = Math.ceil(hp / Math.max(0.01, dmg)), nBreak = Math.ceil(poise / Math.max(0.01, pd));
+        if (nKill >= 2 && nBreak >= nKill) bad.push(`${id} vs ${wid}/${mk}（${nBreak} 刀破幹 ≥ ${nKill} 刀打死）`);
+      }
+    }
+  }
+  return bad.length ? `這些組合開不出處決窗：${bad.slice(0, 4).join('、')}${bad.length > 4 ? ` …共 ${bad.length} 組` : ''}` : null;
+}
+
+/* 撿起來的武器要**帶著強化**。spawnDrop 帶上了 quality/enh，撿取那一步若只抄 {kind,id,ammo}
+   就會靜靜地把它們洗掉——而且看起來一切正常（武器還在，只是變白板）。
+   TITHE 以掉落為成長主軸，所以這條值得一個探針而不是一句註解。 */
+const dropProbe = { got: null };
+function pokeDrop(i) {
+  const k = T.knight; if (!k) return;
+  if (i === 2) {
+    T.drops.length = 0; T.backpack.length = 0;
+    T.drops.push({ pos: { x: k.pos.x, y: k.pos.y }, kind: 'weapon', id: 'sword', ammo: 0, quality: 4, enh: [{ kind: 'sharp', charges: 1, value: 7 }] });
+  }
+  if (i === 6 && T.backpack.length) dropProbe.got = T.backpack[0];
+}
+function dropKeepsEnh() {
+  const g = dropProbe.got;
+  if (!g) return '掉落物沒有被撿起來，這條探針量不到東西';
+  if (g.quality !== 4) return `撿起來之後 quality 變成 ${g.quality}，應該是 4`;
+  if (!g.enh || !g.enh.length || g.enh[0].value !== 7) return '撿起來之後詞條(enh)不見了';
   return null;
 }
 
@@ -566,6 +623,7 @@ for (const s of list) {
     ultProbe.before = ultProbe.max = ultProbe.after = null; ultProbe.hit = false;
     sawGuardBreak = false;
     msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
+    dropProbe.got = null;
     s.enter();
     grabPointer();
     stage = 'loop';

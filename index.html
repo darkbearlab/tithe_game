@@ -1078,16 +1078,16 @@ function giveItemStack(id) { warehouse.push({ kind: 'item', id, count: ITEM_STAC
    ===================================================================== */
 const UNIT_CLASSES = {
   knight:      { name: '騎士',     hp: CONFIG.unitHp, moveSpeed: CONFIG.moveSpeed, radius: CONFIG.unitRadius },   // 英雄：唯一管理怒火、且**唯一沒有體幹**的單位
-  levy:        { name: '農兵',     hp: 45,            poise: 25,  moveSpeed: CONFIG.enemy.moveSpeed, radius: CONFIG.unitRadius },
-  footman:     { name: '徒步兵',   hp: CONFIG.enemy.hp, poise: 45, moveSpeed: 105, radius: CONFIG.unitRadius },
-  spearman:    { name: '槍兵',     hp: CONFIG.enemy.hp, poise: 55, moveSpeed: 95,  radius: CONFIG.unitRadius },
-  shieldman:   { name: '盾兵',     hp: CONFIG.enemy.hp, poise: 60, moveSpeed: 90,  radius: CONFIG.unitRadius },
-  wolf:        { name: '戰狼',     hp: 45,            poise: 25,  moveSpeed: 165, radius: 9,  turn: 560 },   // 轉得快＝繞不掉
-  archer:      { name: '弓手',     hp: 60,            poise: 35,  moveSpeed: 95,  radius: CONFIG.unitRadius },
-  arbalest:    { name: '弩手',     hp: 70,            poise: 50,  moveSpeed: 70,  radius: CONFIG.unitRadius, turn: 420 },
-  manatarms:   { name: '披甲士',   hp: CONFIG.enemy.hp, poise: 110, moveSpeed: 70, radius: 14, armor: CONFIG.armor.blockChance, turn: 360 },   // 笨重＝繞得掉
-  serjeant:    { name: '軍士',     hp: CONFIG.enemy.hp, poise: 110, moveSpeed: 85, radius: 14, armor: CONFIG.armor.blockChance, turn: 380 },
-  civilian:    { name: '平民',     hp: 30,            poise: 20,  moveSpeed: 95,  radius: 11 },
+  levy:        { name: '農兵',     hp: 45,            poise: 18,  moveSpeed: CONFIG.enemy.moveSpeed, radius: CONFIG.unitRadius },
+  footman:     { name: '徒步兵',   hp: CONFIG.enemy.hp, poise: 30, moveSpeed: 105, radius: CONFIG.unitRadius },
+  spearman:    { name: '槍兵',     hp: CONFIG.enemy.hp, poise: 32, moveSpeed: 95,  radius: CONFIG.unitRadius },
+  shieldman:   { name: '盾兵',     hp: CONFIG.enemy.hp, poise: 34, moveSpeed: 90,  radius: CONFIG.unitRadius },
+  wolf:        { name: '戰狼',     hp: 45,            poise: 18,  moveSpeed: 165, radius: 9,  turn: 560 },   // 轉得快＝繞不掉
+  archer:      { name: '弓手',     hp: 60,            poise: 18,  moveSpeed: 95,  radius: CONFIG.unitRadius },
+  arbalest:    { name: '弩手',     hp: 70,            poise: 32,  moveSpeed: 70,  radius: CONFIG.unitRadius, turn: 420 },
+  manatarms:   { name: '披甲士',   hp: CONFIG.enemy.hp, poise: 44, moveSpeed: 70, radius: 14, armor: CONFIG.armor.blockChance, turn: 360 },   // 笨重＝繞得掉
+  serjeant:    { name: '軍士',     hp: CONFIG.enemy.hp, poise: 44, moveSpeed: 85, radius: 14, armor: CONFIG.armor.blockChance, turn: 380 },
+  civilian:    { name: '平民',     hp: 30,            poise: 12,  moveSpeed: 95,  radius: 11 },
   dummy:       { name: '訓練假人', hp: 400,           poise: 70,  moveSpeed: 0,   radius: 13 },
   dummy_armor: { name: '披甲假人', hp: 400,           poise: 130, moveSpeed: 0,   radius: 15, armor: CONFIG.armor.blockChance },
 };
@@ -1122,7 +1122,18 @@ function spdOf(u) {
    ===================================================================== */
 const enemyType = (cls, role) => Object.assign({ cls }, UNIT_CLASSES[cls], role);
 const ENEMY_TYPES = {
-  // poise＝體幹上限（未填＝CONFIG.melee 的預設）。雜兵低（兩三下就破）、重裝高（要正經對付）。
+  /* poise＝體幹上限（未填＝CONFIG.melee 的預設）。
+     **這組數字有一條硬性約束**（_check.js 的 executionWindowExists 守著）：
+     對每一個「打不死於一刀」的武器×敵人組合，**破體幹要嚴格早於打死**——
+     否則敵人會在踉蹌之前就先流血流死，處決窗根本不會出現，
+     而處決是唯一的回血手段（DESIGN §2.4），迴圈就接不起來。
+     實測過：舊數值下 48 個組合裡有 34 個開不出處決窗（雜兵的 HP≈傷害×2、體幹卻要兩三刀）。
+     修正方向照 §2.8 推論 3——**降體幹，不是加血**：威脅該來自傷害與速度，不是血條長度。
+     重裝的體幹看起來偏低（44 vs 徒步兵 30），但那是因為**armorPoiseMul 才是他們的體幹**：
+     砍不進去的那一擊體幹傷害 ×1.7，所以對非破甲武器他們實際上很耐打。
+     真正吃緊的是**完全破甲**的武器（石中劍 pierce 1.0）——它換到傷害就換不到震盪，
+     那是它該有的取捨，但體幹上限得低到讓它仍然開得出窗。
+     ⚠️ 這組數字只保證迴圈**打得開**，手感還沒玩測過。 */
   /* ── 中世紀正規 key（Phase 2；**新地圖只能用這一組**）──────────────────
      舊的原版 key（grunt / dog / heavy_lmg / heavy_shot / civ）改由下面的 LEGACY_ENEMY_ALIAS 對照過來，
      只為了讓既有手刻地圖繼續能跑；`ENEMY_TYPE_IDS` 不含它們＝編輯器/新內容選不到，會自然 phase out。
@@ -4736,7 +4747,10 @@ function updateDrops() {
   const u = players[controlledId]; if (!u || u.state !== 'CONTROLLED') return;
   for (let i = drops.length - 1; i >= 0; i--) {
     if (dist(u.pos, drops[i].pos) <= CONFIG.pickupRadius) {
-      const d = drops[i]; backpack.push({ kind: d.kind, id: d.id, ammo: d.ammo });
+      // **quality / enh 一定要跟著走**：spawnDrop 帶上了強化，這裡若只抄 {kind,id,ammo}，
+      // 撿起來的武器精良度與詞條會歸零（下游 enhSummary/effWeapon 都在讀它們）。
+      // TITHE 以掉落為成長主軸，這條掉了整個 §6 就空了。
+      const d = drops[i]; backpack.push({ kind: d.kind, id: d.id, ammo: d.ammo, quality: d.quality, enh: (d.enh || []).slice() });
       spawnPickup(d.pos); drops.splice(i, 1);
     }
   }
