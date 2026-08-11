@@ -479,7 +479,8 @@ function crystalStacks() {
 function freeSlotsAreGeneric() {
   const k = T.knight; if (!k || !k.slots) return '沒抓到騎士的槽位';
   const free = k.slots.filter(sl => sl && sl.kind === 'free');
-  if (free.length < 2) return `只有 ${free.length} 個自由位`;
+  // 四格，對應數字鍵 1~4。舊版是 base 2 + meta 解鎖，整備畫面因此只列得出兩格。
+  if (free.length !== 4) return `有 ${free.length} 個自由位，應該是 4 個（對應數字鍵 1~4）`;
   if (free[0].type !== 'ability' || free[0].id !== 'firebolt') return `第 1 個自由位是 ${free[0].type}/${free[0].id}，應該是習得 firebolt——自由位還是分種類的`;
   if (free[1].type !== 'item' || free[1].id !== 'tonic') return `第 2 個自由位是 ${free[1].type}/${free[1].id}，應該是道具 tonic——自由位還是分種類的`;
   return null;

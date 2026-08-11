@@ -749,7 +749,8 @@ function applyRelicHooks() {    // 重掛（撿到/失去聖物後呼叫）
 CONFIG.oath = { baseSlots: 2, plunderHonor: 0.1, vengeanceBuffT: 4, vengeanceMove: 1.15, vengeanceFire: 1.15 };   // 誓約系統參數（自由槽基礎數、各自選誓約的數值）
 // 自由位（道具/習得載具）數：騎士基礎 2、可解鎖到 max。引擎支援任意數＝要再多改 max 即可。
 // slot 0/1＝舊 itemId/abilityId（不動）；slot 2+＝roster 的 freeExtra[]（通用載具）。只有騎士的數量會變，扈從恆 base。
-CONFIG.freeSlots = { base: 2, max: 4 };
+CONFIG.freeSlots = { base: 4, max: 4 };   // **四格，對應數字鍵 1~4**（舊版 base 2、要靠 meta 升級解鎖到 4——
+                                         // 而 §8 說 meta 只有裝備解鎖與不同騎士兩條軸，數值升級不該存在）
 /* 誓約（OATHS）— 可裝備的被動 build 層（詳見 OATHS.md）。引擎 + 綁定誓約 + 自選誓約池：
    每位騎士由出身綁定 1 個常駐誓約（不可卸）＝本質區分不同騎士。效果全走 `mods(k)`＝開局改騎士數值/旋鈕
    （u.weapon 是 WEAPONS 共用參照，絕不可改，一律用 per-unit 旋鈕：parryWinMul/reachMul/knockMul/
@@ -1071,7 +1072,6 @@ const UPGRADES = [
   { id: 'honor',      name: '榮光', desc: '榮譽獲得 +15% / 級',     per: 0.15, max: 4, cost: 60 },
   { id: 'deathSave',  name: '不屈', desc: '瀕死鎖 1 血 + 無敵 1.2s / 級（每 run 一次）', per: 1.2, max: 3, cost: 120 },
   { id: 'oathSlots',  name: '誓約', desc: '自由誓約槽 +1 / 級（基礎 2 → 最多 5）', per: 1, max: 3, cost: 70 },
-  { id: 'freeSlots',  name: '行囊', desc: '戰鬥自由位 +1 / 級（基礎 2 → 最多 4，放道具/習得）', per: 1, max: 2, cost: 80 },
 ];
 const upgDef = (id) => UPGRADES.find(u => u.id === id);
 const upgLevel = (id) => (meta.upgrades && meta.upgrades[id]) || 0;
@@ -4199,8 +4199,7 @@ function drawFloaters() {
    ===================================================================== */
 const SLOT_COUNT = 1 + CONFIG.freeSlots.max;   // 索引上界（0＝手部 set，1..max＝自由位）
 // 騎士的自由位數＝基礎 + 已解鎖（meta 升級「行囊」；日後也可綁誓約）。扈從恆 base（AI 不管理資源）。
-const knightFreeSlots = () => clamp(CONFIG.freeSlots.base + upgLevel('freeSlots'), CONFIG.freeSlots.base, CONFIG.freeSlots.max);
-const memberFreeSlots = (i) => (i === KNIGHT_ID ? knightFreeSlots() : CONFIG.freeSlots.base);
+const memberFreeSlots = () => CONFIG.freeSlots.base;   // 一律四格；不再有「用 meta 解鎖格數」這回事
 const setOf = (u, i) => (u.slots && u.slots[i] && u.slots[i].kind === 'hands') ? u.slots[i] : null;
 const activeSet = (u) => setOf(u, 0);   // 手部 set 只有一組
 // 副手拿的是盾嗎？（＝能不能按住右鍵格擋）
