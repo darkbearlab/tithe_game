@@ -228,6 +228,7 @@ const SCENARIOS = [
   { name: 'moveset-2h',      frames: 200, enter: () => T.enterArena('melee'), poke: pokeTwoHand, invariants: [twoHandHeavyWorks] },
   { name: 'moveset-dual',    frames: 200, enter: () => T.enterArena('melee'), poke: pokeDual,    invariants: [dualOffhandWorks] },
   { name: 'drop-enh',        frames: 30,  enter: bootCombat, poke: pokeDrop, invariants: [dropKeepsEnh, executionWindowExists] },
+  { name: 'room-awake',      frames: 2,   enter: bootCombat, poke: pokeAwake, invariants: [allAwakeOnEntry] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
@@ -391,6 +392,25 @@ function oneHandSet() {
 function noPlayerPoise() {
   for (const p of (T.players || [])) if (p && p.poiseMax) return `騎士帶著體幹上限 ${p.poiseMax}——體幹只有敵人該有`;
   return null;
+}
+
+/* 進房＝全員醒著（DESIGN.md §5.1）。房間是封閉的、上了鎖、已經被驚動的——
+   「繞過視錐把整房走完而不開打」是潛行系統（C3 已拆）留下的殘影，和 push-forward 相反。
+   ⚠️ 這條探針是踩過坑才加的：第一版寫成 `e.faction !== 'foe'`，但敵人的陣營字串是 `'enemy'`，
+   於是整段迴圈一個人都沒叫醒——測試全綠、遊戲照跑、功能完全沒生效。 */
+/* ⚠️ 一定要在**第一次 update 之前**取樣：C3 之後敵人「看到就交戰」，跑個兩幀
+   視線內的敵人自己就 ENGAGED 了，量到的會是視線而不是這條規則（第一版就是這樣假綠的）。
+   poke 在 update 之前呼叫，所以 i===0 那一幀就是 startMission 剛結束的狀態。 */
+const awakeProbe = { total: 0, idle: 0, sampled: false };
+function pokeAwake(i) {
+  if (i !== 0) return;
+  const es = (T.enemies || []).filter(e => !e.dead && e.faction === 'enemy' && !e.introFrozen);
+  awakeProbe.sampled = true; awakeProbe.total = es.length; awakeProbe.idle = es.filter(e => e.state === 'IDLE').length;
+}
+function allAwakeOnEntry() {
+  if (!awakeProbe.sampled) return '沒有取樣到，探針沒接上';
+  if (!awakeProbe.total) return '這張圖沒有 enemy 陣營的敵人，量不到東西';
+  return awakeProbe.idle ? `進房那一刻還有 ${awakeProbe.idle}/${awakeProbe.total} 隻敵人是 IDLE——全員 ENGAGED 沒生效` : null;
 }
 
 /* **處決窗必須開得出來**——這是整個資源迴圈的存亡條件，不是平衡的細節。
@@ -624,6 +644,7 @@ for (const s of list) {
     sawGuardBreak = false;
     msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
     dropProbe.got = null;
+    awakeProbe.sampled = false; awakeProbe.total = awakeProbe.idle = 0;
     s.enter();
     grabPointer();
     stage = 'loop';

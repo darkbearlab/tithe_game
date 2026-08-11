@@ -2697,6 +2697,16 @@ function startMission() {
     if (!MAP.eventMap) for (let k = 0; k < missionIndex; k++) { const sp = MAP.enemySpawns[k % MAP.enemySpawns.length]; enemies.push(makeEnemy(sp.nodeId, 'rusher')); }   // 事件地圖不加難度遞增兵
   }
   if (pendingRescueKnight) { injectKnightRescue(); pendingRescueKnight = false; }   // B面「救援落難騎士」：注入接觸點 + 圍攻他的劫掠隊（一次性）
+  /* **進房＝全員醒著**（DESIGN.md §5.1／§5.2）。你踏進的是一個封閉、上了鎖、已經被驚動的房間，
+     不是一座還沒發現你的營地——潛行在 C3 就整套拆了，「繞過視錐」是那套系統留下的殘影。
+     留著它的後果是可以貼著牆走完整房而不開打，那和 push-forward 是相反的。
+     序章的腳本化敵兵（introFrozen）例外：它要等文字卡結束才動。 */
+  for (const e of enemies) {
+    if (e.introFrozen || e.faction !== 'enemy') continue;   // 第三方陣營（riot 圖的互毆）不叫醒＝那不是衝著你來的
+    e.state = 'ENGAGED';
+    e.lastSeenPos = { x: players[KNIGHT_ID].pos.x, y: players[KNIGHT_ID].pos.y };
+    e.lastSeenT = 0;
+  }
   simTime = 0; roomCleared = false;
   deadCount = 0; result = null;
   scene = 'COMBAT';
