@@ -218,8 +218,11 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noMorale, noStealth, noTacticalAI] },
-  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, wrathGainHappened, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
+  { name: 'wrath',           frames: 240, enter: () => T.enterArena('melee'), poke: pokeWrath, invariants: [wrathRules] },
+  { name: 'wrath-ult',       frames: 60,  enter: () => T.enterArena('melee'), poke: pokeUlt,   invariants: [ultimateWorks] },
+  { name: 'guard-break',     frames: 300, enter: () => T.enterArena('melee'), poke: pokeGuard, invariants: [guardBreakWorks, noPlayerPoise] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
@@ -242,7 +245,7 @@ for (const k of Object.keys(T.MAPS)) {
   SCENARIOS.push({
     name: 'map-' + k, frames: 240,
     enter: () => { bootCampaignToMap(); T.forceMap(k); T.startMission(); },
-    poke: pokeCombat, invariants: [soloKnight, noMorale, noStealth, noTacticalAI],
+    poke: pokeCombat, invariants: [soloKnight, noPlayerPoise, noMorale, noStealth, noTacticalAI],
   });
 }
 
@@ -327,6 +330,91 @@ function portalRun() {
 function executionHappened() { return sawExec ? null : '整場沒有觸發過處決——F 鍵的處決路徑可能斷了'; }
 function floatersHappened() { return sawFloater ? null : '整場沒有出現過傷害飄字'; }
 
+/* D1 怒火：三條規則各自要有證據，不能只靠「有跑不炸」。
+   ① 開場滿 ② 攻擊會回怒 ③ 不隨時間回、只隨時間退（且只在還有活敵人時退）
+   ③ 用一個**完全不輸入**的情境直接量：把怒火壓到 40，放著不動 2 秒，
+     它必須明顯掉下去、而且絕不回頭往上。這是整個資源設計的成敗點（DESIGN §2.2），
+     所以值得一個專屬情境，而不是塞在打得亂七八糟的 pokeCombat 裡。 */
+const wrathProbe = { start: null, max: null, mark: null, after: null, foes: false, died: false };
+function pokeWrath(i) {
+  const k = T.knight; if (!k) return;
+  if (i === 0) { wrathProbe.start = k.wrath; wrathProbe.max = k.wrathMax; }
+  if (i === 60) { k.wrath = 40; wrathProbe.mark = 40; }
+  if (i > 60) {
+    if (k.state === 'DEAD') wrathProbe.died = true;
+    wrathProbe.after = k.wrath;
+    if ((T.enemies || []).some(e => !e.dead)) wrathProbe.foes = true;
+  }
+}
+function wrathRules() {
+  const P = wrathProbe;
+  if (P.start == null || !P.max) return '沒抓到騎士的怒火欄位';
+  if (P.start < P.max - 0.001) return `開場怒火 ${P.start} 不是滿的（${P.max}）——DESIGN §2.2 ①`;
+  if (P.died) return '騎士在探針期間陣亡，量到的是重置後的值（縮短情境或調敵人）';
+  if (!P.foes) return '探針期間場上沒有活敵人，衰退本來就該凍結——這場量不到東西';
+  if (P.after == null) return '沒抓到探針結束時的怒火';
+  if (P.after > P.mark + 0.001) return `放著不動 2 秒怒火從 ${P.mark} 漲到 ${P.after}——怒火不該隨時間回復`;
+  if (P.after > P.mark - 2) return `放著不動 2 秒怒火只從 ${P.mark} 掉到 ${P.after}——戰鬥中的衰退沒在跑`;
+  return null;
+}
+/* **騎士沒有體幹**（使用者定案）。體幹只有一個工作：把敵人推進踉蹌開處決窗，
+   它是進攻的計量器，不是防禦的計量器。這條擋的是「因為想要多一點深度」而把騎士那半加回來。 */
+function noPlayerPoise() {
+  for (const p of (T.players || [])) if (p && p.poiseMax) return `騎士帶著體幹上限 ${p.poiseMax}——體幹只有敵人該有`;
+  return null;
+}
+
+/* 破防：騎士唯一會被打進硬直的途徑（舉盾但怒火付不出這一擊）。
+   它從 breakPoise 拆出來變成獨立的 guardBreak()，所以需要一條自己的探針——
+   把怒火按在 0、舉著盾站在敵人刀口下，硬直就一定要發生。 */
+let sawGuardBreak = false;
+function pokeGuard(i) {
+  const k = T.knight; if (!k) return;
+  dragFoeToBlade();                 // 敵人釘在刀口前＝牠會還手
+  k.wrath = 0;                      // 永遠付不起這一擊的格擋費
+  if (i === 5) mouseEv('mousedown', 2);   // 舉盾，之後一直按著
+  if (k.guardBreakFxT > 0) sawGuardBreak = true;
+}
+function guardBreakWorks() {
+  const k = T.knight;
+  if (!k) return '沒抓到騎士';
+  if (!shieldEquipped(k)) return '試作場預設副手不是盾，這條探針量到的不是格擋（改 arenaOffIdx 或換情境）';
+  return sawGuardBreak ? null : '怒火 0 舉盾挨打 5 秒都沒破防——guardBreak 沒接上';
+}
+const shieldEquipped = (k) => !!(k.offId && k.offId !== 'dagger');
+
+/* 大絕招「聖怒」：怒火滿 → 清空換一發全場踉蹌。這條路徑在 Homeward 空了很久
+   （useOathSkill 一直 return false），現在它是怒火唯一的大額出口，值得一條探針釘住。 */
+const ultProbe = { before: null, max: null, after: null, hit: false };
+function pokeUlt(i) {
+  const k = T.knight; if (!k) return;
+  if (i === 0) { ultProbe.before = k.wrath; ultProbe.max = k.wrathMax; }   // 開場那一幀才是「滿的」，之後每幀都在衰退
+  if (i < 3) dragFoeToBlade();                       // 把敵人拖進大絕招半徑，不然這一發打到空氣
+  if (i === 3) { key('keydown', 'q'); key('keyup', 'q'); }
+  if (i === 5) {
+    ultProbe.after = k.wrath;
+    ultProbe.hit = (T.enemies || []).some(e => e.dead || (e.staggerT || 0) > 0);
+  }
+}
+function ultimateWorks() {
+  const P = ultProbe;
+  if (P.before == null || !P.max) return '沒抓到騎士的怒火欄位';
+  if (P.before < P.max - 0.001) return '開場怒火不是滿的，這條探針量不到大絕招的門檻';
+  if (P.after == null) return '沒抓到放完之後的怒火';
+  if (P.after > 0.01) return `按了 Q 之後怒火還剩 ${P.after}——大絕招沒有清空怒火（或根本沒放出去）`;
+  if (!P.hit) return '大絕招放出去了，但半徑內的敵人既沒踉蹌也沒死——傷害/體幹沒接上';
+  return null;
+}
+/* ② 攻擊回怒：逐幀比對。**排除試作場的重置**——騎士倒下時 arenaResetFight() 會把
+   怒火與血一起補滿，那不是「打人回來的」。所以只在血沒同時變多的幀才算數。 */
+let sawWrathGain = false, prevWrath = null, prevHp = null;
+function sampleWrath() {
+  const k = T.knight; if (!k) return;
+  if (prevWrath != null && k.wrath > prevWrath + 0.01 && k.hp <= prevHp + 0.01) sawWrathGain = true;
+  prevWrath = k.wrath; prevHp = k.hp;
+}
+function wrathGainHappened() { return sawWrathGain ? null : '整場打下來怒火從沒往上跳——命中/招架/處決的回怒可能斷了'; }
+
 // 行為探針：這一場模擬應該真的打過架。
 // 純粹「不丟例外」不足以證明拆解沒把 AI 弄啞——這條確認敵人確實受過傷或陣亡。
 // ⚠️ 逐幀累積，**不是**看結束時的快照：試作場在騎士倒下時會 arenaResetFight()，
@@ -401,6 +489,10 @@ for (const s of list) {
   try {
     seedRng(0x51ED + sIdx);   // 每個情境固定種子＝失敗可以原地重現
     sawEnemyHurt = false; sawExec = false; sawFloater = false; sawDash = false; sawPortal = false; sawExitPrompt = false;
+    sawWrathGain = false; prevWrath = null; prevHp = null;
+    wrathProbe.start = wrathProbe.max = wrathProbe.mark = wrathProbe.after = null; wrathProbe.foes = wrathProbe.died = false;
+    ultProbe.before = ultProbe.max = ultProbe.after = null; ultProbe.hit = false;
+    sawGuardBreak = false;
     s.enter();
     grabPointer();
     stage = 'loop';
@@ -410,7 +502,7 @@ for (const s of list) {
       T.update(FIXED);
       T.draw();
       T.drawSeedTag();
-      sampleCombat(); sampleNewFx(); samplePortal();
+      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath();
     }
     releaseKeys();
     for (const inv of (s.invariants || [])) {
