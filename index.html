@@ -3486,7 +3486,7 @@ function beatDone(cs, b, dt) {
         b._fired = true;
         const p = players[0];
         p.facing = angTo(p.pos, v.pos);
-        if (p.weapon && p.weapon.melee) { startSwing(p, 1); spawnHit(v.pos); }   // 近戰：揮一刀
+        if (p.weapon && p.weapon.melee) { startSwing(p, lightOf(p.weapon), 1, 'main'); spawnHit(v.pos); }   // 近戰：揮一刀
         else { p.muzzle = 0.05; spawnMuzzleBullet(p, v); }                        // 遠程：槍口火光
         damageUnit(v, 999, 1, angTo(v.pos, p.pos));
       }
@@ -4340,7 +4340,13 @@ function friendlyInSwingArc(u, aimPos) {
 function startSwing(u, move, fireRateMult, hand, srcW) {
   const W = srcW || u.weapon;
   const M = move || lightOf(W);
-  if (!M) return false;
+  /* 招式必須是真的招式。**這條不是防禦性編程，是踩過的坑**：
+     舊簽章是 startSwing(u, fireRateMult)，改成吃招式之後有一個呼叫點沒跟著改，
+     於是 `1` 被當成招式傳進來——windup/active/recover 全變 NaN，
+     `s.t >= aEnd + s.recover` 對 NaN 恆為 false ⇒ **u.swing 永遠不會清掉**
+     ⇒ 之後每一次 startSwing 都被開頭那個 `u.swing` 閘門擋掉＝**再也揮不動**。
+     一個型別錯誤變成「武器壞了」，而且完全沒有例外可以追。 */
+  if (!M || typeof M !== 'object' || !isFinite(M.windup + M.activeT + M.recover)) return false;
   if (u.swing || u.staggerT > 0 || u.parryT > 0 || u.cast || u.exec || u.dash) return false;   // 揮擊中/硬直中/招架中/施法前搖中/處決中/dash 中不能再揮
   // **揮擊不花任何資源**（DESIGN §2.2 ②）：你永遠打得動，因為往前打是唯一的活路。
   const rm = CONFIG.tempo / Math.max(0.05, (fireRateMult || 1) * (u.buffFire || 1));   // 攻速 buff＝縮短全段；× tempo＝整體前後搖更長

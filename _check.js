@@ -224,8 +224,8 @@ const SCENARIOS = [
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
   // 一間房現在是**三波**（CONFIG.waves.perRoom），所以「打到開洞」需要的幀數比單波多得多。
-  { name: 'combat',          frames: 3000, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI] },
-  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, wrathGainHappened, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat',          frames: 3000, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noStuckSwing, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, wrathGainHappened, noStuckSwing, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
   { name: 'wrath',           frames: 240, enter: () => T.enterArena('melee'), poke: pokeWrath, invariants: [wrathRules] },
   { name: 'wrath-ult',       frames: 60,  enter: () => T.enterArena('melee'), poke: pokeUlt,   invariants: [ultimateWorks] },
   { name: 'guard-break',     frames: 300, enter: () => T.enterArena('melee'), poke: pokeGuard, invariants: [guardBreakWorks, noPlayerPoise] },
@@ -249,8 +249,11 @@ const SCENARIOS = [
   { name: 'ending',          frames: 120, enter: () => T.playEnding(['一', '二', '三'], () => {}, '測試') },
   { name: 'runend',          frames: 30,  enter: () => T.setScene('RUNEND') },
   { name: 'runwin',          frames: 30,  enter: () => T.setScene('RUNWIN') },
-  { name: 'intro',           frames: 600, enter: () => { T.CONFIG.introEnabled = true; T.initRun(); T.enterOrigin(); T.chooseOrigin('reaver'); T.departFromOrigin(); },
-    poke: (i) => { if (i % 40 === 0) { mouseEv('mousedown', 0); mouseEv('mouseup', 0); } } },
+  { name: 'intro',           frames: 600, invariants: [introKeepsSwinging], enter: () => { T.CONFIG.introEnabled = true; T.initRun(); T.enterOrigin(); T.chooseOrigin('reaver'); T.departFromOrigin(); },
+    /* ⚠️ 按下與放開**不能同一幀**：update 在 poke 之後才跑，同幀放開等於 mouse.down 從來沒有為真過，
+       序章的 shoot 節拍（要讀 mouse.down）就永遠不會觸發——整個情境會停在「按左鍵攻擊」那一格，
+       看起來全綠但其實一幕都沒演完。這個坑讓「打完狼就揮不動」的回歸整整躲過了一輪。 */
+    poke: (i) => { if (i % 40 === 0) mouseEv('mousedown', 0); if (i % 40 === 8) mouseEv('mouseup', 0); if (i > 120 && i % 7 === 3) key('keydown', 'w'); if (i > 120 && i % 7 === 6) key('keyup', 'w'); } },
 ];
 
 // 每張戰鬥地圖各跑一遍（地圖資料本身容易出錯：waypoint 斷連、spawn 指到不存在的節點…）
@@ -258,7 +261,7 @@ for (const k of Object.keys(T.MAPS)) {
   SCENARIOS.push({
     name: 'map-' + k, frames: 240,
     enter: () => { bootCampaignToMap(); T.forceMap(k); T.startMission(); },
-    poke: pokeCombat, invariants: [soloKnight, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI],
+    poke: pokeCombat, invariants: [soloKnight, noStuckSwing, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI],
   });
 }
 
@@ -399,6 +402,31 @@ function oneHandSet() {
 function noPlayerPoise() {
   for (const p of (T.players || [])) if (p && p.poiseMax) return `騎士帶著體幹上限 ${p.poiseMax}——體幹只有敵人該有`;
   return null;
+}
+
+/* 揮擊管線不能卡死。**這條是踩過坑才加的**：
+   startSwing 的簽章從 (u, fireRateMult) 改成吃招式之後，序章那個腳本化的一刀沒跟著改，
+   `1` 被當成招式傳進去 → windup/active/recover 全變 NaN → `s.t >= aEnd + s.recover`
+   對 NaN 恆為 false → u.swing 永遠不清 → 之後每一次 startSwing 都被開頭的閘門擋掉
+   ＝**打完狼之後再也揮不動**。沒有例外、沒有紅字，測試還是全綠。
+
+   兩條一起守：
+     ① noStuckSwing —— 任何單位的 swing 三段時間都必須是有限數（逐幀掃）
+     ② introKeepsSwinging —— 序章裡腳本那一刀之後，玩家還要能揮出**新的**刀 */
+let stuckSwing = null, swingStarts = 0, prevSwinging = false;
+function sampleSwing() {
+  for (const u of [...(T.players || []), ...(T.enemies || [])]) {
+    const s = u && u.swing;
+    if (s && !isFinite(s.windup + s.active + s.recover)) stuckSwing = stuckSwing || `${u.id != null ? '單位' + u.id : '某單位'} 的 swing 時間是 NaN`;
+  }
+  const k = T.knight, now = !!(k && k.swing);
+  if (now && !prevSwinging) swingStarts++;
+  prevSwinging = now;
+}
+function noStuckSwing() { return stuckSwing || null; }
+function introKeepsSwinging() {
+  if (stuckSwing) return stuckSwing;
+  return swingStarts >= 2 ? null : `整個序章只揮出 ${swingStarts} 刀——腳本那一刀之後揮擊管線就卡住了`;
 }
 
 /* 波次（DESIGN.md §1／§5.1）：一間房不是「殺完一批就結束」，而是好幾波，每一波從不同的門進來。
@@ -717,6 +745,7 @@ for (const s of list) {
     wrathProbe.start = wrathProbe.max = wrathProbe.mark = wrathProbe.after = null; wrathProbe.foes = wrathProbe.died = false;
     ultProbe.before = ultProbe.max = ultProbe.after = null; ultProbe.hit = false;
     sawGuardBreak = false; sawWaveWarn = false; maxWaveIdx = 0;
+    stuckSwing = null; swingStarts = 0; prevSwinging = false;
     msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
     dropProbe.got = null;
     awakeProbe.sampled = false; awakeProbe.total = awakeProbe.idle = 0;
@@ -731,7 +760,7 @@ for (const s of list) {
       T.update(FIXED);
       T.draw();
       T.drawSeedTag();
-      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves();
+      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves(); sampleSwing();
     }
     releaseKeys();
     for (const inv of (s.invariants || [])) {
