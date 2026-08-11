@@ -235,6 +235,7 @@ const SCENARIOS = [
   { name: 'room-awake',      frames: 2,   enter: bootCombat, poke: pokeAwake, invariants: [allAwakeOnEntry] },
   { name: 'waves',           frames: 3000, enter: bootCombat, poke: pokeCombat, invariants: [wavesHappened] },
   { name: 'rooms',           frames: 6,    enter: () => { bootCombat(); }, poke: pokeRooms, invariants: [roomChainWorks] },
+  { name: 'crystal',         frames: 900,  enter: () => T.enterArena('melee'), poke: pokeCombat, invariants: [crystalStacks] },
   { name: 'free-slots',      frames: 4,    enter: () => {
       bootCombat();
       // 第 1 格放**習得**、第 2 格放**道具**——舊版剛好相反（1 只收卷軸、2 只收習得）
@@ -436,6 +437,21 @@ function introKeepsSwinging() {
   return swingStarts >= 2 ? null : `整個序章只揮出 ${swingStarts} 刀——腳本那一刀之後揮擊管線就卡住了`;
 }
 
+/* 結晶：騎士唯一的護身（擊殺疊、時間掉、清場凍結、跨房保留）。
+   這條顧的是「殺了人真的會疊」與「不會超過上限」——怒火的減傷已經交出去了，
+   所以結晶壞掉＝騎士整場全裸，而且不會有任何紅字。 */
+let maxCrystal = 0, sawCrystal = false;
+function sampleCrystal() {
+  const k = T.knight; if (!k) return;
+  if ((k.armorTemp || 0) > 0) sawCrystal = true;
+  if ((k.armorTemp || 0) > maxCrystal) maxCrystal = k.armorTemp;
+}
+function crystalStacks() {
+  if (!sawCrystal) return '整場殺了人卻一層結晶都沒疊到——騎士會全程裸奔';
+  if (maxCrystal > T.CONFIG.crystal.cap + 1e-6) return `結晶疊到 ${maxCrystal.toFixed(3)}，超過上限 ${T.CONFIG.crystal.cap}`;
+  return null;
+}
+
 /* 自由位（1~N）每一格都是**通用**的：卷軸、習得、消耗品放進任何一格都可以。
    舊版把第 1 格寫死成 itemId、第 2 格寫死成 abilityId（「每種類各限一個」），
    那是 Homeward 留下的欄位形狀不是設計。這條擋的是它偷偷長回來。 */
@@ -540,9 +556,9 @@ function allAwakeOnEntry() {
    所以對每一個「一刀砍不死」的武器×敵人組合，**破體幹必須嚴格早於打死**；
    否則敵人會在踉蹌之前先流血流死，窗根本不會出現，push-forward 就斷了。
 
-   這條是靜態算的（期望值，不跑模擬）：
-     每刀傷害 = damage × dmgMul × (1−flatResist) × (1−整發彈開機率)
-     每刀體幹 = poiseDmg × (被彈開時 ×armorPoiseMul 的期望加成)
+   這條是靜態算的（沒有機率了，所以現在是精確值不是期望值）：
+     每刀傷害 = damage × dmgMul × (1 − armor × flatResist)
+     每刀體幹 = poiseDmg × (1 + armor × pierce × antiGain)
    一刀就砍死的組合（nKill===1）跳過——那不需要窗，秒殺本身就是回報。
    這是玩測前唯一能自動守住的那一條；手感仍然要玩過才知道。 */
 function executionWindowExists() {
@@ -558,10 +574,9 @@ function executionWindowExists() {
       if (!W.melee || !W.moves) continue;
       for (const mk of Object.keys(W.moves)) {
         const M = W.moves[mk];
-        const resist = Math.min(armor * C.armor.flatResist * (1 - W.pierce * C.armor.pierceBypass), C.armor.resistCap);
-        const blockP = armor * (1 - W.pierce);
-        const dmg = W.damage * (M.dmgMul || 1) * (1 - resist) * (1 - blockP);
-        const pd = M.poiseDmg * (1 + blockP * (C.melee.armorPoiseMul - 1));
+        const resist = Math.min(armor * C.armor.flatResist, C.armor.resistCap);
+        const dmg = W.damage * (M.dmgMul || 1) * (1 - resist);
+        const pd = M.poiseDmg * (1 + armor * (W.pierce || 0) * C.armor.antiGain);
         const nKill = Math.ceil(hp / Math.max(0.01, dmg)), nBreak = Math.ceil(poise / Math.max(0.01, pd));
         if (nKill >= 2 && nBreak >= nKill) bad.push(`${id} vs ${wid}/${mk}（${nBreak} 刀破幹 ≥ ${nKill} 刀打死）`);
       }
@@ -765,6 +780,7 @@ for (const s of list) {
     ultProbe.before = ultProbe.max = ultProbe.after = null; ultProbe.hit = false;
     sawGuardBreak = false; sawWaveWarn = false; maxWaveIdx = 0;
     stuckSwing = null; swingStarts = 0; prevSwinging = false;
+    maxCrystal = 0; sawCrystal = false;
     msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
     dropProbe.got = null;
     awakeProbe.sampled = false; awakeProbe.total = awakeProbe.idle = 0;
@@ -779,7 +795,7 @@ for (const s of list) {
       T.update(FIXED);
       T.draw();
       T.drawSeedTag();
-      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves(); sampleSwing();
+      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves(); sampleSwing(); sampleCrystal();
     }
     releaseKeys();
     for (const inv of (s.invariants || [])) {

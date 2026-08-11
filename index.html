@@ -175,12 +175,52 @@ const CONFIG = {
   wallThick: 8,
   // 重裝敵人裝甲：高機率「整發擋下」非穿甲攻擊；穿甲(pierce)越高越能無視。
   // 有效擋格率 = blockChance × (1 − weapon.pierce)。血量與一般敵人相同，靠這條形成質差。
+  /* ── 裝甲（使用者定案，全部重寫）────────────────────────────────────
+     **沒有機率了。** 舊版是「85% 整發彈開 / 15% 全額」，倍率算起來很漂亮但體感是
+     「砍四刀什麼都沒發生，然後三刀就死」——在一個講讀招與節奏的遊戲裡，那是雜訊。
+
+     現在只有兩條算式，一條規則、兩個來源：
+
+       傷害   = dmg × (1 − armor × flatResist)              ← 純比例
+       體幹傷 = poiseDmg × (1 + armor × pierce × antiGain)  ← 反裝甲只在「有甲」時發威
+
+     第二條是整個設計的重點：**反裝甲加的是體幹傷害，不是傷害。**
+     加傷害的話，沒帶鈍器就是「打不死他」＝一道硬牆；加體幹傷害則是
+     「殺得死，但很慢、而且開不出處決窗」——處決是唯一的回血，所以代價是
+     **這場仗要用血去換**，不是打不過去。那正好是 §2.8 難度契約的形狀。
+     而且 armor 為 0 時括號恆為 1 ⇒ **鎚打雜兵就是普通的鎚**，不必寫特例。
+
+     `pierce` 因此改義成「反裝甲程度」，沿用每把武器已經調好的值：
+     鎚 0.95 / 石中劍 1.0 / 法杖 0.55 / 槍 0.55 / 劍 0.35 / 斧 0.30 / 短刀 0.10。
+
+     **armor 的兩個來源**：敵人天生穿著（ENEMY_TYPES.armor）；騎士**從來沒有人間的甲**，
+     只有結晶臨時堆疊出來的（見 CONFIG.crystal）。同一條算式，所以敵人的鎚
+     砸穿你辛苦疊起來的殼是自然發生的，不需要特例。 */
   armor: {
-    blockChance: 0.85,
-    // 第二層：穿過彈開判定的那一下也要吃減傷（見 damageUnit）。
-    //   實際減傷 = u.armor × flatResist × (1 − pierce × pierceBypass)
-    // flatResist 0.45＝板甲(0.75)正面約 −34%；pierceBypass 0.7＝戰鎚(0.95)只剩三分之一的減傷。
-    flatResist: 0.45, pierceBypass: 0.7, resistCap: 0.75,
+    flatResist: 0.55,      // 減傷斜率：armor 1.0 ＝ −55% 傷害
+    antiGain: 1.6,         // 反裝甲的體幹加成斜率：armor 1.0 × pierce 0.95 ⇒ 體幹傷 ×2.5
+    resistCap: 0.75,
+    weakTag: 0.45,         // pierce 低於此值打有甲目標＝跳「反彈」（提示這一擊低效）
+    blockChance: 0.85,     // 敵人 ENEMY_TYPES 拿來當「重裝」的 armor 值（沿用舊名，避免動到兵種表）
+  },
+  /* ── 結晶（騎士唯一的護身）──────────────────────────────────────────
+     凡間的裝甲在地獄不值一提，所以騎士身上**從來沒有人間定義的甲**。
+     撐住他的是仇恨、怒火，和聖血的殘餘——以及那些在地獄裡與聖血共鳴後結出的**結晶**。
+     機制上就是：**擊殺 → 疊一層裝甲 → 隨時間掉**。
+
+     它和怒火刻意分工，兩條資源各講一件事：
+       **怒火＝你付得起什麼**（格擋／奔跑／技能／大絕招）
+       **結晶＝你挨得住什麼**（殺敵累積、時間衰退）
+     所以「怒火比例 → 減傷」那條整個拿掉了——連帶把 §2.3 那段
+     「這條本來是死亡螺旋，之所以安全完全是因為……」的耦合警語一起消掉。
+
+     衰退規則和怒火一致：**清場那一刻凍結、跨房保留**（上一房的血還沒乾）。
+     每房從零開始重新裸奔是純粹的 feel bad——那是在懲罰一個還沒做錯事的瞬間。 */
+  crystal: {
+    perKill: 0.03,   // 每次擊殺疊多少 armor
+    cap: 0.30,       // 上限
+    decay: 0.02,     // 衰退 /s（戰鬥中才跑）
+    decayDelay: 4.0, // 最後一次擊殺後多久開始掉
   },
   // 側翼/突襲（敵我皆適用）：依攻擊來向 vs 目標視野錐。flank＝錐外(側後)＝×flankMult 且無視所有裝甲；
   // surprise＝閒置敵人正面＝×surpriseMult（僅對敵）；兩者皆中取較高、不相乘。
@@ -517,6 +557,7 @@ CONFIG.melee = {
                            // 窗太短就變成「看到了但跑不過去」，那不是難度，是挫折。
   staggerDmg: 15,          // 失衡打斷：單擊(post-armor)≥此值 → 打斷「預告中」動作(近接前搖/遠程瞄準/施法前搖)，所有單位同一把尺。實測：農兵/劍兵/槍兵砸不斷、披甲士/軍士(鎚斧)會斷。體幹破是另一層(重硬直)
   poiseBreakDmgMul: 1.6,   // 硬直中受到的傷害倍率（處決窗）
+  // armorPoiseMul 已退休：反裝甲的體幹加成改由 CONFIG.armor.antiGain 統一處理（沒有機率彈開這件事了）
   /* 處決（TITHE D2）——整個資源迴圈的心臟（DESIGN.md §2.4）。
      體幹破 → 踉蹌 → 貼上去按 F → 處決 → **噴聖血**。處決是唯一的回血手段，
      所以「往前打」才會是唯一的活路。
@@ -535,8 +576,6 @@ CONFIG.melee = {
   poiseBreakKnockMul: 2.5, // 體幹破當下的擊退倍率
   blockPoiseMul: 0.5,      // 舉盾擋下時，體幹只吃這個比例（擋得住傷害，擋不住全部衝擊）
   hyperPoiseMul: 0.5,      // hyperArmor 武器在判定窗中，體幹傷害只吃這個比例
-  armorPoiseMul: 1.7,      // **被裝甲整發彈開的那一擊，體幹傷害加成**（刀滑開了，力道全變成衝擊）
-                           // ＝裝甲讓你砍不動他、但更容易把他砸崩。重裝的解法是鈍器，不是硬砍。
 
   // 耐力已整條換成**怒火**（CONFIG.wrath，就在這個物件下面）。
 
@@ -606,8 +645,6 @@ CONFIG.wrath = {
   costSprint: 16,          // 奔跑消耗 /s
   ultCost: 90,             // 大絕招門檻。**刻意低於 max**：怒火一直在衰退，門檻若等於上限，
                            // 你只有「回滿的那一幀」按得下去＝實際上放不出來。放出去一律清空歸零。
-  drStart: 0.35,           // 減傷從這個怒火比例開始長（以下＝完全沒有減傷）
-  drMax: 0.28,             // 怒火全滿時的減傷（「盛怒中的騎士感覺不到痛」）
   ultRadius: 200,          // 大絕招半徑
   ultDmg: 90,              // 大絕招傷害（滿穿甲）
   ultPoise: 999,           // 大絕招體幹傷害：一發全場踉蹌＝直接鋪出一地處決窗
@@ -2438,7 +2475,11 @@ function makePlayer(i, cfg, pos) {
     moveMul: (fx.moveMul || 1) * AR.moveMul * (offW ? offW.moveMul : 1),
     // 身上的甲：與重裝敵人同一套機率擋格機制（代價＝移速/怒火獲得）。
     // 取「兵種自帶」與「穿戴」的較大者——披甲士之所以叫披甲士就是因為他有甲，脫不掉。
-    armorId: cfg.armorId || 'none', armor: Math.max(AR.armor, CLS.armor || 0), wrathGainMul: AR.wrathGainMul * (1 + kUp('wrathGain')),
+    // **騎士身上沒有人間的甲**（凡間的裝甲在地獄不值一提）：armorBase 恆為 0，
+    // 他唯一的甲是結晶疊出來的 armorTemp。armorId 只剩外觀/名字，不再有數值。
+    armorId: cfg.armorId || 'none', armorBase: (i === KNIGHT_ID ? 0 : Math.max(AR.armor, CLS.armor || 0)),
+    armorTemp: cfg.armorTemp || 0, armorT: -99,
+    wrathGainMul: AR.wrathGainMul * (1 + kUp('wrathGain')),
     coneHalfDeg: null,                     // 逐單位視錐覆寫（null＝用全域）
     buffT: 0, buffMove: 1, buffFire: 1,    // 道具（腎上腺素）短時 buff
     hasFile: !!cfg.carriesFile,            // 是否身上帶著遺物（獨立攜帶格，跨關隨撤出者；CONFIG.relicEnabled 關閉時恆 false）
@@ -2482,7 +2523,7 @@ function makeEnemy(nodeId, personalityName, isReinforce = false, facing = Math.P
     weapon: W, ammoInMag: W.magazine, ammoReserve: 9999, reloadT: 0, bloom: 0,
     senseRadius: CONFIG.vision.senseRadius * CONFIG.enemy.strength * (TYPE.senseMul || 1),
     coneHalfDeg: TYPE.coneHalfDeg || CONFIG.vision.coneHalfDeg,   // 逐單位視錐（警犬更寬）
-    moveSpeed: TYPE.moveSpeed, armor: TYPE.armor || 0, attack: TYPE.attack || 'ranged', dummy: !!TYPE.dummy,
+    moveSpeed: TYPE.moveSpeed, armorBase: TYPE.armor || 0, armorTemp: 0, armorT: -99, attack: TYPE.attack || 'ranged', dummy: !!TYPE.dummy,
     burstLeft: (W.burst ? W.burst.size : 0), burstCd: 0,   // 重機槍點放節奏
     currentNode: nodeId,
     offId: TYPE.offId || null,   // 副手（盾兵）：敵人沒有槽位系統，盾直接掛在單位上
@@ -2512,7 +2553,7 @@ const rosterFromPlayer = (p) => {
     bonusMaxHp: p.maxHp - classOf(p.classId).hp - eqAdd, hp: p.hp,   // 以**自己兵種**的基底回推加值，換兵種不會憑空長血
     allocatedAmmo: m0 ? (isInfiniteAmmo(m0.weaponId) ? CONFIG.ammo.defaultAlloc : m0.ammoReserve) : CONFIG.ammo.defaultAlloc,
     disciplineOverride: p.disciplineOverride || null, equipId: p.equipId || null, armorId: p.armorId || 'none',
-    itemId: null, itemCount: 0,
+    itemId: null, itemCount: 0, armorTemp: p.armorTemp || 0,   // 結晶跨房保留（上一房的血還沒乾）
     freeExtra: (p.slots || []).filter(sl => sl && sl.kind === 'free')
       .map(sl => sl.id ? { kind: sl.type === 'ability' ? 'ability' : 'item', id: sl.id, count: sl.count || 0 } : null),   // 自由位跨關保留（每一格都通用）
     carriesFile: !!p.hasFile };
@@ -4111,6 +4152,7 @@ function tickResources(u, dt) {
   // 清場那一刻凍結，換房不另外扣（懲罰仔細撿東西的玩家是最糟的一種扣款）。
   if (u.wrathMax && wrathDecaying() && simTime - (u.wrathT || -99) >= CONFIG.wrath.decayDelay)
     u.wrath = Math.max(0, (u.wrath || 0) - CONFIG.wrath.decay * dt);
+  tickCrystal(u, dt);
   if (u._hpLowFired && u.maxHp && u.hp / u.maxHp >= CONFIG.hooks.hpLowFrac) u._hpLowFired = false;
 }
 /* ── 怒火的四個入口（其餘地方一律走這四個，不要直接動 u.wrath）──────────
@@ -4124,11 +4166,22 @@ function spendWrath(u, n) { if (!u.wrathMax) return true; u.wrath = Math.max(0, 
 function gainWrath(u, n) { if (!u || !u.wrathMax || !(n > 0)) return; u.wrath = Math.min(u.wrathMax, (u.wrath || 0) + n * (u.wrathGainMul || 1)); u.wrathT = simTime; }
 // 想花但花不起：閃一下 + 掛勾（給之後的聖物/語音接線）
 function failWrath(u) { u.noWrathFxT = 0.25; if (arenaMode && u.id === KNIGHT_ID && u.faction === 'player') arenaStats.noWrath++; Hooks.fire('wrathEmpty', { u }); }
-// 怒火減傷：drStart 以下完全沒有，往上線性長到 drMax。乘算套在 damageUnit 最後＝永遠看得出效果。
-function wrathDR(u) {
-  if (!u.wrathMax) return 0;
-  const W = CONFIG.wrath, f = (u.wrath || 0) / u.wrathMax;
-  return W.drMax * clamp((f - W.drStart) / Math.max(1e-6, 1 - W.drStart), 0, 1);
+/* 結晶＝騎士唯一的護身（CONFIG.crystal）。擊殺疊一層、隨時間掉，衰退規則和怒火一致：
+   **清場凍結、跨房保留**。armorOf() 是「這個單位現在有多少甲」的唯一入口：
+   敵人＝天生穿著，騎士＝結晶（人間的甲在地獄不值一提，所以他的 armorBase 恆為 0）。 */
+const armorOf = (u) => clamp((u.armorBase || 0) + (u.armorTemp || 0), 0, 1);
+function gainCrystal(u) {
+  if (!u || u.id !== KNIGHT_ID || u.faction !== 'player') return;
+  const C = CONFIG.crystal;
+  u.armorTemp = Math.min(C.cap, (u.armorTemp || 0) + C.perKill);
+  u.armorT = simTime;
+  spawnFloater({ x: u.pos.x, y: u.pos.y - 18 }, '結晶', 'heal');
+}
+function tickCrystal(u, dt) {
+  if (!u.armorTemp || u.id !== KNIGHT_ID) return;
+  if (!wrathDecaying()) return;                                   // 清場＝凍結（跨房保留）
+  if (simTime - (u.armorT || -99) < CONFIG.crystal.decayDelay) return;
+  u.armorTemp = Math.max(0, u.armorTemp - CONFIG.crystal.decay * dt);
 }
 // 體幹傷害 → 可能觸發體幹破（大硬直 + 處決窗 + 大幅擊退）。回傳是否破了。by＝造成者（給 Hooks）。
 function applyPoise(t, amount, fromAng, by) {
@@ -4831,14 +4884,16 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
     // （C5 之前這裡會把來向廣播給附近同袍，那套全體共享的情報網隨戰術 AI 一起移除了。）
     if (fromAng != null && opts && opts.attacker) { u.lastSeenPos = { x: opts.attacker.pos.x, y: opts.attacker.pos.y }; u.lastSeenT = simTime; }
   }
-  /* ---- 裝甲：機率「整發擋下」非穿甲攻擊（繞背無視）。有效擋格率 = armor × (1 − pierce)。
-     **擋下 ≠ 沒事**：刀砍在板甲上不會流血，但力道全部變成衝擊 → 體幹傷害改為 ×armorPoiseMul（>1）。
-     所以裝甲的意義是「砍不動他，但更容易把他砸崩」＝重裝的解法是鈍器/破甲，而不是硬砍。
-     這也讓穿重甲的騎士有真實代價：不容易受傷，但更容易被打崩。
-     ※ 必須排在體幹之前，因為體幹傷害要看這一擊有沒有被甲彈開。 ---- */
-  // ※ 盾格已擋下的攻擊不再擲甲（盾攔住的刀根本沒碰到甲＝不做雙重防禦）
-  const armorBlocked = !blocked && !flanked && (u.armor > 0) && Math.random() < u.armor * (1 - pierce);
-  if (armorBlocked) { spawnBlock(u.pos); poiseDmg *= M.armorPoiseMul; Hooks.fire('armorDeflect', { u, from: (opts && opts.attacker) || null }); }
+  /* ---- 裝甲（見 CONFIG.armor）：**沒有機率**。繞背/盾格下來的那一擊不吃甲。
+     反裝甲加的是**體幹傷害**：鈍器砸不穿甲，但力道全變成衝擊 → 更快把他砸崩。
+     ※ 必須排在體幹結算之前。 ---- */
+  const AR = CONFIG.armor;
+  const armorNow = (blocked || flanked) ? 0 : armorOf(u);
+  if (armorNow > 0) {
+    poiseDmg *= 1 + armorNow * (pierce || 0) * AR.antiGain;
+    // 「反彈」：這一擊的反裝甲程度不夠 ⇒ 明講它低效，不要讓玩家自己從數字猜
+    if ((pierce || 0) < AR.weakTag) { spawnBlock(u.pos); spawnFloater({ x: u.pos.x, y: u.pos.y - 12 }, '反彈', 'blocked'); Hooks.fire('armorDeflect', { u, from: (opts && opts.attacker) || null }); }
+  }
   // ---- 體幹：扣光＝大硬直＋處決窗。hyperArmor（斧/鎚判定窗中）只吃一半 ----
   if (poiseDmg > 0 && u.poiseMax) {
     const hyper = hasHyperArmor(u);
@@ -4851,24 +4906,15 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
     if (opts.stagger) { u.staggerT = Math.max(u.staggerT || 0, opts.stagger); u.swing = null; u.cast = null; }
   }
   // 命中回怒（小）＝保底：只要你還在揮就不會完全枯竭。
-  // 被盾擋下/被甲彈開只給零頭——打了個寂寞不該和砍進肉裡一樣值錢。武器詞條「平衡」加在這裡。
+  // 被盾擋下／被甲反彈只給零頭——打了個寂寞不該和砍進肉裡一樣值錢。武器詞條「平衡」加在這裡。
+  const weakVsArmor = armorNow > 0 && (pierce || 0) < AR.weakTag;
   if (opts && opts.attacker) {
     const W = CONFIG.wrath, aw = opts.attacker.weapon;
-    gainWrath(opts.attacker, (blocked || armorBlocked) ? W.gainHitBlocked : W.gainHit + ((aw && aw.wrathAdd) || 0));
+    gainWrath(opts.attacker, (blocked || weakVsArmor) ? W.gainHitBlocked : W.gainHit + ((aw && aw.wrathAdd) || 0));
   }
-  if (armorBlocked) { spawnFloater(u.pos, '擋', 'blocked'); return blocked; }   // 被甲彈開：不流血（體幹/擊退已在上面結算過了）
   if (u.staggerT > 0 && !blocked) dmg *= M.poiseBreakDmgMul;   // 處決窗：硬直中的人挨打特別痛
-  /* 甲的第二層：**被彈開之外，穿過來的那一下也吃得少一點**（使用者定案）。
-     原本甲只有機率性的「整發彈開」，55% 全免 / 45% 全額——倍率其實已經是 2.3 倍，
-     但體感是「砍四刀什麼都沒發生，然後他三刀就死」，因為中間沒有東西。
-     這一層把變異數換成一致性：**穿甲部分繞過它**（pierceBypass），所以鎚仍然明顯最好，
-     但板甲對任何武器都還是有意義，不會回到「無敵或無關」的二元。
-     繞背一律無視（跟彈開同一條規則：甲只罩正面）。 */
-  const A = CONFIG.armor;
-  const armorResist = (u.armor || 0) * A.flatResist * (1 - (pierce || 0) * A.pierceBypass);
-  const resist = flanked ? 0 : clamp((u.dmgResist || 0) + armorResist, 0, A.resistCap);
-  // 怒火減傷乘在最後（不進 resistCap）＝板甲騎士也感覺得到怒火的差別，而不是被上限吃掉。
-  const raw = dmg * mult * (1 - resist) * (1 - wrathDR(u));
+  const resist = clamp((u.dmgResist || 0) + armorNow * AR.flatResist, 0, AR.resistCap);
+  const raw = dmg * mult * (1 - resist);
   // **溢出傷害不計**：對 1 HP 的目標打 999，實際只造成 1 點。
   // 若照全額往下傳，吃「每點傷害」的效果（士氣、吸血、統計）會被overkill 灌爆。
   const dealt = Math.min(raw, Math.max(0, u.hp));
@@ -4916,6 +4962,7 @@ function killUnit(u, killer) {
   }
   Hooks.fire('death', { u, killer: killer || null });
   if (killer) Hooks.fire('kill', { killer, victim: u, elite: !!(u.type && u.type.elite), boss: !!(u.type && u.type.boss) });
+  if (killer && u.faction !== 'player') gainCrystal(killer);   // 擊殺 → 結晶疊一層（騎士唯一的護身）
   // 誓約解鎖統計 + 復仇之誓：我方擊殺敵人才計（序章/沙盒/試玩不算）
   if (killer && killer.faction === 'player' && u.faction !== 'player' && !fromSandbox && !playtestMode && !introActive) {
     runStats.kills = (runStats.kills || 0) + 1;
@@ -6563,7 +6610,7 @@ function drawEnemies() {
     const low = e.hp / e.maxHp <= 0.4;
     const hue = factionHue(e.faction, e.isReinforce ? 18 : (e.type ? e.type.hue : 0));   // 多陣營：非'enemy'陣營用 FACTIONS 色（暴民洋紅…）；'enemy' 沿用各類型色
     drawUnitBody(e, hsl(hue, 65, low ? 38 : 48), hsl(hue, 70, 65), 2);
-    if (e.armor > 0) {   // 裝甲：外加一圈板甲標記（金屬色）
+    if (armorOf(e) > 0) {   // 裝甲：外加一圈板甲標記（金屬色）
       ctx.strokeStyle = hsl(hue, 25, 82); ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(e.pos.x, e.pos.y, e.radius + 4, 0, Math.PI * 2); ctx.stroke();
     }
@@ -6652,8 +6699,8 @@ function edgeMarker(worldPos, color, label, filled) {
 /* 騎士的資源條（畫面中下）——**只有一條：怒火**。
    體幹條拿掉了：騎士沒有體幹（見 CONFIG.melee 的體幹註解），而且兩條會漲會退的條擺在一起
    只會互相干擾，讀不出是誰在說話。要盯的東西只有一個，它就該是唯一的那條。
-   條上兩道刻痕＝減傷起點（`CONFIG.wrath.drStart`）與大絕招門檻（`ultCost`）——
-   玩家得看得出「掉到這裡以下就開始痛了」跟「到這裡就能放了」。 */
+   條上那道刻痕＝大絕招門檻（`ultCost`）。**怒火不再減傷**——那條交給結晶了（CONFIG.crystal），
+   兩條資源各講一件事：怒火＝你付得起什麼，結晶＝你挨得住什麼。 */
 function drawKnightResources() {
   const k = knight(); if (!k || k.state === 'DEAD') return;
   const w = 240, h = 13, x = cv.width / 2 - w / 2, y = cv.height - 150;
@@ -6668,12 +6715,20 @@ function drawKnightResources() {
   const wf = (k.wrath || 0) / (k.wrathMax || 1);
   const ult = (k.wrath || 0) >= W.ultCost;
   const flash = k.noWrathFxT > 0 && Math.sin(simTime * 40) > 0;
-  // 大絕招就緒＝金色脈動／減傷區內＝橙紅／跌破 drStart＝暗紅（「開始會痛了」）
+  // 大絕招就緒＝金色脈動；低怒火＝暗紅（付不起東西了）
   const wcol = flash ? '#ffffff' : ult ? `rgba(255,${200 + Math.round(40 * Math.sin(simTime * 9))},110,1)`
-             : wf < W.drStart ? '#a8402f' : '#ff7a3c';
+             : wf < 0.25 ? '#a8402f' : '#ff7a3c';
   bar(y, wf, wcol, 'rgba(12,18,26,0.8)', '怒火');
-  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x + w * W.drStart, y, 1, h);              // 減傷起點的刻痕
   ctx.fillStyle = 'rgba(255,214,120,0.55)'; ctx.fillRect(x + w * (W.ultCost / (k.wrathMax || 1)), y, 1, h);   // 大絕招門檻的刻痕
+  // 結晶：只在有層數時才畫（沒有就不佔版面）＝一眼看得出「我現在挨得住多少」
+  const cz = k.armorTemp || 0;
+  if (cz > 0.001) {
+    const cy = y + h + 4;
+    ctx.fillStyle = 'rgba(12,18,26,0.8)'; ctx.fillRect(x, cy, w, 6);
+    ctx.fillStyle = '#8fd8ff'; ctx.fillRect(x, cy, w * clamp(cz / CONFIG.crystal.cap, 0, 1), 6);
+    ctx.font = '9px Consolas'; ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(160,215,245,0.9)';
+    ctx.fillText('結晶 −' + Math.round(cz * CONFIG.armor.flatResist * 100) + '%', x - 6, cy + 6); ctx.textAlign = 'left';
+  }
   if (ult) { ctx.font = 'bold 10px Consolas'; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,214,120,0.95)'; ctx.fillText('Q 聖怒', x + w + 6, y + h - 1); }
   // 硬直/破防的大字提示（被定住時要非常清楚，否則玩家不知道自己為什麼不能動）
   if (k.staggerT > 0) {
