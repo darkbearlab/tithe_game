@@ -140,7 +140,7 @@ const EPILOGUE = `
   get enemies() { return enemies; },
   get roadmap() { return roadmap; },
   get roster() { return roster; },
-  CONFIG, ARENA_MODES, MAPS, ORIGIN_IDS, ENCOUNTER_IDS,
+  CONFIG, WEAPONS, ARENA_MODES, MAPS, ORIGIN_IDS, ENCOUNTER_IDS,
   update, draw, drawSeedTag,
   goMenu, initRun, chooseOrigin, departFromOrigin, enterOrigin, enterOathLoadout,
   selectNode, startMission, endMission, advanceNode,
@@ -218,7 +218,7 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noPlayerPoise, noWeaponTurnCap, noMorale, noStealth, noTacticalAI] },
   { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, wrathGainHappened, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
   { name: 'wrath',           frames: 240, enter: () => T.enterArena('melee'), poke: pokeWrath, invariants: [wrathRules] },
   { name: 'wrath-ult',       frames: 60,  enter: () => T.enterArena('melee'), poke: pokeUlt,   invariants: [ultimateWorks] },
@@ -245,7 +245,7 @@ for (const k of Object.keys(T.MAPS)) {
   SCENARIOS.push({
     name: 'map-' + k, frames: 240,
     enter: () => { bootCampaignToMap(); T.forceMap(k); T.startMission(); },
-    poke: pokeCombat, invariants: [soloKnight, noPlayerPoise, noMorale, noStealth, noTacticalAI],
+    poke: pokeCombat, invariants: [soloKnight, noPlayerPoise, noWeaponTurnCap, noMorale, noStealth, noTacticalAI],
   });
 }
 
@@ -359,6 +359,15 @@ function wrathRules() {
 }
 /* **騎士沒有體幹**（使用者定案）。體幹只有一個工作：把敵人推進踉蹌開處決窗，
    它是進攻的計量器，不是防禦的計量器。這條擋的是「因為想要多一點深度」而把騎士那半加回來。 */
+/* 轉向上限只准留在敵人身上（使用者定案）。武器不該有 turnSpeed，騎士不該有轉速欄位——
+   這條擋的是「順手幫重武器加個笨重感」而把它整批加回去。 */
+function noWeaponTurnCap() {
+  if (!T.WEAPONS) return 'WEAPONS 沒有從沙箱丟出來，這條探針量不到東西';   // 別讓它靜靜地空轉過去
+  for (const id in T.WEAPONS) if (T.WEAPONS[id].turnSpeed !== undefined) return `武器 ${id} 帶著 turnSpeed——轉向上限只留給敵人`;
+  for (const p of (T.players || [])) if (p && (p.turnSpeed !== undefined || p.turn !== undefined)) return '騎士帶著轉速欄位——瞄準應該是 1:1';
+  return null;
+}
+
 function noPlayerPoise() {
   for (const p of (T.players || [])) if (p && p.poiseMax) return `騎士帶著體幹上限 ${p.poiseMax}——體幹只有敵人該有`;
   return null;

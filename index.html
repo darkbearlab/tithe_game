@@ -97,8 +97,12 @@ const CONFIG = {
   tempo: 0.9,
   introEnabled: true,       // 選完出身是否播序章（敗騎自屍山醒來→處決狼→遇敵兵→撤離）。關掉＝直接進路線圖。
   moveSpeed: 200,           // px/s（TITHE：DOOM 式的高基礎移速；Homeward 是 110「戰術化放慢」）
-  turnSpeed: 480,           // deg/s（預設砲塔轉速；實際以各武器 turnSpeed 為準）
-  mouseSensitivity: 0.0035, // FPS 式滑鼠鎖定靈敏度（rad/px）。轉速不夠快時砲塔會追不上＝轉向延遲
+  // **騎士的瞄準沒有轉速上限**（使用者定案）：滑鼠指哪就朝哪，1:1。
+  // 武器的差別靠前後搖 / 數值 / 詞條去分，不靠「這把轉得慢」——那只是隔一層讓操作變鈍，
+  // 而且它和 DOOM 式的高速移動直接打架（跑得動但轉不過來＝手感在跟你吵架）。
+  // 唯一還在的轉向限制是揮出去之後（CONFIG.melee.swingTurnRate），那不是武器差異，
+  // 是「揮擊本身是一個承諾」。敵人的轉速另計，見 CONFIG.enemy.turnSpeed（那是 AI 的可讀性）。
+  mouseSensitivity: 0.0035, // FPS 式滑鼠鎖定靈敏度（rad/px）
   /* dash（TITHE D3）——**完全免費**的迴避。DESIGN.md §3：
        防禦不該有成本，進攻才有回報。付費的防禦（格擋／奔跑）是你打出來之後才買得起的升級，
        而 dash 是永遠都在的保底——尤其是進房那一刻怒火還沒累積起來的時候。
@@ -114,8 +118,7 @@ const CONFIG = {
      （洞口的三選一獎勵是 D6 的後半，還沒做。） */
   exit: { openDur: 0.8, radius: 38, drawR: 46 },
 
-  // Shift 奔跑：奔跑倍率 = base − (武器weight−1)×weightPenalty，夾在 [minMult, base]（越重跑越慢）
-  sprint: { base: 1.9, weightPenalty: 0.5, minMult: 1.1 },
+  sprint: { mult: 1.9 },    // Shift 奔跑倍率（固定；不再隨負重遞減，見 sprintMult）
   // 武器數值移至下方 WEAPONS 目錄（可指派、未來可換）
 
   squadSize: 1,             // TITHE：教廷送**一個人**進地獄。場上永遠只有騎士（見 startMission）
@@ -138,9 +141,9 @@ const CONFIG = {
   interactRadius: 40,             // 互動(開關門/按鈕)距離；門以「到門線段最近點」量距，整扇門寬都好按
   // 低矮牆＝掩體：玩家穿越減速、敵人視為實體繞行、不擋視線、子彈「遠距機率擋／貼牆可越射」
   lowWall: { slow: 0.3, touchR: 12, closeRange: 90, blockChance: 0.55 },
-  // 草叢：踏進去＝隨負重減速（重甲在叢間更難行）。TITHE 只保留這個地形效果——
-  // 「躲進草叢＝隱形」的遮蔽機制隨潛行一起移除了（C3）。
-  bush: { slowPerWeight: 0.05, slowMax: 0.4 },
+  // 草叢：踏進去＝固定減速。TITHE 只保留這個地形效果——
+  // 「躲進草叢＝隱形」隨潛行一起移除了（C3），「越重越難行」隨負重一起移除了。
+  bush: { slow: 0.25 },
   // 牆體厚度（px，全域固定）：渲染描邊寬＝此值；子彈/視線阻擋以「離中心線 ≤ 半厚」判定（撞渲染牆面而非中心線）。
   // 40px=1公尺，故 8px≈20cm（室內牆）。承重牆在編輯器平行畫兩條即可，不在資料上分型。移動退避仍走單位半徑（已比牆厚）。
   wallThick: 8,
@@ -213,6 +216,10 @@ const CONFIG = {
 
   enemy: {
     moveSpeed: 85,
+    // 敵人**保留**轉速上限（未指定時的預設）。這和騎士不同，而且是刻意的：
+    // 敵人轉得慢才有「繞到他背後」這個玩法（flank/backstab 都看目標的 facing），
+    // 也才讀得出遠程預告鎖死朝向的那一下。逐兵種可在 UNIT_CLASSES 用 turn 覆寫。
+    turnSpeed: 480,
     hp: 70,
     reactionDelay: 0.35,
     strength: 1.0,
@@ -245,7 +252,7 @@ const CONFIG = {
 /* =====================================================================
    WEAPONS / ABILITIES — 資料驅動（未來可掉落/更換）
    每把武器：威力 / 射速 / 射程 / 彈速 / 發散(基礎,連射,上限,回復) / 彈夾 / 換彈 / 總彈藥 /
-            迴轉速度(turnSpeed) / 稀有度(rarity)
+            稀有度(rarity)
    ===================================================================== */
 // weight：重量（影響 Shift 奔跑倍率，越重跑越慢）
 // pierce：穿甲值 0~1（對裝甲敵人的有效擋格率 = armor.blockChance × (1−pierce)）。
@@ -265,27 +272,27 @@ const WEAPONS = {
   //   stagger：直接硬直秒數。現已由「體幹破」取代，全部留 0（欄位保留給未來的特殊武器）
   // range 仍填 reach＝敵 AI 的接近距離判斷沿用同一欄位。
   // 節奏＝windup+activeT+recover（近接沒有額外 CD，這一輪就是攻速）。
-  sword: { name: '長劍',  rarity: 'common',   weight: 1.5, damage: 30, fireRate: 6, range: 66, turnSpeed: 520, pierce: 0.35, melee: true, swingStyle: 'sweep', hands: 1,
+  sword: { name: '長劍',  rarity: 'common',   weight: 1.5, damage: 30, fireRate: 6, range: 66, pierce: 0.35, melee: true, swingStyle: 'sweep', hands: 1,
            arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, stagger: 0, backstabMul: 1.0, poiseDmg: 22,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // 石中劍（事件解鎖，S2/S1 的產物）：傷害同長劍、**完全穿甲(pierce 1.0)**、noEnhance＝charges 已用盡不能再打。
-  stonesword: { name: '石中劍', rarity: 'legendary', weight: 1.5, damage: 30, fireRate: 6, range: 66, turnSpeed: 520, pierce: 1.0, melee: true, swingStyle: 'sweep', hands: 1, noEnhance: true,
+  stonesword: { name: '石中劍', rarity: 'legendary', weight: 1.5, damage: 30, fireRate: 6, range: 66, pierce: 1.0, melee: true, swingStyle: 'sweep', hands: 1, noEnhance: true,
            arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, stagger: 0, backstabMul: 1.0, poiseDmg: 22,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
-  axe:   { name: '雙手斧', rarity: 'common',  weight: 2.2, damage: 48, fireRate: 4, range: 62, turnSpeed: 380, pierce: 0.30, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 2,
+  axe:   { name: '雙手斧', rarity: 'common',  weight: 2.2, damage: 48, fireRate: 4, range: 62, pierce: 0.30, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 2,
            arcDeg: 160, reach: 62, windup: 0.20, activeT: 0.14, recover: 0.38, cleave: 5, knock: 320, stagger: 0, backstabMul: 1.0, poiseDmg: 34,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
-  mace:  { name: '戰鎚',  rarity: 'uncommon', weight: 2.4, damage: 38, fireRate: 3.5, range: 58, turnSpeed: 360, pierce: 0.95, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 1,
+  mace:  { name: '戰鎚',  rarity: 'uncommon', weight: 2.4, damage: 38, fireRate: 3.5, range: 58, pierce: 0.95, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 1,
            arcDeg: 80,  reach: 58, windup: 0.24, activeT: 0.09, recover: 0.42, cleave: 1, knock: 560, stagger: 0, backstabMul: 1.0, poiseDmg: 45,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
-  spear: { name: '長槍',  rarity: 'common',   weight: 1.8, damage: 30, fireRate: 5, range: 104, turnSpeed: 440, pierce: 0.55, melee: true, swingStyle: 'thrust', hands: 2,
+  spear: { name: '長槍',  rarity: 'common',   weight: 1.8, damage: 30, fireRate: 5, range: 104, pierce: 0.55, melee: true, swingStyle: 'thrust', hands: 2,
            arcDeg: 16,  reach: 104, windup: 0.14, activeT: 0.08, recover: 0.30, cleave: 2, knock: 200, stagger: 0, backstabMul: 1.0, poiseDmg: 18,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
-  dagger:{ name: '短劍',  rarity: 'common',   weight: 0.4, damage: 13, fireRate: 9, range: 44, turnSpeed: 640, pierce: 0.20, melee: true, swingStyle: 'sweep', hands: 1,
+  dagger:{ name: '短劍',  rarity: 'common',   weight: 0.4, damage: 13, fireRate: 9, range: 44, pierce: 0.20, melee: true, swingStyle: 'sweep', hands: 1,
            arcDeg: 60,  reach: 44, windup: 0.05, activeT: 0.06, recover: 0.16, cleave: 1, knock: 120, stagger: 0, backstabMul: 2.0, poiseDmg: 10,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // 底線武器（§7）：永遠有、彈藥無限。中世紀化後由「短刀」擔任（人人身上都有一把）
-  knife: { name: '短刀',  rarity: 'common',   weight: 0.2, damage: 9,  fireRate: 9, range: 38, turnSpeed: 660, pierce: 0.10, melee: true, swingStyle: 'sweep', hands: 1,
+  knife: { name: '短刀',  rarity: 'common',   weight: 0.2, damage: 9,  fireRate: 9, range: 38, pierce: 0.10, melee: true, swingStyle: 'sweep', hands: 1,
            arcDeg: 55,  reach: 38, windup: 0.05, activeT: 0.05, recover: 0.16, cleave: 1, knock: 90,  stagger: 0, backstabMul: 2.0, poiseDmg: 7,
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // ===== HOMEWARD 中世紀遠程（Phase 2 的先遣；試作場 6/7 鍵可試）=====
@@ -293,26 +300,26 @@ const WEAPONS = {
   // magazine 1 + reloadTime＝每發搭箭/絞弦；特定魔法（火矢等）之後進 Phase 2 一樣走此管線。
   // aimTime＝AI 射這把武器前的瞄準時間（＝預告長方形填滿所需秒數）；玩家不受此限
   // B 狙擊型：長預告 + 朝向鎖死 + 近乎 hitscan。你躲的是預告走廊，不是箭。
-  longbow: { name: '長弓',   rarity: 'common',   weight: 1.2, damage: 26, fireRate: 1.4, range: 1200, projSpeed: 2400, spreadBase: 1.6, spreadPerShot: 0.8, spreadMax: 6, spreadRecover: 9, magazine: 1, reloadTime: 1.5, turnSpeed: 520, pierce: 0.15, aimTime: 0.9, reloadMoveMul: 0.65, hands: 2, tracer: true },
-  crossbow:{ name: '十字弓', rarity: 'uncommon', weight: 2.6, damage: 42, fireRate: 1.0, range: 1300, projSpeed: 2800, spreadBase: 1.0, spreadPerShot: 0.6, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 2.6, turnSpeed: 420, pierce: 0.85, aimTime: 1.2, aimMoveMul: 0.15, reloadMoveMul: 0, hands: 2, tracer: true },   // B 狙擊型的極端：瞄最久、絞弦裝填 2.6s 完全定身、一發最痛
+  longbow: { name: '長弓',   rarity: 'common',   weight: 1.2, damage: 26, fireRate: 1.4, range: 1200, projSpeed: 2400, spreadBase: 1.6, spreadPerShot: 0.8, spreadMax: 6, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.15, aimTime: 0.9, reloadMoveMul: 0.65, hands: 2, tracer: true },
+  crossbow:{ name: '十字弓', rarity: 'uncommon', weight: 2.6, damage: 42, fireRate: 1.0, range: 1300, projSpeed: 2800, spreadBase: 1.0, spreadPerShot: 0.6, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 2.6, pierce: 0.85, aimTime: 1.2, aimMoveMul: 0.15, reloadMoveMul: 0, hands: 2, tracer: true },   // B 狙擊型的極端：瞄最久、絞弦裝填 2.6s 完全定身、一發最痛
   // 投槍＝**單手**遠程：唯一能搭盾的投射武器（射程短、彈數少），劍盾流的補牌
   // A 彈幕型：沒有預告，改成慢而顯眼的飛行物——你躲的是投槍本身。
-  javelin: { name: '投槍',  rarity: 'common',   weight: 1.0, damage: 34, fireRate: 1.2, range: 620,  projSpeed: 300, spreadBase: 2.2, spreadPerShot: 1.0, spreadMax: 8, spreadRecover: 9, magazine: 1, reloadTime: 1.3, turnSpeed: 540, pierce: 0.45, aimTime: 0, orb: '255,180,110', hands: 1 },
+  javelin: { name: '投槍',  rarity: 'common',   weight: 1.0, damage: 34, fireRate: 1.2, range: 620,  projSpeed: 300, spreadBase: 2.2, spreadPerShot: 1.0, spreadMax: 8, spreadRecover: 9, magazine: 1, reloadTime: 1.3, pierce: 0.45, aimTime: 0, orb: '255,180,110', hands: 1 },
   // 局外解鎖武器（榮譽；解鎖後才進招募/loot 池，仍 RNG 取得）
-  warbow:  { name: '戰弓',  rarity: 'uncommon', weight: 1.6, damage: 34, fireRate: 1.2, range: 1300, projSpeed: 2600, spreadBase: 1.2, spreadPerShot: 0.7, spreadMax: 5, spreadRecover: 9, magazine: 1, reloadTime: 1.7, turnSpeed: 470, pierce: 0.45, aimTime: 0.95, aimMoveMul: 0.35, reloadMoveMul: 0.6, hands: 2, tracer: true },   // B 狙擊型：長弓的上位，過半穿甲、略笨重
+  warbow:  { name: '戰弓',  rarity: 'uncommon', weight: 1.6, damage: 34, fireRate: 1.2, range: 1300, projSpeed: 2600, spreadBase: 1.2, spreadPerShot: 0.7, spreadMax: 5, spreadRecover: 9, magazine: 1, reloadTime: 1.7, pierce: 0.45, aimTime: 0.95, aimMoveMul: 0.35, reloadMoveMul: 0.6, hands: 2, tracer: true },   // B 狙擊型：長弓的上位，過半穿甲、略笨重
   // 術士騎士（救援變體 B1）的法杖：走遠程開火 AI（隊友本就會射），發射魔法彈＝彈藥無限、過半穿甲、視覺另畫。noRandom＝不進任何隨機池。
-  staff:   { name: '法杖',  rarity: 'rare', weight: 1.4, damage: 30, fireRate: 1.2, range: 900, projSpeed: 320, spreadBase: 1.0, spreadPerShot: 0.5, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 1.5, turnSpeed: 500, pierce: 0.55, aimTime: 0, reloadMoveMul: 0.85, hands: 2, magic: true, infinite: true, noRandom: true },   // A 彈幕型：魔法彈本來就畫成發光光矢＝最適合當慢而顯眼的那種
-  falchion:{ name: '彎刀',  rarity: 'uncommon', weight: 1.3, damage: 34, fireRate: 6, range: 62, turnSpeed: 560, pierce: 0.25, melee: true, swingStyle: 'sweep', hands: 1,
+  staff:   { name: '法杖',  rarity: 'rare', weight: 1.4, damage: 30, fireRate: 1.2, range: 900, projSpeed: 320, spreadBase: 1.0, spreadPerShot: 0.5, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.55, aimTime: 0, reloadMoveMul: 0.85, hands: 2, magic: true, infinite: true, noRandom: true },   // A 彈幕型：魔法彈本來就畫成發光光矢＝最適合當慢而顯眼的那種
+  falchion:{ name: '彎刀',  rarity: 'uncommon', weight: 1.3, damage: 34, fireRate: 6, range: 62, pierce: 0.25, melee: true, swingStyle: 'sweep', hands: 1,
              arcDeg: 120, reach: 62, windup: 0.09, activeT: 0.09, recover: 0.24, cleave: 4, knock: 240, stagger: 0, backstabMul: 1.0, poiseDmg: 24,
              magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },   // 單手廣掃：對付雜兵群
   // 最終解鎖（通過真相挑戰）：原版 Siren 致敬 The Patriot（無限彈但全場聽得見）→ 中世紀等價物：
   // 「喪鐘」＝雙手大劍，每一擊的鳴響全場聽得見（loud）＝威力極高但徹底放棄潛行。敘事於 Phase 4 重寫。
-  knell:   { name: '喪鐘',  rarity: 'legendary', weight: 2.8, damage: 58, fireRate: 3, range: 78, turnSpeed: 400, pierce: 0.75, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 2, loud: true, noRandom: true,
+  knell:   { name: '喪鐘',  rarity: 'legendary', weight: 2.8, damage: 58, fireRate: 3, range: 78, pierce: 0.75, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 2, loud: true, noRandom: true,
              arcDeg: 150, reach: 78, windup: 0.18, activeT: 0.13, recover: 0.34, cleave: 4, knock: 420, stagger: 0, backstabMul: 1.0, poiseDmg: 50,
              magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // --- 敵人專屬武器（不入玩家戰利品池）---
-  fangs:  { name:'獠牙',  rarity:'common',   weight: 0,   damage: 7,  fireRate: 8,  range: 34,  projSpeed: 520, spreadBase: 6,   spreadPerShot: 0,   spreadMax: 6,  spreadRecover: 20, magazine: 999, reloadTime: 0.1, turnSpeed: 560, pierce: 0, hands: 0 },   // 戰狼：貼臉短間距連咬（走一般射擊管線）
-  club:   { name:'木棍',  rarity:'common',   weight: 1.0, damage: 18, fireRate: 5, range: 54, turnSpeed: 460, pierce: 0.05, melee: true, swingStyle: 'sweep', hands: 1,
+  fangs:  { name:'獠牙',  rarity:'common',   weight: 0,   damage: 7,  fireRate: 8,  range: 34,  projSpeed: 520, spreadBase: 6,   spreadPerShot: 0,   spreadMax: 6,  spreadRecover: 20, magazine: 999, reloadTime: 0.1, pierce: 0, hands: 0 },   // 戰狼：貼臉短間距連咬（走一般射擊管線）
+  club:   { name:'木棍',  rarity:'common',   weight: 1.0, damage: 18, fireRate: 5, range: 54, pierce: 0.05, melee: true, swingStyle: 'sweep', hands: 1,
             arcDeg: 90,  reach: 54, windup: 0.16, activeT: 0.09, recover: 0.32, cleave: 1, knock: 180, stagger: 0, backstabMul: 1.0, poiseDmg: 14,
             magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },   // 農兵：慢、弱、體幹傷害低
 };
@@ -435,7 +442,6 @@ CONFIG.melee = {
   wpFailStagger: 0.45,     // 招架落空的自我硬直
   wpMoveMul: 0.4,          // 招架動作中的移動倍率
   blockMoveMul: 0.45,      // 舉盾時移動速度倍率
-  blockTurnMul: 0.6,       // 舉盾時轉向速度倍率（笨重感）
   parryWindow: 0.18,       // 舉盾後多久內算「招架」＝完全格擋 + 攻擊者硬直
   parryStagger: 0.7,       // 招架成功給攻擊者的硬直秒
   parryHealFrac: 0,        // （預留）招架回復比例
@@ -445,7 +451,10 @@ CONFIG.melee = {
   reactBlockCd: 0.50,       // 放下後的冷卻＝一定有空檔可以打，不會變成永久龜盾（舉:冷卻 ≈ 69% 在架上）
   activeMoveMul: 0.35,     // 判定窗中的移動倍率（揮擊瞬間幾乎定身）
   recoverMoveMul: 0.6,     // 後搖中的移動倍率
-  swingTurnMul: 0.4,       // 前搖之後（判定+後搖）的轉向倍率＝揮出去就不能大幅修正方向（太低＝完全跟不上走動的敵人）
+  swingTurnRate: 200,      // deg/s。**判定窗+後搖期間**的轉向上限（其餘時間 1:1、沒有上限）。
+                           // 這是騎士身上唯一剩下的轉向限制，而且它不是武器屬性——
+                           // 它的意思是「揮出去就是一個承諾」：不能揮到一半整個人轉過去掃。
+                           // 調 0＝揮擊完全可轉（刀刃會變成雷達）；調太低＝跟不上走動的敵人。
   bladeHalfDeg: 14,        // 刀刃的角度厚度（判定容錯）：掃過的角度帶再往兩側各放寬這麼多（太小＝對移動目標很容易揮空）
   thrustMinReachF: 0.35,   // 突刺起手時刀尖伸出的比例（判定窗內由此推到 1.0＝刺出去）
   // 擊退：實際位移 ≈ knock / knockDecay。兩個單位半徑和＝24px，位移必須明顯大於它才「推得開」。
@@ -770,7 +779,7 @@ const ABILITY_IDS = Object.keys(ABILITIES);
 const LOOT_ABILITY_IDS = ['salve', 'bandage', 'mend', 'miracle']; // 搜刮可出的術（miracle 需解鎖）
 
 // 裝備（持續被動，每單位 1 槽；效果於 makePlayer 套用）。fx 欄位皆為佔位倍率/加值。
-//   maxHpAdd / senseMul / reloadMul / magMul / dmgResist(0~1減傷) / spreadMul(發散×) / turnMul / moveMul
+//   maxHpAdd / senseMul / reloadMul / magMul / dmgResist(0~1減傷) / spreadMul(發散×) / moveMul
 // 中世紀化（Phase 2）：舊的 scope/quickmag/extmag/stabil 是槍械配件，槍已刪＝一併換掉。
 // 這組沒有地圖依賴（只出現在 roster/戰利品池），所以直接改 key，不需要對照表。
 const EQUIPMENT = {
@@ -778,7 +787,7 @@ const EQUIPMENT = {
   gauntlets: { name: '護手',     rarity: 'uncommon', fx: { reloadMul: 0.7 } },                // 搭箭/絞弦更快
   quiver:    { name: '箭袋',     rarity: 'uncommon', fx: { magMul: 2 } },                     // 弓弩多備一發（magazine 1 → 2）
   whetstone: { name: '磨刀石',   rarity: 'rare',     fx: { spreadMul: 0.7 } },                // 投射更穩
-  boots:     { name: '輕靴',     rarity: 'common',   fx: { turnMul: 1.2, moveMul: 1.1 } },    // 轉向/移動更靈活
+  boots:     { name: '輕靴',     rarity: 'common',   fx: { moveMul: 1.1 } },                  // 移動更靈活
   charm:     { name: '聖物護符', rarity: 'rare',     fx: { maxHpAdd: 25 } },                  // 體力上限
   ringmail:  { name: '鐵環襯裡', rarity: 'uncommon', fx: { dmgResist: 0.12 } },               // 固定減傷（與 ARMORS 的機率擋格不同軸）
 };   // ※ 盾已移出 EQUIPMENT → 見 OFFHANDS（佔副手、決定能不能格擋）；身上的甲 → 見 ARMORS
@@ -1061,11 +1070,11 @@ const UNIT_CLASSES = {
   footman:     { name: '徒步兵',   hp: CONFIG.enemy.hp, poise: 45, moveSpeed: 105, radius: CONFIG.unitRadius },
   spearman:    { name: '槍兵',     hp: CONFIG.enemy.hp, poise: 55, moveSpeed: 95,  radius: CONFIG.unitRadius },
   shieldman:   { name: '盾兵',     hp: CONFIG.enemy.hp, poise: 60, moveSpeed: 90,  radius: CONFIG.unitRadius },
-  wolf:        { name: '戰狼',     hp: 45,            poise: 25,  moveSpeed: 165, radius: 9  },
+  wolf:        { name: '戰狼',     hp: 45,            poise: 25,  moveSpeed: 165, radius: 9,  turn: 560 },   // 轉得快＝繞不掉
   archer:      { name: '弓手',     hp: 60,            poise: 35,  moveSpeed: 95,  radius: CONFIG.unitRadius },
-  arbalest:    { name: '弩手',     hp: 70,            poise: 50,  moveSpeed: 70,  radius: CONFIG.unitRadius },
-  manatarms:   { name: '披甲士',   hp: CONFIG.enemy.hp, poise: 110, moveSpeed: 70, radius: 14, armor: CONFIG.armor.blockChance },
-  serjeant:    { name: '軍士',     hp: CONFIG.enemy.hp, poise: 110, moveSpeed: 85, radius: 14, armor: CONFIG.armor.blockChance },
+  arbalest:    { name: '弩手',     hp: 70,            poise: 50,  moveSpeed: 70,  radius: CONFIG.unitRadius, turn: 420 },
+  manatarms:   { name: '披甲士',   hp: CONFIG.enemy.hp, poise: 110, moveSpeed: 70, radius: 14, armor: CONFIG.armor.blockChance, turn: 360 },   // 笨重＝繞得掉
+  serjeant:    { name: '軍士',     hp: CONFIG.enemy.hp, poise: 110, moveSpeed: 85, radius: 14, armor: CONFIG.armor.blockChance, turn: 380 },
   civilian:    { name: '平民',     hp: 30,            poise: 20,  moveSpeed: 95,  radius: 11 },
   dummy:       { name: '訓練假人', hp: 400,           poise: 70,  moveSpeed: 0,   radius: 13 },
   dummy_armor: { name: '披甲假人', hp: 400,           poise: 130, moveSpeed: 0,   radius: 15, armor: CONFIG.armor.blockChance },
@@ -2305,7 +2314,6 @@ function makePlayer(i, cfg, pos) {
   // 彈藥備量＝休息關分配的量（底線武器無限）
   const reserve = isInfiniteAmmo(cfg.weaponId) ? 9999 : (cfg.allocatedAmmo != null ? cfg.allocatedAmmo : CONFIG.ammo.defaultAlloc);
   const magazine = Math.round(W.magazine * (fx.magMul || 1));   // 裝備可改彈夾容量
-  const turnMul = (fx.turnMul || 1);
   // 四槽位：1/2＝手部 set、3/4＝自由位（道具或技能）。相容舊 roster 欄位（weaponId/weaponId2/itemId/abilityId）。
   const mkSet = (mainId, offId, reserve, enhRec) => {
     if (!mainId || !WEAPONS[mainId]) return null;
@@ -2341,11 +2349,11 @@ function makePlayer(i, cfg, pos) {
     currentNode: null,                                         // 節點導航（與敵人同一套）
     // 以下是「當前主手」的鏡像（既有戰鬥碼只認得這些欄位；換 set 由 equipActiveSet 重寫）
     weaponId: mainSlot.weaponId, weapon: mainSlot.weapon, quality: mainSlot.quality, enh: mainSlot.enh, magazine: mainSlot.magazine, ammoInMag: mainSlot.ammoInMag, ammoReserve: mainSlot.ammoReserve, reloadT: 0, reloadDur: 0, bloom: 0,
-    swapT: 0, turnMul,   // 換手冷卻 + 轉向倍率(換手時重算 turnSpeed)
+    swapT: 0,   // 換手冷卻
     abilityId: cfg.abilityId, ability: ab,
     equipId: cfg.equipId || null, itemId: cfg.itemId || null, itemCount: cfg.itemId ? (cfg.itemCount || 1) : 0,   // 裝備槽 / 道具槽(itemCount 充能)
     dmgResist: (fx.dmgResist || 0), reloadMul: (fx.reloadMul || 1), spreadMul: fx.spreadMul || 1,
-    turnSpeed: mainSlot.weapon.turnSpeed * turnMul, moveMul: (fx.moveMul || 1) * AR.moveMul * (offW ? offW.moveMul : 1),
+    moveMul: (fx.moveMul || 1) * AR.moveMul * (offW ? offW.moveMul : 1),
     // 身上的甲：與重裝敵人同一套機率擋格機制（代價＝移速/怒火獲得）。
     // 取「兵種自帶」與「穿戴」的較大者——披甲士之所以叫披甲士就是因為他有甲，脫不掉。
     armorId: cfg.armorId || 'none', armor: Math.max(AR.armor, CLS.armor || 0), wrathGainMul: AR.wrathGainMul * (1 + kUp('wrathGain')),
@@ -2401,6 +2409,7 @@ function makeEnemy(nodeId, personalityName, isReinforce = false, facing = Math.P
     aimT: 0, aimDur: 0,   // 遠程瞄準進度／所需時間（＝預告長方形的填滿進度）
     poiseMax: TYPE.poise || CONFIG.melee.poiseDefault, poise: TYPE.poise || CONFIG.melee.poiseDefault, poiseHitT: -99,
     wrathMax: 0, wrath: 0,   // 敵人不管理怒火（AI 不會用；壓力靠體幹 + 攻擊權）
+    turn: TYPE.turn || CONFIG.enemy.turnSpeed,   // 轉速上限（deg/s）＝繞背玩法的地基。騎士沒有這欄
     poiseBreakFxT: 0, guardBreakFxT: 0, flinchFxT: 0, noWrathFxT: 0,
     fireCooldown: 0, engageTimer: 0, muzzle: 0, isReinforce, watchFacing: facing,
     lastSeenPos: null, lastSeenT: -Infinity,   // 逐隻自己的目標記憶（TITHE C5：不再有全體共享的情報網）
@@ -3313,7 +3322,7 @@ function beatDone(cs, b, dt) {
     case 'move': {
       const a = b.actor(); const sp = (b.speed || CONFIG.moveSpeed) * dt;
       moveToward(a, b.to, sp);
-      a.facing = rotToward(a.facing, angTo(a.pos, b.to), (a.turnSpeed || 360) * Math.PI / 180 * dt);
+      a.facing = rotToward(a.facing, angTo(a.pos, b.to), (a.turn || 360) * Math.PI / 180 * dt);
       return dist(a.pos, b.to) < 4;
     }
     case 'shoot': {
@@ -3732,7 +3741,7 @@ function drawFloaters() {
 /* =====================================================================
    Combat — 開火(發散) / 換彈 / 彈藥 / 子彈 / 傷害 / 死亡
    ===================================================================== */
-// 雙武器換槍：active 與 weapon2 對調；抽出時間隨抽出武器 weight（換槍期間不能開火）。重算 active 的 turnSpeed。
+// 雙武器換槍：active 與 weapon2 對調；抽出時間隨抽出武器 weight（換槍期間不能開火）。
 /* =====================================================================
    四槽位 / 手部（HOMEWARD Phase 2，使用者定案）
    槽 1、2＝**手部 set**：{ main: 主手武器, off: 副手（盾 或 單手近接＝雙持 或 null） }
@@ -3791,7 +3800,6 @@ function equipActiveSet(u) {
   u.quality = n.quality; u.enh = n.enh;   // S2：當前主手的強化狀態鏡像到 u（rosterFromPlayer/氣勢詞條要讀）
   u.ammoInMag = n.ammoInMag; u.ammoReserve = n.ammoReserve;
   u.reloadT = n.reloadT; u.reloadDur = n.reloadDur; u.bloom = n.bloom;
-  u.turnSpeed = u.weapon.turnSpeed * (u.turnMul || 1);
 }
 // 把 u 上的當前主手狀態存回 set（換手前呼叫，才不會弄丟裝填進度/彈藥/強化）
 function stashActiveSet(u) {
@@ -4292,10 +4300,11 @@ function swingMoveMul(u) {
   if (s.t < s.windup + s.active) return CONFIG.melee.activeMoveMul;
   return CONFIG.melee.recoverMoveMul;
 }
-function swingTurnMul(u) {
+// 這一幀的轉向上限（deg/s）；null＝不限，滑鼠指哪就是哪。
+// 只有「揮出去之後」（判定窗 + 後搖）會限速——前搖仍然 1:1，你要瞄準的時候瞄得動。
+function swingTurnRate(u) {
   const s = u.swing;
-  if (s) return (s.t < s.windup) ? 1 : CONFIG.melee.swingTurnMul;
-  return u.blocking ? CONFIG.melee.blockTurnMul : 1;
+  return (s && s.t >= s.windup) ? CONFIG.melee.swingTurnRate : null;
 }
 
 // spreadDeg：本發實際發散；bloomAdd>0 才累積連射發散。回傳是否真的開了一槍。
@@ -5029,7 +5038,7 @@ function enemyTick(e, dt) {
     else e.currentNode = nearestNode(e.pos, false);
   }
 
-  const turn = e.weapon.turnSpeed * Math.PI / 180 * dt;
+  const turn = (e.turn || CONFIG.enemy.turnSpeed) * Math.PI / 180 * dt;
   if (seen) {
     const ang = angTo(e.pos, aimPos);
     // 遠程瞄準預告中（aimT>0）＝轉向大幅下降＝朝向鎖住、可被 strafe 閃開（aimTurnMul；近接不受此限）
@@ -5051,18 +5060,13 @@ function enemyTick(e, dt) {
 /* =====================================================================
    Movement helpers
    ===================================================================== */
-// Shift 奔跑倍率：隨武器重量遞減（夾在 minMult..base）
-// 負重＝所有槽位的武器 + 副手（盾） + 身上的甲（影響奔跑）
-function carriedWeight(u) {
-  let w = (ARMORS[u.armorId] || ARMORS.none).weight || 0;
-  for (const sl of (u.slots || [])) {
-    if (!sl || sl.kind !== 'hands') continue;
-    if (sl.main && sl.main.weapon) w += sl.main.weapon.weight || 0;
-    if (sl.off) w += isShield(sl.off) ? (OFFHANDS[sl.off].weight || 0) : ((WEAPONS[sl.off] && WEAPONS[sl.off].weight) || 0);
-  }
-  return w;
-}
-const sprintMult = (u) => clamp(CONFIG.sprint.base - (carriedWeight(u) - 1) * CONFIG.sprint.weightPenalty, CONFIG.sprint.minMult, CONFIG.sprint.base);
+/* Shift 奔跑倍率：**固定值**（使用者定案）。
+   舊版是「負重（甲＋兩組主手＋副手全部加總）越重跑越慢」，整條拿掉了，理由有三：
+     ① 奔跑已經明碼吃怒火了——那是看得見、你自己按下去的成本。再疊一層由配裝決定的隱形稅
+        就是同一件事收三次錢（重甲已經付了 moveMul 和 wrathGainMul）。
+     ② 它沒有任何 UI。裸裝 1.9× 對滿裝 1.1× 是接近兩倍的差距，卻沒有一個字告訴玩家。
+     ③ 「多帶一把備用武器就跑得慢」是背包管理遊戲的邏輯，不是 DOOM。 */
+const sprintMult = () => CONFIG.sprint.mult;
 
 function moveToward(u, goal, step) {
   const d = dist(u.pos, goal); if (d < 1e-3) return;
@@ -5105,8 +5109,8 @@ function onLowWall(pos, r) {
   return false;
 }
 const lowWallSpeedMult = (pos) => onLowWall(pos, CONFIG.unitRadius + CONFIG.lowWall.touchR) ? CONFIG.lowWall.slow : 1;
-// 草叢減速率（0~slowMax）＝負重×slowPerWeight，只在踏進真草叢(非煙幕)時 >0。bushSlowFrac 同時是「步行聲」要掛的量。
-const bushSlowFrac = (u) => inBush(u.pos) ? Math.min(CONFIG.bush.slowPerWeight * carriedWeight(u), CONFIG.bush.slowMax) : 0;
+// 草叢減速率：**固定值**，不再隨負重（負重整條拿掉了，見 sprintMult）。
+const bushSlowFrac = (u) => inBush(u.pos) ? CONFIG.bush.slow : 0;
 const bushSpeedMult = (u) => 1 - bushSlowFrac(u);
 // 草叢步行聲倍率：叢內＝1 + 減速率×rustleFromSlow + 固定 rustleBonus（重甲更吵、踏進草叢本身也加成）；叢外＝1。
 // 遠程「動作中」移動倍率：裝填優先於瞄準；近接/無武器＝不受限。騎士無瞄準窗(aimT 恆 0)＝只吃裝填。
@@ -5440,7 +5444,7 @@ function update(dt) {
   for (const e of enemies) { if (e.dead) continue; if (e.fireCooldown > 0) e.fireCooldown -= dt; if (e.muzzle > 0) e.muzzle -= dt; if (e.flash > 0) e.flash = Math.max(0, e.flash - CONFIG.flash.decay * dt); juiceDecay(e); tickAmmo(e, dt); tickMelee(e, dt); tickReactiveBlock(e, dt); tickResources(e, dt); meleeFxDecay(e); }
   pruneAttackTokens();   // 攻擊權：過期的釋放出來給別隻
 
-  // 1) 騎士（唯一受控單位）：滑鼠轉向(turnSpeed) + 相對角色移動 + 左鍵開火
+  // 1) 騎士（唯一受控單位）：滑鼠轉向(1:1) + 相對角色移動 + 左鍵開火
   if (controlledId != null) {
     const u = players[controlledId];
     if (u.state === 'CONTROLLED') {
@@ -5461,9 +5465,10 @@ function update(dt) {
       else if (u.exec) { u.sprinting = false; tickExecution(u, dt); }   // 處決中：鎖住移動與攻擊，只推進動作
       else if (u.staggerT > 0) { u.sprinting = false; }
       else {
-        // 砲塔以「武器迴轉速度」追滑鼠輸入累積的目標朝向（追不上＝轉向延遲；裝備可改迴轉）
-        // 近接：揮出去之後轉向大幅受限（swingTurnMul）＝要預判，不能揮到一半整個人轉過去掃。
-        u.facing = rotToward(u.facing, Input.aim, (u.turnSpeed || u.weapon.turnSpeed) * swingTurnMul(u) * Math.PI / 180 * dt);
+        // 瞄準 1:1 跟著滑鼠——沒有轉速上限（見 CONFIG.mouseSensitivity 上方的註解）。
+        // 唯一的例外是揮出去之後：那不是武器差異，是揮擊本身的承諾（swingTurnRate）。
+        const trate = swingTurnRate(u);
+        u.facing = (trate == null) ? Input.aim : rotToward(u.facing, Input.aim, trate * Math.PI / 180 * dt);
         let fwd = 0, strafe = 0;
         if (Input.held('w')) fwd += 1; if (Input.held('s')) fwd -= 1;
         if (Input.held('d')) strafe += 1; if (Input.held('a')) strafe -= 1;
@@ -5475,7 +5480,7 @@ function update(dt) {
           const rx = Math.cos(u.facing + Math.PI / 2), ry = Math.sin(u.facing + Math.PI / 2);
           let mx = fx * fwd + rx * strafe, my = fy * fwd + ry * strafe;
           const l = Math.hypot(mx, my) || 1;
-          const spd = spdOf(u) * (u.sprinting ? sprintMult(u) : 1) * lowWallSpeedMult(u.pos) * bushSpeedMult(u) * rangedActionMoveMul(u) * (isScoping() ? scopeMoveMul(u) : 1) * (u.moveMul || 1) * (u.buffMove || 1) * swingMoveMul(u);  // 低矮牆/草叢減速 + 裝填/望遠 + 裝備/道具 + 被動 + 揮擊/舉盾
+          const spd = spdOf(u) * (u.sprinting ? sprintMult() : 1) * lowWallSpeedMult(u.pos) * bushSpeedMult(u) * rangedActionMoveMul(u) * (isScoping() ? scopeMoveMul(u) : 1) * (u.moveMul || 1) * (u.buffMove || 1) * swingMoveMul(u);  // 低矮牆/草叢減速 + 裝填/望遠 + 裝備/道具 + 被動 + 揮擊/舉盾
           u.pos.x += mx / l * spd * dt; u.pos.y += my / l * spd * dt;
         }
         if (Input.fire && !u.blocking) manualFire(u, u.facing);   // 舉盾時不出招（放開右鍵才能揮）
@@ -5635,7 +5640,7 @@ function drawArenaHUD() {
   else { rows.push(['招架窗', CONFIG.melee.wpWindow.toFixed(3) + 's']); rows.push(['空招懲罰', '硬直 ' + CONFIG.melee.wpFailStagger + 's']); }
   rows.push(['身上的甲', AR.name + '（C 換）']);
   rows.push(['擋格率', Math.round(AR.armor * 100) + '%']);
-  rows.push(['負重/移速', carriedWeight(k).toFixed(1) + ' / ×' + (k.moveMul || 1).toFixed(2)]);
+  rows.push(['移速倍率', '×' + (k.moveMul || 1).toFixed(2)]);
   const bw = 208, bh = 30 + rows.length * 15;
   ctx.fillStyle = 'rgba(10,14,20,0.82)'; ctx.fillRect(pad, pad, bw, bh);
   ctx.strokeStyle = 'rgba(160,180,200,0.35)'; ctx.lineWidth = 1; ctx.strokeRect(pad, pad, bw, bh);
@@ -6466,7 +6471,7 @@ function drawScreenOverlays() {
     ctx.beginPath(); ctx.arc(s.x + Math.cos(sa) * (lineLen + 12), s.y + Math.sin(sa) * (lineLen + 12), 4, 0, Math.PI * 2); ctx.stroke();
     if (u.sprinting) {
       ctx.fillStyle = 'rgba(127,227,255,0.9)'; ctx.font = 'bold 11px Consolas'; ctx.textAlign = 'center';
-      ctx.fillText(`▸▸ SPRINT x${sprintMult(u).toFixed(2)}`, s.x, s.y - u.radius * cam.scale - 26);
+      ctx.fillText(`▸▸ SPRINT x${sprintMult().toFixed(2)}`, s.x, s.y - u.radius * cam.scale - 26);
       ctx.textAlign = 'left';
     }
     // 互動提示（在範圍內的門/按鈕/俘虜上方）
