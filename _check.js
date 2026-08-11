@@ -143,6 +143,7 @@ const EPILOGUE = `
   CONFIG, WEAPONS, ENEMY_TYPES, ARENA_MODES, MAPS, ORIGIN_IDS, ENCOUNTER_IDS,
   ARENA_WEAPON_IDS, ARENA_OFF_IDS, arenaSetWeapon, arenaSetOff,
   get drops() { return drops; }, get backpack() { return backpack; }, updateDrops,
+  enterDescent, get descentPhase() { return descentPhase; }, get descentBag() { return descentBag; },
   update, draw, drawSeedTag,
   goMenu, initRun, chooseOrigin, departFromOrigin, enterOrigin, enterOathLoadout,
   selectNode, startMission, endMission, advanceNode,
@@ -229,6 +230,7 @@ const SCENARIOS = [
   { name: 'moveset-dual',    frames: 200, enter: () => T.enterArena('melee'), poke: pokeDual,    invariants: [dualOffhandWorks] },
   { name: 'drop-enh',        frames: 30,  enter: bootCombat, poke: pokeDrop, invariants: [dropKeepsEnh, executionWindowExists] },
   { name: 'room-awake',      frames: 2,   enter: bootCombat, poke: pokeAwake, invariants: [allAwakeOnEntry] },
+  { name: 'descent',         frames: 40,  enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeDescent, invariants: [descentFlowWorks] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
@@ -391,6 +393,43 @@ function oneHandSet() {
 
 function noPlayerPoise() {
   for (const p of (T.players || [])) if (p && p.poiseMax) return `騎士帶著體幹上限 ${p.poiseMax}——體幹只有敵人該有`;
+  return null;
+}
+
+/* 下墜整備（DESIGN.md §5.4b）：先三選一 → 再配裝 → 落地。
+   整條路徑都用鍵盤驅動（1~9 / D / Enter），所以 harness 不需要點座標就走得完——
+   這是刻意的：滑鼠 hit-test 的探針很容易在版面微調後變成假綠。
+   這條顧的是「這一停真的走得完」：選了獎勵要進袋、裝上要離開袋子、落地要把袋子清空。 */
+const descProbe = { phase0: null, afterPick: null, bagAfterPick: 0, bagAfterEquip: 0, sceneEnd: null, bagEnd: 0, equipping: null, rosterChanged: false };
+// 裝上去的那一件，現在應該真的掛在騎士身上的對應欄位
+const onBody = (r, it) => !!(r && it && (
+  it.kind === 'weapon' ? r.weaponId === it.id :
+  it.kind === 'off' ? r.offId === it.id :
+  it.kind === 'armor' ? r.armorId === it.id :
+  it.kind === 'equip' ? r.equipId === it.id :
+  it.kind === 'ability' ? r.abilityId === it.id :
+  it.kind === 'item' ? r.itemId === it.id : false));
+function pokeDescent(i) {
+  if (i === 0) descProbe.phase0 = T.descentPhase;
+  // 多塞一件進袋子：不然「選一個、裝一個」剛好把袋子清空，最後那條「落地要清袋」就變成空轉
+  if (i === 1) T.descentBag.push({ kind: 'armor', id: 'mail' });
+  if (i === 2) key('keydown', '1');                       // 選第一個獎勵
+  if (i === 4) { descProbe.afterPick = T.descentPhase; descProbe.bagAfterPick = T.descentBag.length; }
+  if (i === 5) descProbe.equipping = T.descentBag[0];     // 記下等一下要裝的是哪一件
+  if (i === 6) key('keydown', '1');                       // 把袋子第一件裝上
+  if (i === 8) { descProbe.bagAfterEquip = T.descentBag.length; descProbe.rosterChanged = onBody(T.roster[0], descProbe.equipping); }
+  if (i === 10) key('keydown', 'Enter');                  // 落地
+  if (i === 12) { descProbe.sceneEnd = T.scene; descProbe.bagEnd = T.descentBag.length; }
+}
+function descentFlowWorks() {
+  const P = descProbe;
+  if (P.phase0 !== 'REWARD') return `進來的時候不是三選一階段（${P.phase0}）——順序應該是先選獎勵`;
+  if (P.afterPick !== 'KIT') return `選完獎勵沒有進配裝階段（${P.afterPick}）`;
+  if (!P.bagAfterPick) return '選到的獎勵沒有進袋子';
+  if (P.bagAfterEquip >= P.bagAfterPick) return '按了裝上，袋子裡的東西沒有少一件';
+  if (!P.rosterChanged) return `按了裝上，但「${P.equipping && P.equipping.kind}/${P.equipping && P.equipping.id}」沒有出現在騎士對應的欄位上`;
+  if (P.sceneEnd === 'DESCENT') return '按了 Enter 還停在下墜畫面——落地沒接上';
+  if (P.bagEnd) return '落地之後袋子還有東西——袋子不該帶過那道門（§6.2b）';
   return null;
 }
 
@@ -645,6 +684,8 @@ for (const s of list) {
     msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
     dropProbe.got = null;
     awakeProbe.sampled = false; awakeProbe.total = awakeProbe.idle = 0;
+    descProbe.phase0 = descProbe.afterPick = descProbe.sceneEnd = descProbe.equipping = null;
+    descProbe.bagAfterPick = descProbe.bagAfterEquip = descProbe.bagEnd = 0; descProbe.rosterChanged = false;
     s.enter();
     grabPointer();
     stage = 'loop';
