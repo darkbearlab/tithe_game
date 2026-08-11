@@ -219,7 +219,7 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noPlayerPoise, noWeaponTurnCap, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI] },
   { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, wrathGainHappened, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
   { name: 'wrath',           frames: 240, enter: () => T.enterArena('melee'), poke: pokeWrath, invariants: [wrathRules] },
   { name: 'wrath-ult',       frames: 60,  enter: () => T.enterArena('melee'), poke: pokeUlt,   invariants: [ultimateWorks] },
@@ -248,7 +248,7 @@ for (const k of Object.keys(T.MAPS)) {
   SCENARIOS.push({
     name: 'map-' + k, frames: 240,
     enter: () => { bootCampaignToMap(); T.forceMap(k); T.startMission(); },
-    poke: pokeCombat, invariants: [soloKnight, noPlayerPoise, noWeaponTurnCap, noMorale, noStealth, noTacticalAI],
+    poke: pokeCombat, invariants: [soloKnight, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI],
   });
 }
 
@@ -368,6 +368,21 @@ function noWeaponTurnCap() {
   if (!T.WEAPONS) return 'WEAPONS 沒有從沙箱丟出來，這條探針量不到東西';   // 別讓它靜靜地空轉過去
   for (const id in T.WEAPONS) if (T.WEAPONS[id].turnSpeed !== undefined) return `武器 ${id} 帶著 turnSpeed——轉向上限只留給敵人`;
   for (const p of (T.players || [])) if (p && (p.turnSpeed !== undefined || p.turn !== undefined)) return '騎士帶著轉速欄位——瞄準應該是 1:1';
+  return null;
+}
+
+/* 手部 set 只有一組，而且戰鬥中不能換（§2.6b）。這條擋的是「順手把備用武器加回來」——
+   在 push-forward 裡戰鬥中換武器是純正面效益（沒盾切盾、打不動切鎚），沒有取捨。
+   順便釘住 weight 欄位不要復活：它的消費者（奔跑懲罰、抽出時間、倉庫格數）全死光了。 */
+function oneHandSet() {
+  for (const p of (T.players || [])) {
+    if (!p || !p.slots) continue;
+    const hands = p.slots.filter(sl => sl && sl.kind === 'hands');
+    if (hands.length !== 1) return `騎士有 ${hands.length} 組手部 set，應該只有一組`;
+    if (p.slotIdx !== undefined || p.swapT !== undefined) return '騎士帶著換手欄位（slotIdx/swapT）';
+  }
+  if (!T.WEAPONS) return 'WEAPONS 沒有從沙箱丟出來，這條探針量不到東西';
+  for (const id in T.WEAPONS) if (T.WEAPONS[id].weight !== undefined) return `武器 ${id} 還帶著 weight——它已經沒有任何消費者了`;
   return null;
 }
 

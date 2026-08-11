@@ -274,7 +274,6 @@ const CONFIG = {
    **揮擊不花任何資源**（DESIGN §2.2 ②）——攻擊免費是 push-forward 的前提。 */
 const MOVE_DEFAULT = { name: '揮擊', swingStyle: 'sweep', arcDeg: 90, reach: 60, windup: 0.12, activeT: 0.09, recover: 0.28, cleave: 1, knock: 200, stagger: 0, backstabMul: 1, poiseDmg: 16, dmgMul: 1, hyperArmor: false };
 const mv = (o) => Object.assign({}, MOVE_DEFAULT, o);
-// weight：重量（影響 Shift 奔跑倍率，越重跑越慢）
 // pierce：穿甲值 0~1（對裝甲敵人的有效擋格率 = armor.blockChance × (1−pierce)）。
 //   分級：pistol/smg/pdw/carbine=0（反人員，對甲無力）／rifle=0.5（過半穿）／dmr=0.9（裝甲可靠解）。
 // pellets：單次擊發的彈丸數（霰彈）；burst：點放節奏 { size 連發數, gap 連發後停頓秒 }（重機槍）。
@@ -283,31 +282,31 @@ const mv = (o) => Object.assign({}, MOVE_DEFAULT, o);
 const WEAPONS = {
   // ===== 近接武器（melee:true → 走揮斬管線，不生子彈）=====
   // 招式定義見上面 MOVE_DEFAULT。range 仍填 light 的 reach＝敵 AI 的接近距離判斷沿用同一欄位。
-  sword: { name: '長劍',  rarity: 'common',   weight: 1.5, damage: 30, fireRate: 6, range: 66, pierce: 0.35, melee: true, hands: 1,
+  sword: { name: '長劍',  rarity: 'common',   damage: 30, fireRate: 6, range: 66, pierce: 0.35, melee: true, hands: 1,
            moves: { light: mv({ name: '橫斬', arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, poiseDmg: 22 }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // 石中劍（事件解鎖，S2/S1 的產物）：傷害同長劍、**完全穿甲(pierce 1.0)**、noEnhance＝charges 已用盡不能再打。
-  stonesword: { name: '石中劍', rarity: 'legendary', weight: 1.5, damage: 30, fireRate: 6, range: 66, pierce: 1.0, melee: true, hands: 1, noEnhance: true,
+  stonesword: { name: '石中劍', rarity: 'legendary', damage: 30, fireRate: 6, range: 66, pierce: 1.0, melee: true, hands: 1, noEnhance: true,
            moves: { light: mv({ name: '橫斬', arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, poiseDmg: 22 }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // 雙手＝自己供應左右兩招。輕擊是原本那一刀；重擊是慢一倍、體幹傷害兩倍以上的縱劈＝**開處決窗的工具**
-  axe:   { name: '雙手斧', rarity: 'common',  weight: 2.2, damage: 48, fireRate: 4, range: 62, pierce: 0.30, melee: true, hands: 2,
+  axe:   { name: '雙手斧', rarity: 'common',  damage: 48, fireRate: 4, range: 62, pierce: 0.30, melee: true, hands: 2,
            moves: { light: mv({ name: '橫掃', arcDeg: 160, reach: 62, windup: 0.20, activeT: 0.14, recover: 0.38, cleave: 5, knock: 320, poiseDmg: 34, hyperArmor: true }),
                     heavy: mv({ name: '劈落', arcDeg: 70,  reach: 68, windup: 0.34, activeT: 0.12, recover: 0.50, cleave: 2, knock: 520, poiseDmg: 80, dmgMul: 1.7, hyperArmor: true }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
-  mace:  { name: '戰鎚',  rarity: 'uncommon', weight: 2.4, damage: 38, fireRate: 3.5, range: 58, pierce: 0.95, melee: true, hands: 1,
+  mace:  { name: '戰鎚',  rarity: 'uncommon', damage: 38, fireRate: 3.5, range: 58, pierce: 0.95, melee: true, hands: 1,
            moves: { light: mv({ name: '砸擊', arcDeg: 80, reach: 58, windup: 0.24, activeT: 0.09, recover: 0.42, cleave: 1, knock: 560, poiseDmg: 45, hyperArmor: true }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // 長槍：左＝突刺（保留它「長 reach 逼你繞側」的身分，敵人 AI 也只用 light），右＝橫掃清身邊
-  spear: { name: '長槍',  rarity: 'common',   weight: 1.8, damage: 30, fireRate: 5, range: 104, pierce: 0.55, melee: true, hands: 2,
+  spear: { name: '長槍',  rarity: 'common',   damage: 30, fireRate: 5, range: 104, pierce: 0.55, melee: true, hands: 2,
            moves: { light: mv({ name: '突刺', swingStyle: 'thrust', arcDeg: 16, reach: 104, windup: 0.14, activeT: 0.08, recover: 0.30, cleave: 2, knock: 200, poiseDmg: 18 }),
                     heavy: mv({ name: '橫掃', arcDeg: 170, reach: 76, windup: 0.26, activeT: 0.14, recover: 0.42, cleave: 5, knock: 300, poiseDmg: 40, dmgMul: 1.25 }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
-  dagger:{ name: '短劍',  rarity: 'common',   weight: 0.4, damage: 13, fireRate: 9, range: 44, pierce: 0.20, melee: true, hands: 1,
+  dagger:{ name: '短劍',  rarity: 'common',   damage: 13, fireRate: 9, range: 44, pierce: 0.20, melee: true, hands: 1,
            moves: { light: mv({ name: '刺劃', arcDeg: 60, reach: 44, windup: 0.05, activeT: 0.06, recover: 0.16, knock: 120, backstabMul: 2.0, poiseDmg: 10 }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // 底線武器（§7）：永遠有、彈藥無限。中世紀化後由「短刀」擔任（人人身上都有一把）
-  knife: { name: '短刀',  rarity: 'common',   weight: 0.2, damage: 9,  fireRate: 9, range: 38, pierce: 0.10, melee: true, hands: 1,
+  knife: { name: '短刀',  rarity: 'common',   damage: 9,  fireRate: 9, range: 38, pierce: 0.10, melee: true, hands: 1,
            moves: { light: mv({ name: '割', arcDeg: 55, reach: 38, windup: 0.05, activeT: 0.05, recover: 0.16, knock: 90, backstabMul: 2.0, poiseDmg: 7 }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // ===== HOMEWARD 中世紀遠程（Phase 2 的先遣；試作場 6/7 鍵可試）=====
@@ -315,27 +314,27 @@ const WEAPONS = {
   // magazine 1 + reloadTime＝每發搭箭/絞弦；特定魔法（火矢等）之後進 Phase 2 一樣走此管線。
   // aimTime＝AI 射這把武器前的瞄準時間（＝預告長方形填滿所需秒數）；玩家不受此限
   // B 狙擊型：長預告 + 朝向鎖死 + 近乎 hitscan。你躲的是預告走廊，不是箭。
-  longbow: { name: '長弓',   rarity: 'common',   weight: 1.2, damage: 26, fireRate: 1.4, range: 1200, projSpeed: 2400, spreadBase: 1.6, spreadPerShot: 0.8, spreadMax: 6, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.15, aimTime: 0.9, reloadMoveMul: 0.65, hands: 2, tracer: true },
-  crossbow:{ name: '十字弓', rarity: 'uncommon', weight: 2.6, damage: 42, fireRate: 1.0, range: 1300, projSpeed: 2800, spreadBase: 1.0, spreadPerShot: 0.6, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 2.6, pierce: 0.85, aimTime: 1.2, aimMoveMul: 0.15, reloadMoveMul: 0, hands: 2, tracer: true },   // B 狙擊型的極端：瞄最久、絞弦裝填 2.6s 完全定身、一發最痛
+  longbow: { name: '長弓',   rarity: 'common',   damage: 26, fireRate: 1.4, range: 1200, projSpeed: 2400, spreadBase: 1.6, spreadPerShot: 0.8, spreadMax: 6, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.15, aimTime: 0.9, reloadMoveMul: 0.65, hands: 2, tracer: true },
+  crossbow:{ name: '十字弓', rarity: 'uncommon', damage: 42, fireRate: 1.0, range: 1300, projSpeed: 2800, spreadBase: 1.0, spreadPerShot: 0.6, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 2.6, pierce: 0.85, aimTime: 1.2, aimMoveMul: 0.15, reloadMoveMul: 0, hands: 2, tracer: true },   // B 狙擊型的極端：瞄最久、絞弦裝填 2.6s 完全定身、一發最痛
   // 投槍＝**單手**遠程：唯一能搭盾的投射武器（射程短、彈數少），劍盾流的補牌
   // A 彈幕型：沒有預告，改成慢而顯眼的飛行物——你躲的是投槍本身。
-  javelin: { name: '投槍',  rarity: 'common',   weight: 1.0, damage: 34, fireRate: 1.2, range: 620,  projSpeed: 300, spreadBase: 2.2, spreadPerShot: 1.0, spreadMax: 8, spreadRecover: 9, magazine: 1, reloadTime: 1.3, pierce: 0.45, aimTime: 0, orb: '255,180,110', hands: 1 },
+  javelin: { name: '投槍',  rarity: 'common',   damage: 34, fireRate: 1.2, range: 620,  projSpeed: 300, spreadBase: 2.2, spreadPerShot: 1.0, spreadMax: 8, spreadRecover: 9, magazine: 1, reloadTime: 1.3, pierce: 0.45, aimTime: 0, orb: '255,180,110', hands: 1 },
   // 局外解鎖武器（榮譽；解鎖後才進招募/loot 池，仍 RNG 取得）
-  warbow:  { name: '戰弓',  rarity: 'uncommon', weight: 1.6, damage: 34, fireRate: 1.2, range: 1300, projSpeed: 2600, spreadBase: 1.2, spreadPerShot: 0.7, spreadMax: 5, spreadRecover: 9, magazine: 1, reloadTime: 1.7, pierce: 0.45, aimTime: 0.95, aimMoveMul: 0.35, reloadMoveMul: 0.6, hands: 2, tracer: true },   // B 狙擊型：長弓的上位，過半穿甲、略笨重
+  warbow:  { name: '戰弓',  rarity: 'uncommon', damage: 34, fireRate: 1.2, range: 1300, projSpeed: 2600, spreadBase: 1.2, spreadPerShot: 0.7, spreadMax: 5, spreadRecover: 9, magazine: 1, reloadTime: 1.7, pierce: 0.45, aimTime: 0.95, aimMoveMul: 0.35, reloadMoveMul: 0.6, hands: 2, tracer: true },   // B 狙擊型：長弓的上位，過半穿甲、略笨重
   // 術士騎士（救援變體 B1）的法杖：走遠程開火 AI（隊友本就會射），發射魔法彈＝彈藥無限、過半穿甲、視覺另畫。noRandom＝不進任何隨機池。
-  staff:   { name: '法杖',  rarity: 'rare', weight: 1.4, damage: 30, fireRate: 1.2, range: 900, projSpeed: 320, spreadBase: 1.0, spreadPerShot: 0.5, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.55, aimTime: 0, reloadMoveMul: 0.85, hands: 2, magic: true, infinite: true, noRandom: true },   // A 彈幕型：魔法彈本來就畫成發光光矢＝最適合當慢而顯眼的那種
-  falchion:{ name: '彎刀',  rarity: 'uncommon', weight: 1.3, damage: 34, fireRate: 6, range: 62, pierce: 0.25, melee: true, hands: 1,
+  staff:   { name: '法杖',  rarity: 'rare', damage: 30, fireRate: 1.2, range: 900, projSpeed: 320, spreadBase: 1.0, spreadPerShot: 0.5, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.55, aimTime: 0, reloadMoveMul: 0.85, hands: 2, magic: true, infinite: true, noRandom: true },   // A 彈幕型：魔法彈本來就畫成發光光矢＝最適合當慢而顯眼的那種
+  falchion:{ name: '彎刀',  rarity: 'uncommon', damage: 34, fireRate: 6, range: 62, pierce: 0.25, melee: true, hands: 1,
              moves: { light: mv({ name: '廣掃', arcDeg: 120, reach: 62, windup: 0.09, activeT: 0.09, recover: 0.24, cleave: 4, knock: 240, poiseDmg: 24 }) },
              magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },   // 單手廣掃：對付雜兵群
   // 最終解鎖（通過真相挑戰）：原版 Siren 致敬 The Patriot（無限彈但全場聽得見）→ 中世紀等價物：
   // 「喪鐘」＝雙手大劍，每一擊的鳴響全場聽得見（loud）＝威力極高但徹底放棄潛行。敘事於 Phase 4 重寫。
-  knell:   { name: '喪鐘',  rarity: 'legendary', weight: 2.8, damage: 58, fireRate: 3, range: 78, pierce: 0.75, melee: true, hands: 2, loud: true, noRandom: true,
+  knell:   { name: '喪鐘',  rarity: 'legendary', damage: 58, fireRate: 3, range: 78, pierce: 0.75, melee: true, hands: 2, loud: true, noRandom: true,
              moves: { light: mv({ name: '掃鳴', arcDeg: 150, reach: 78, windup: 0.18, activeT: 0.13, recover: 0.34, cleave: 4, knock: 420, poiseDmg: 50, hyperArmor: true }),
                       heavy: mv({ name: '鳴響', arcDeg: 200, reach: 86, windup: 0.30, activeT: 0.16, recover: 0.46, cleave: 6, knock: 560, poiseDmg: 95, dmgMul: 1.6, hyperArmor: true }) },
              magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // --- 敵人專屬武器（不入玩家戰利品池）---
-  fangs:  { name:'獠牙',  rarity:'common',   weight: 0,   damage: 7,  fireRate: 8,  range: 34,  projSpeed: 520, spreadBase: 6,   spreadPerShot: 0,   spreadMax: 6,  spreadRecover: 20, magazine: 999, reloadTime: 0.1, pierce: 0, hands: 0 },   // 戰狼：貼臉短間距連咬（走一般射擊管線）
-  club:   { name:'木棍',  rarity:'common',   weight: 1.0, damage: 18, fireRate: 5, range: 54, pierce: 0.05, melee: true, hands: 1,
+  fangs:  { name:'獠牙',  rarity:'common',     damage: 7,  fireRate: 8,  range: 34,  projSpeed: 520, spreadBase: 6,   spreadPerShot: 0,   spreadMax: 6,  spreadRecover: 20, magazine: 999, reloadTime: 0.1, pierce: 0, hands: 0 },   // 戰狼：貼臉短間距連咬（走一般射擊管線）
+  club:   { name:'木棍',  rarity:'common',   damage: 18, fireRate: 5, range: 54, pierce: 0.05, melee: true, hands: 1,
             moves: { light: mv({ name: '掄擊', arcDeg: 90, reach: 54, windup: 0.16, activeT: 0.09, recover: 0.32, knock: 180, poiseDmg: 14 }) },
             magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },   // 農兵：慢、弱、體幹傷害低
 };
@@ -429,18 +428,16 @@ const handsOf = (id) => { const W = WEAPONS[id]; return W ? (W.hands != null ? W
 /* =====================================================================
    OFFHANDS — 副手（HOMEWARD Phase 2）
    **格擋（按住右鍵）只有副手拿盾才有**。沒盾＝只能「武器招架」（窄窗、失敗自己硬直）。
-   盾的差異＝護弧寬窄 / 減傷 / 怒火成本 / 招架窗寬窄 / 負重：小盾靈活好招架、大盾穩但笨重。
+   盾的差異＝護弧寬窄 / 減傷 / 怒火成本 / 招架窗寬窄：小盾靈活好招架、大盾穩但難招架。
    副手也可以放一把單手近接武器（雙持）＝沒有格擋，換取多一套武器與背刺。
    ===================================================================== */
 const OFFHANDS = {
-  buckler: { name: '小圓盾', rarity: 'common',   blockArcDeg: 90,  blockResist: 0.55, wrathMul: 0.7, parryWinMul: 1.4, moveMul: 0.98, weight: 0.6 },   // 窄護弧但招架窗最寬＝技術型
-  shield:  { name: '圓盾',   rarity: 'common',   blockArcDeg: 120, blockResist: 0.75, wrathMul: 1.0, parryWinMul: 1.0, moveMul: 0.95, weight: 1.1 },
-  kite:    { name: '鳶盾',   rarity: 'uncommon', blockArcDeg: 150, blockResist: 0.85, wrathMul: 1.4, parryWinMul: 0.7, moveMul: 0.88, weight: 1.8 },   // 護弧最寬減傷最高，但吃怒火且難招架
+  buckler: { name: '小圓盾', rarity: 'common',   blockArcDeg: 90,  blockResist: 0.55, wrathMul: 0.7, parryWinMul: 1.4, moveMul: 0.98 },   // 窄護弧但招架窗最寬＝技術型
+  shield:  { name: '圓盾',   rarity: 'common',   blockArcDeg: 120, blockResist: 0.75, wrathMul: 1.0, parryWinMul: 1.0, moveMul: 0.95 },
+  kite:    { name: '鳶盾',   rarity: 'uncommon', blockArcDeg: 150, blockResist: 0.85, wrathMul: 1.4, parryWinMul: 0.7, moveMul: 0.88 },   // 護弧最寬減傷最高，但吃怒火且難招架
 };
 const OFFHAND_IDS = Object.keys(OFFHANDS);
 const isShield = (id) => !!(id && OFFHANDS[id]);
-// 雙武器換槍：抽出時間＝base + 抽出武器 weight × perWeight（越重抽越慢；換槍期間不能開火）。面板可調。
-CONFIG.weaponSwap = { base: 0.35, perWeight: 0.18 };
 /* 近接戰鬥（Phase 1 手感核心）— 全數值集中此處，數值面板即時可調。
    揮斬＝前搖 windup → 判定窗 activeT（每幀掃扇形、同一目標一次）→ 後搖 recover。武器欄位見 WEAPONS。
    盾格＝按住右鍵；正面 blockArcDeg 內減傷 blockResist；揮起後 parryWindow 秒內＝完全格擋＋反擊硬直。 */
@@ -816,11 +813,11 @@ const EQUIPMENT = {
    ※ 繞背(flank)無視裝甲；被彈開的那一擊體幹傷害 ×CONFIG.melee.armorPoiseMul ＝重甲更怕鈍器。
    ===================================================================== */
 const ARMORS = {
-  none:    { name: '布衣',   rarity: 'common',   armor: 0,    moveMul: 1.00, wrathGainMul: 1.00, weight: 0 },
-  gambeson:{ name: '厚襖',   rarity: 'common',   armor: 0.18, moveMul: 0.98, wrathGainMul: 0.95, weight: 0.5 },
-  mail:    { name: '鎖子甲', rarity: 'common',   armor: 0.35, moveMul: 0.95, wrathGainMul: 0.90, weight: 1.2 },
-  cuirass: { name: '胸甲',   rarity: 'uncommon', armor: 0.55, moveMul: 0.90, wrathGainMul: 0.80, weight: 2.0 },
-  plate:   { name: '板甲',   rarity: 'rare',     armor: 0.75, moveMul: 0.82, wrathGainMul: 0.65, weight: 3.2 },
+  none:    { name: '布衣',   rarity: 'common',   armor: 0,    moveMul: 1.00, wrathGainMul: 1.00 },
+  gambeson:{ name: '厚襖',   rarity: 'common',   armor: 0.18, moveMul: 0.98, wrathGainMul: 0.95 },
+  mail:    { name: '鎖子甲', rarity: 'common',   armor: 0.35, moveMul: 0.95, wrathGainMul: 0.90 },
+  cuirass: { name: '胸甲',   rarity: 'uncommon', armor: 0.55, moveMul: 0.90, wrathGainMul: 0.80 },
+  plate:   { name: '板甲',   rarity: 'rare',     armor: 0.75, moveMul: 0.82, wrathGainMul: 0.65 },
 };
 const ARMOR_IDS = Object.keys(ARMORS);
 const EQUIP_IDS = Object.keys(EQUIPMENT);
@@ -966,7 +963,6 @@ const UPGRADES = [
   { id: 'wrathGain',  name: '不倦', desc: '怒火獲得 +20% / 級',     per: 0.20, max: 4, cost: 40 },
   { id: 'attack',     name: '鋒銳', desc: '攻擊力 +6% / 級',        per: 0.06, max: 5, cost: 55 },
   { id: 'moveSpeed',  name: '疾行', desc: '移動速度 +4% / 級',      per: 0.04, max: 4, cost: 45 },
-  { id: 'swap',       name: '換手', desc: '武器切換加速（×成本）',   per: 0.22, max: 3, cost: 40 },
   { id: 'backstab',   name: '暗殺', desc: '背刺/突襲傷害 +0.4 倍 / 級', per: 0.4, max: 4, cost: 55 },
   { id: 'stealth',    name: '潛蹤', desc: '腳步聲 −15% / 級',       per: 0.15, max: 4, cost: 50 },
   { id: 'steadyAim',  name: '沉著', desc: '望遠瞄準時的移動懲罰 −25% / 級', per: 0.25, max: 3, cost: 45 },
@@ -1337,7 +1333,6 @@ function makeRecruit(used, noble) {
     // **uid**＝穩定身分：名字會被離隊者的後繼重用，追蹤「這個人」（女巫詛咒的見證者）要靠 uid。
     // **裝備由兵種決定，不可自由編輯**（使用者定案）。弓手就是帶弓、槍兵帶槍。
     weaponId: kit.weaponId, offId: kit.offId, armorId: kit.armorId, abilityId: 'mend',
-    weaponId2: FLOOR_WEAPON, allocatedAmmo2: 0,   // 副手武器：底線短刀（被貼上時的後備）
     bonusMaxHp: 0, hp: classOf(classId).hp, allocatedAmmo: CONFIG.ammo.defaultAlloc, disciplineOverride: null,
     equipId: null, itemId: null, itemCount: 0 };
 }
@@ -2298,10 +2293,10 @@ let introGuards = [];        // 演出中的守衛 actor [{pos,facing,hue,name}]
 let introConsole = null;     // 控制台互動點 {x,y,used}（取得機密檔案）
 let restTutorial = false;    // REST 是否顯示教學說明面板（僅序章休息）
 
-// 建一個武器槽（副武器/換槍用）：完整自帶彈藥/換彈/bloom 狀態
+// 建一個武器槽：完整自帶彈藥/換彈/bloom 狀態
 function makeWeaponSlot(weaponId, reserve, fx, enhRec) {
   // S2：武器實例化。enhRec = {quality, enh}（可省＝未強化的白板，quality 由稀有度衍生）。
-  // slot 存 quality/enh 讓強化狀態能跟著武器走（換手/跨關/進出倉庫）；weapon＝effWeapon(併強化後的數值)。
+  // slot 存 quality/enh 讓強化狀態能跟著武器走（跨關/進出倉庫）；weapon＝effWeapon(併強化後的數值)。
   const inst = weaponInst(weaponId, enhRec);
   const W = effWeapon(inst), mag = Math.round(W.magazine * ((fx && fx.magMul) || 1));
   return { weaponId, weapon: W, quality: inst.quality, enh: inst.enh, magazine: mag, ammoInMag: mag, ammoReserve: isInfiniteAmmo(weaponId) ? 9999 : (reserve || 0), reloadT: 0, reloadDur: 0, bloom: 0 };
@@ -2330,7 +2325,10 @@ function makePlayer(i, cfg, pos) {
   // 彈藥備量＝休息關分配的量（底線武器無限）
   const reserve = isInfiniteAmmo(cfg.weaponId) ? 9999 : (cfg.allocatedAmmo != null ? cfg.allocatedAmmo : CONFIG.ammo.defaultAlloc);
   const magazine = Math.round(W.magazine * (fx.magMul || 1));   // 裝備可改彈夾容量
-  // 四槽位：1/2＝手部 set、3/4＝自由位（道具或技能）。相容舊 roster 欄位（weaponId/weaponId2/itemId/abilityId）。
+  /* 槽位：0＝**唯一**的手部 set（主手＋副手），其餘是自由位（道具或技能）。
+     第二組手部 set 與 X／滾輪換手整套移除（DESIGN.md §2.6b）：
+     戰鬥中換武器在 push-forward 裡是純正面效益——沒盾時切出盾、打不動時切出鎚，
+     沒有代價、沒有取捨，只是多按一個鍵。換裝改成整備畫面上的**選擇**（§5.4b）。 */
   const mkSet = (mainId, offId, reserve, enhRec) => {
     if (!mainId || !WEAPONS[mainId]) return null;
     let off = offId || null;
@@ -2340,7 +2338,6 @@ function makePlayer(i, cfg, pos) {
   };
   const slots = [
     mkSet(cfg.weaponId, cfg.offId, cfg.allocatedAmmo, { quality: cfg.quality, enh: cfg.enh }) || mkSet(FLOOR_WEAPON, null, 0),
-    mkSet(cfg.weaponId2, cfg.offId2, cfg.allocatedAmmo2, { quality: cfg.quality2, enh: cfg.enh2 }),
     { kind: 'free', type: 'item', id: cfg.itemId || null, count: cfg.itemId ? (cfg.itemCount || 1) : 0 },        // 自由位 0（卷軸載具，舊 itemId）
     { kind: 'free', type: 'ability', id: cfg.abilityId || null },                                                 // 自由位 1（習得載具，舊 abilityId）
   ];
@@ -2350,14 +2347,14 @@ function makePlayer(i, cfg, pos) {
   const offNow = slots[0].off;
   const offW = (offNow && isShield(offNow)) ? OFFHANDS[offNow] : null;
   const _u = {
-    slots, slotIdx: 0,
+    slots,
     offId: offNow,   // 當前副手（渲染/格擋判定讀 activeSet，這欄只是方便除錯）
     id: i, name: cfg.name, faction: 'player', hue: cfg.hue, strength: cfg.strength || 1,
     classId: CLS === UNIT_CLASSES.knight ? 'knight' : (cfg.classId || 'footman'),
     cls: CLS, className: CLS.name,
     pos: { x: pos.x, y: pos.y }, facing: 0, radius: CLS.radius,
     moveSpeed: CLS.moveSpeed * (1 + kUp('moveSpeed')),   // 與敵人同欄位名（移動碼一律讀 u.moveSpeed）
-    dmgMul: 1 + kUp('attack'), swapMul: 1 / (1 + kUp('swap')), stealthMul: 1 - Math.min(kUp('stealth'), 0.7), backstabBonus: kUp('backstab'), scopeSteady: Math.min(kUp('steadyAim'), 0.9), invulnT: 0,   // meta 升級衍生欄位（騎士）
+    dmgMul: 1 + kUp('attack'), stealthMul: 1 - Math.min(kUp('stealth'), 0.7), backstabBonus: kUp('backstab'), scopeSteady: Math.min(kUp('steadyAim'), 0.9), invulnT: 0,   // meta 升級衍生欄位（騎士）
     hp: startHp, maxHp,
     state: i === 0 ? 'CONTROLLED' : 'IDLE',
     disciplineOverride: cfg.disciplineOverride || null,
@@ -2365,7 +2362,6 @@ function makePlayer(i, cfg, pos) {
     currentNode: null,                                         // 節點導航（與敵人同一套）
     // 以下是「當前主手」的鏡像（既有戰鬥碼只認得這些欄位；換 set 由 equipActiveSet 重寫）
     weaponId: mainSlot.weaponId, weapon: mainSlot.weapon, quality: mainSlot.quality, enh: mainSlot.enh, magazine: mainSlot.magazine, ammoInMag: mainSlot.ammoInMag, ammoReserve: mainSlot.ammoReserve, reloadT: 0, reloadDur: 0, bloom: 0,
-    swapT: 0,   // 換手冷卻
     abilityId: cfg.abilityId, ability: ab,
     equipId: cfg.equipId || null, itemId: cfg.itemId || null, itemCount: cfg.itemId ? (cfg.itemCount || 1) : 0,   // 裝備槽 / 道具槽(itemCount 充能)
     dmgResist: (fx.dmgResist || 0), reloadMul: (fx.reloadMul || 1), spreadMul: fx.spreadMul || 1,
@@ -2436,18 +2432,14 @@ function makeEnemy(nodeId, personalityName, isReinforce = false, facing = Math.P
 const baseRoster = () => { const used = new Set(); return Array.from({ length: CONFIG.squadSize }, () => makeRecruit(used)); };
 const rosterFromPlayer = (p) => {
   const eqAdd = (p.equipId && EQUIPMENT[p.equipId] && EQUIPMENT[p.equipId].fx.maxHpAdd) || 0;  // 裝備加的 maxHp 不算進 bonusMaxHp
-  const s0 = setOf(p, 0), s1 = setOf(p, 1);   // 兩個手部 set（跨關保留主手/副手/彈藥）
-  const w2 = s1 && s1.main ? s1.main : null;
+  const s0 = setOf(p, 0);   // 唯一的手部 set（跨關保留主手/副手/彈藥）
   stashActiveSet(p);   // 先把當前主手狀態存回 set，否則換過手的人會漏掉彈藥/裝填進度
   const m0 = s0 && s0.main ? s0.main : null;
   const free2 = (p.slots && p.slots[2]) || {}, free3 = (p.slots && p.slots[3]) || {};
   return { name: p.name, uid: p.uid, hue: p.hue, strength: p.strength, classId: p.classId || null,   // uid＝穩定身分；兵種跨關保留
     weaponId: m0 ? m0.weaponId : p.weaponId, offId: s0 ? s0.off : null,
     quality: m0 ? m0.quality : p.quality, enh: m0 ? (m0.enh || []).slice() : (p.enh || []),   // S2：主手強化跨關保留
-    weaponId2: w2 ? w2.weaponId : null, offId2: s1 ? s1.off : null,
-    quality2: w2 ? w2.quality : undefined, enh2: w2 ? (w2.enh || []).slice() : undefined,      // 副手 set 的強化
     abilityId: free3.id || p.abilityId,
-    allocatedAmmo2: w2 ? (isInfiniteAmmo(w2.weaponId) ? 0 : w2.ammoReserve) : 0,
     bonusMaxHp: p.maxHp - classOf(p.classId).hp - eqAdd, hp: p.hp,   // 以**自己兵種**的基底回推加值，換兵種不會憑空長血
     allocatedAmmo: m0 ? (isInfiniteAmmo(m0.weaponId) ? CONFIG.ammo.defaultAlloc : m0.ammoReserve) : CONFIG.ammo.defaultAlloc,
     disciplineOverride: p.disciplineOverride || null, equipId: p.equipId || null, armorId: p.armorId || 'none',
@@ -2496,32 +2488,32 @@ const ORIGINS = {
   warden:  { name: '守備',   title: '劍與盾', hue: 205,
              desc: '長劍圓盾。能格擋、能招架——防禦的每一種選項你都有，代價是輸出最低。',
              kit: { classId: 'knight', weaponId: 'sword', offId: 'shield', armorId: 'mail',
-                    weaponId2: 'javelin', offId2: 'shield', itemId: 'tonic', abilityId: 'mend' } },
+                    itemId: 'tonic', abilityId: 'mend' } },
   reaver:  { name: '陷陣',   title: '雙手斧', hue: 20,
              desc: '雙手斧。判定窗中有 hyperArmor，可以硬換一刀——但**不能帶盾＝不能格擋**，只剩武器招架。',
              kit: { classId: 'knight', weaponId: 'axe', offId: null, armorId: 'cuirass',
-                    weaponId2: 'sword', offId2: 'buckler', itemId: 'firepot', abilityId: 'bandage' } },
+                    itemId: 'firepot', abilityId: 'bandage' } },
   ranger:  { name: '遊獵',   title: '長弓', hue: 110,
              desc: '長弓與短刀。拉開距離放箭，但雙手武器不能帶盾，被貼上就只能靠走位。',
              kit: { classId: 'knight', weaponId: 'longbow', offId: null, armorId: 'gambeson',
-                    weaponId2: 'knife', offId2: 'buckler', itemId: 'firepot', abilityId: 'mend' } },
+                    itemId: 'firepot', abilityId: 'mend' } },
   adept:   { name: '習術',   title: '火矢', hue: 285,
              desc: '**開局就會火矢**（唯一一開始就有「習得」的出身）。高穿甲專治重裝，代價是甲最薄。',
              kit: { classId: 'knight', weaponId: 'sword', offId: 'buckler', armorId: 'gambeson',
-                    weaponId2: 'crossbow', offId2: null, itemId: 'firebolt', abilityId: 'firebolt' } },
+                    itemId: 'firebolt', abilityId: 'firebolt' } },
   // 可解鎖出身（榮譽解鎖，locked＝解鎖前不出現在選單）。來自 B 面救援的騎士變體，做成完整出身。
   spearknight: { name: '長槍', title: '長槍騎士', hue: 160, locked: true,
              desc: '長槍。超長 reach 逼退、正面難近身——但攻擊弧窄，被貼身或群包就吃虧。',
              kit: { classId: 'knight', weaponId: 'spear', offId: null, armorId: 'plate',
-                    weaponId2: 'dagger', offId2: 'buckler', itemId: 'tonic', abilityId: 'mend' } },
+                    itemId: 'tonic', abilityId: 'mend' } },
   arbalist:  { name: '弩手', title: '弩騎士', hue: 45, locked: true,
              desc: '十字弩。破甲重射、遠程壓制——但裝填慢、彈藥有限、近身最弱。',
              kit: { classId: 'knight', weaponId: 'crossbow', offId: null, armorId: 'mail',
-                    weaponId2: 'sword', offId2: 'buckler', itemId: 'firepot', abilityId: 'mend' } },
+                    itemId: 'firepot', abilityId: 'mend' } },
   mageknight:{ name: '術士', title: '法杖', hue: 250, locked: true,
              desc: '法杖射魔法彈，彈藥無限、持續壓制——但甲最薄，被貼上就脆。',
              kit: { classId: 'knight', weaponId: 'staff', offId: null, armorId: 'gambeson',
-                    weaponId2: 'knife', offId2: null, itemId: 'firepot', abilityId: 'firebolt' } },
+                    itemId: 'firepot', abilityId: 'firebolt' } },
 };
 const ORIGIN_IDS = Object.keys(ORIGINS);
 const originAvailable = (id) => { const O = ORIGINS[id]; return !!O && (!O.locked || isAvailable('origin', id)); };   // base 4 恆可選；locked 的要榮譽解鎖過
@@ -2539,7 +2531,6 @@ function chooseOrigin(id) {
   k.hue = O.hue;
   k.itemCount = k.itemId ? ITEM_STACK_MAX : 0;   // 卷軸給整疊
   k.allocatedAmmo = isInfiniteAmmo(k.weaponId) ? 0 : CONFIG.ammo.defaultAlloc;
-  k.allocatedAmmo2 = isInfiniteAmmo(k.weaponId2) ? 0 : CONFIG.ammo.defaultAlloc;
   Hooks.fire('originChosen', { id, origin: O });
   enterOathLoadout();   // 配誓約（出發前）：綁定誓約已定、這裡挑自選誓約裝進自由槽；按「出發」才真正開局
   return true;
@@ -2785,8 +2776,8 @@ let arenaOffIdx = 1;            // 副手：ARENA_OFF_IDS 的索引（O 鍵循�
 const ARENA_OFF_IDS = [null, ...OFFHAND_IDS, 'dagger'];   // 空手 / 三種盾 / 雙持短劍
 const arenaMember = (name, hue, wid, classId) => ({
   name, hue, strength: 1, weaponId: wid, offId: ARENA_OFF_IDS[arenaOffIdx] || null,
-  weaponId2: 'longbow', offId2: null, abilityId: 'mend', classId: classId || 'footman',
-  bonusMaxHp: 0, allocatedAmmo: 999, allocatedAmmo2: 999,   // 試作場彈藥管夠（弓弩要備箭）
+                    abilityId: 'mend', classId: classId || 'footman',
+  bonusMaxHp: 0, allocatedAmmo: 999,   // 試作場彈藥管夠（弓弩要備箭）
   equipId: null, itemId: 'firepot', itemCount: 3, carriesFile: false, armorId: ARMOR_IDS[arenaArmorIdx] || 'none',
 });
 // 換副手（試作場）：雙手武器不能帶副手＝直接跳過
@@ -2902,7 +2893,7 @@ function arenaSetWeapon(i) {
   if (handsOf(id) >= 2) { s.off = null; k.offId = null; }      // 換成雙手武器＝副手自動放下
   else if (!s.off) { s.off = ARENA_OFF_IDS[arenaOffIdx] || null; k.offId = s.off; }
   equipActiveSet(k);
-  k.swapT = 0; k.swing = null; k.blocking = false; k.blockT = null; k.parryT = 0; k.aimT = 0;
+  k.swing = null; k.blocking = false; k.blockT = null; k.parryT = 0; k.aimT = 0;
   const AR = ARMORS[k.armorId] || ARMORS.none, offW = isShield(s.off) ? OFFHANDS[s.off] : null;
   k.moveMul = AR.moveMul * (offW ? offW.moveMul : 1);
   Sfx.play('swap', k.pos);
@@ -3284,16 +3275,18 @@ function introBeats() {
     { kind: 'sub', text: '往前走（WASD 移動）' },
     { kind: 'gate', on: 'approach' },                         // 玩家接近敵兵 → 觸發文字卡
     { kind: 'card', title: '操作說明', lines: [
-        'WASD 移動　·　滑鼠轉向',
-        '左鍵　揮擊（前搖 → 判定 → 後搖，不花任何資源）',
-        '右鍵　格擋／招架（有盾才擋得住）',
+        'WASD 移動　·　滑鼠轉向（1:1，沒有轉速上限）',
+        '左鍵　主手的招式（前搖 → 判定 → 後搖，不花任何資源）',
+        '右鍵　副手的招式：盾＝格擋/招架　空手＝徒手招架',
+        '　　　雙持＝副手那把　雙手武器＝重擊',
+        '空白　閃避（免費）　·　Q　聖怒（怒火滿）',
         '',
         '前方有名敵兵正在搜刮屍體——解決他。',
       ] },
     { kind: 'do', fn: () => { const s = cutscene.soldier; if (s) { s.introFrozen = false; s.state = 'ENGAGED'; s.facing = Math.PI; } } },
     { kind: 'sub', text: '擊敗敵兵' },
     { kind: 'gate', on: 'clear' },
-    { kind: 'sub', text: '前往撤離點（走過去，或按 H 自走）' },
+    { kind: 'sub', text: '前往房間中央的洞' },
     { kind: 'gate', on: 'clearRoom' },                        // 由 endMission（清場）收尾
   ];
 }
@@ -3604,11 +3597,11 @@ function restDoContinue() {
   else advanceNode();                                             // 正式 REST 節點 → 開放後繼
 }
 
-// --- 配裝/彈藥管理（CHOICE 與 DONE 階段皆可操作）。slot：1=主武器 / 2=副武器 ---
-const WF = (slot) => (slot === 2 ? 'weaponId2' : 'weaponId');     // 武器欄位
-const AF = (slot) => (slot === 2 ? 'allocatedAmmo2' : 'allocatedAmmo');  // 備彈欄位
-const EF = (slot) => (slot === 2 ? 'enh2' : 'enh');              // S2：強化欄位
-const QF = (slot) => (slot === 2 ? 'quality2' : 'quality');      // S2：精良度欄位
+// --- 配裝/彈藥管理（CHOICE 與 DONE 階段皆可操作）。手部 set 只有一組（§2.6b），slot 參數已無意義 ---
+const WF = () => 'weaponId';
+const AF = () => 'allocatedAmmo';
+const EF = () => 'enh';
+const QF = () => 'quality';
 // 倉庫武器條目 → 強化紀錄（缺＝白板：quality 由稀有度衍生、enh 空）
 const whEnhRec = (it) => ({ quality: it && it.quality, enh: (it && it.enh) || [] });
 function setMemberWeapon(mi, newId, slot = 1, enhRec) {
@@ -3757,22 +3750,21 @@ function drawFloaters() {
 /* =====================================================================
    Combat — 開火(發散) / 換彈 / 彈藥 / 子彈 / 傷害 / 死亡
    ===================================================================== */
-// 雙武器換槍：active 與 weapon2 對調；抽出時間隨抽出武器 weight（換槍期間不能開火）。
 /* =====================================================================
    四槽位 / 手部（HOMEWARD Phase 2，使用者定案）
    槽 1、2＝**手部 set**：{ main: 主手武器, off: 副手（盾 或 單手近接＝雙持 或 null） }
      · 主手是雙手武器（hands 2）→ 副手必空
      · **副手拿盾才能格擋**；沒盾只能「武器招架」（窄窗、失敗自己硬直）
    槽 3、4＝**自由位**：道具（ITEMS，充能制）或 技能（ABILITIES，CD 制）
-   切換 set 要時間（沿用 CONFIG.weaponSwap＝越重抽越慢），戰鬥中換手有風險。
+   **只有一組**，而且戰鬥中不能換（§2.6b）——換裝是整備畫面上的選擇。
    相容：u.weaponId/u.weapon/u.ammoInMag… 仍是「當前主手」的鏡像，既有戰鬥碼完全不用改。
    ===================================================================== */
-const SLOT_COUNT = 2 + CONFIG.freeSlots.max;   // 2 手部 set + 最多 max 個自由位（selectSlot 邊界；實際格數見 u.slots.length）
+const SLOT_COUNT = 2 + CONFIG.freeSlots.max;   // 索引上界（0 是手部 set、1 已空出、其餘自由位）
 // 騎士的自由位數＝基礎 + 已解鎖（meta 升級「行囊」；日後也可綁誓約）。扈從恆 base（AI 不管理資源）。
 const knightFreeSlots = () => clamp(CONFIG.freeSlots.base + upgLevel('freeSlots'), CONFIG.freeSlots.base, CONFIG.freeSlots.max);
 const memberFreeSlots = (i) => (i === KNIGHT_ID ? knightFreeSlots() : CONFIG.freeSlots.base);
 const setOf = (u, i) => (u.slots && u.slots[i] && u.slots[i].kind === 'hands') ? u.slots[i] : null;
-const activeSet = (u) => setOf(u, u.slotIdx || 0);
+const activeSet = (u) => setOf(u, 0);   // 手部 set 只有一組
 // 副手拿的是盾嗎？（＝能不能按住右鍵格擋）
 // 副手的盾：玩家走四槽位的 active set，敵人沒有槽位系統 → 直接掛在單位上（ENEMY_TYPES.offId）
 function shieldOf(u) {
@@ -3827,25 +3819,18 @@ function equipActiveSet(u) {
   u.ammoInMag = n.ammoInMag; u.ammoReserve = n.ammoReserve;
   u.reloadT = n.reloadT; u.reloadDur = n.reloadDur; u.bloom = n.bloom;
 }
-// 把 u 上的當前主手狀態存回 set（換手前呼叫，才不會弄丟裝填進度/彈藥/強化）
+// 把 u 上的當前主手狀態存回 set（存檔/跨關前呼叫，才不會弄丟裝填進度/彈藥/強化）
 function stashActiveSet(u) {
   const s = activeSet(u); if (!s || !s.main) return;
   Object.assign(s.main, { weaponId: u.weaponId, weapon: u.weapon, quality: u.quality, enh: u.enh, magazine: u.magazine, ammoInMag: u.ammoInMag, ammoReserve: u.ammoReserve, reloadT: u.reloadT, reloadDur: u.reloadDur, bloom: u.bloom });
 }
-// 切到第 i 槽。手部 set → 換手（要時間）；自由位 → 直接使用道具/技能，不改手上的武器。
+// 切到第 i 槽。只有自由位可以切＝直接使用道具/技能；手部 set 戰鬥中不能換（§2.6b）。
+// 槽位只剩自由位可以「選」——手部 set 只有一組，而且戰鬥中不能換（§2.6b）。
 function selectSlot(u, i) {
   if (!u || !u.slots || i < 0 || i >= SLOT_COUNT) return false;
   const sl = u.slots[i]; if (!sl) return false;
   if (sl.kind === 'free') { useFreeSlot(u, i); return true; }
-  if (i === u.slotIdx) return false;
-  if (u.swapT > 0 || u.staggerT > 0) return false;
-  stashActiveSet(u);
-  u.slotIdx = i;
-  equipActiveSet(u);
-  u.swing = null; u.blocking = false; u.blockT = null; u.parryT = 0; u.aimT = 0;
-  u.swapT = (CONFIG.weaponSwap.base + (u.weapon.weight || 0) * CONFIG.weaponSwap.perWeight) * (u.swapMul || 1);   // meta 升級「換手」加速
-  Sfx.play('reload', u.pos);
-  return true;
+  return false;
 }
 /* ── 自由位＝術的載具（Phase 2-B，使用者定案）──────────────────────────
    槽位欄位沿用舊名以免動到休息關/倉庫 UI（約 85 處），但語意已經是「載具」：
@@ -3922,12 +3907,6 @@ function castBolt(u, B) {
   for (let i = 0; i < 10; i++) particles.push(mkPart(u.pos, 160, 0.35, i % 2 ? '#ffd27a' : '#ff8a3a'));
   addShakeAt(u.pos, CONFIG.juice.shakeKill);
   Sfx.play('shot', u.pos);
-}
-// 舊介面相容：X／滾輪＝在兩個手部 set 之間切換
-function swapWeapon(u) {
-  if (!u || !u.slots) return false;
-  const other = (u.slotIdx === 0) ? 1 : 0;
-  return setOf(u, other) ? selectSlot(u, other) : false;
 }
 /* =====================================================================
    近接戰鬥（HOMEWARD Phase 1）
@@ -4304,7 +4283,7 @@ function blockCovers(u, fromAng) {
    **窗過了還沒接到任何攻擊 → 自己硬直**（空揮的代價）。收招期間挨打＝正常吃傷。 */
 function startWeaponParry(u) {
   if (!u.weapon || !u.weapon.melee) return false;          // 遠程武器不能招架
-  if (u.parryT > 0 || u.swing || u.staggerT > 0 || u.swapT > 0) return false;
+  if (u.parryT > 0 || u.swing || u.staggerT > 0) return false;
   // 招架不收費（DESIGN §2.2：招架是三段回充的中段）。它的代價是**落空就自己硬直**，
   // 那比扣資源更好——賭錯的懲罰立刻兌現在身體上，而不是記在帳上。
   u.parryT = 1e-6; u.parryDur = CONFIG.melee.wpRecover; u.parryHit = false;
@@ -4344,7 +4323,7 @@ function swingTurnRate(u) {
 function fireUnit(u, angle, spreadDeg, fireRateMult, bloomAdd) {
   const W = u.weapon;
   if (W.melee) return startSwing(u, lightOf(W), fireRateMult, 'main', W);   // 近接＝主手輕擊（左鍵）；右鍵那招在輸入層另外派工
-  if (u.reloadT > 0 || u.fireCooldown > 0 || u.swapT > 0) return false;   // 換槍期間不能開火
+  if (u.reloadT > 0 || u.fireCooldown > 0) return false;
   if (u.ammoInMag <= 0) { startReload(u); return false; }
   const pellets = W.pellets || 1;   // 霰彈：單次擊發多顆彈丸，各自抽散布
   const spreadF = (u.spreadMul || 1);
@@ -4395,7 +4374,6 @@ function tickAmmo(u, dt) {
       u.ammoInMag += take; u.ammoReserve -= take;
     }
   }
-  if (u.swapT > 0) u.swapT -= dt;   // 換槍冷卻
   if (u.bloom > 0) u.bloom = Math.max(0, u.bloom - u.weapon.spreadRecover * dt);
   if (u.buffT > 0) { u.buffT -= dt; if (u.buffT <= 0) { u.buffT = 0; u.buffMove = 1; u.buffFire = 1; } }  // 道具短時 buff 倒數
 }
@@ -4536,7 +4514,7 @@ function aimGate(u, dt, midBurst) {
   if (u.weapon.melee) return true;                       // 近接走揮斬的前搖，不經此
   const need = midBurst ? 0 : aimTimeOf(u);
   if (need <= 0) return true;
-  if (u.fireCooldown > 0 || u.reloadT > 0 || u.swapT > 0) { u.aimT = 0; return false; }   // 裝填/冷卻中不算瞄準（免得預告畫了卻射不出來）
+  if (u.fireCooldown > 0 || u.reloadT > 0) { u.aimT = 0; return false; }   // 裝填/冷卻中不算瞄準（免得預告畫了卻射不出來）
   u.aimDur = need;
   u.aimT = (u.aimT || 0) + dt;
   if (u.aimT < need) return false;
@@ -4779,7 +4757,7 @@ function updateCaches() {
   }
 }
 // 撿取/拾取的「格佔有」（前瞻：未來 slot 背包用；現在全回 1、只有大槍 2）
-function slotsOf(kind, id) { if (kind === 'weapon') { const w = WEAPONS[id]; return (w && w.weight >= 1.6) ? 2 : 1; } return 1; }
+function slotsOf() { return 1; }   // 「重武器佔兩格」隨 weight 欄位一起移除（§2.6b）
 // 「基本階」＝common 稀有度（武器/裝備/道具）或最基礎技能(heal/firstaid)；密封容器抽選排除之
 function isBasic(kind, id) {
   if (kind === 'ability') return id === 'mend' || id === 'bandage';
@@ -5316,9 +5294,7 @@ function editorMouseUp() {
   if (editDrag && isDragTool(editTool)) { const a = editDrag, b = snapPt({ x: mouse.mx, y: mouse.my }); if (dist(a, b) >= 8) editorCommitSeg(a, b); editDrag = null; }
 }
 cv.addEventListener('contextmenu', e => e.preventDefault());
-cv.addEventListener('wheel', e => {   // 戰鬥中滾輪＝換槍(主↔副)；swapT 冷卻自動防連刷
-  if (scene === 'COMBAT' && Input.locked && controlledId != null) { swapWeapon(players[controlledId]); e.preventDefault(); }
-}, { passive: false });
+// 滾輪原本是換手（主↔副）。換手整套移除（§2.6b）＝這個監聽器一併拿掉。
 
 // 路線圖：游標下的可選節點 id（無則 null）
 function roadNodeAt(x, y) {
@@ -5422,14 +5398,13 @@ window.addEventListener('keydown', e => {
   }
   if (fromSandbox && k === 'backspace') { fromSandbox = false; forcedMap = null; sandboxLast = { aborted: true }; if (playtestMode) { playtestMode = false; try { location.href = 'editor.html'; } catch (e) {} } else enterSandbox(); e.preventDefault(); return; }
   if (fromEditor && k === 'backspace') { fromEditor = false; forcedMap = null; scene = 'EDITOR'; releasePointer(); editMsg = '已中止試玩，回到編輯器'; e.preventDefault(); return; }
-  // 數字鍵 1~N＝施展第 N 個自由位（道具/習得）＝PoE 對齊（使用者定案）；換武器組改用滾輪/X，數字鍵不再切裝
+  // 數字鍵 1~N＝施展第 N 個自由位（道具/習得）＝PoE 對齊（使用者定案）
   if (k >= '1' && k <= '9') { const kn = knight(); if (kn && kn.state === 'CONTROLLED') { const fi = parseInt(k, 10) - 1; if (fi < memberFreeSlots(KNIGHT_ID)) { useFreeSlot(kn, 2 + fi); e.preventDefault(); } } }
   // 空白＝dash。**最常用的防禦動作配最大的鍵**（Hades 也是空白）。
   // 大絕招因此讓位到 Q——Q 在 C1 拿掉隨從姿態切換之後就空出來了。
   if (k === ' ') { if (knight() && startDash(knight())) e.preventDefault(); }
   if (k === 'q') { if (controlledId != null) useOathSkill(players[controlledId]); }   // 大絕招「聖怒」：怒火滿才放得出來，放完見底
   if (k === 'r') { if (controlledId != null) startReload(players[controlledId]); } // 換彈
-  if (k === 'x') { if (controlledId != null) swapWeapon(players[controlledId]); }   // 換槍(主↔副)
   if (k === 'c') { if (controlledId != null) useItem(players[controlledId]); }     // 道具(原 Q)
   if (k === 'f') {   // 處決優先於互動：踉蹌中的敵人就在眼前時，F 是處決鍵；否則才是開門
     const kn = knight(), ex = execTargetFor(kn);
@@ -5740,7 +5715,7 @@ function drawArenaHUD() {
   const st2 = activeSet(k), off2 = st2 ? st2.off : null;
   const offName = isShield(off2) ? OFFHANDS[off2].name : (off2 ? WEAPONS[off2].name : '空手');
   const slotLine = (k.slots || []).map((s, i) => {
-    const on = (i === k.slotIdx && s.kind === 'hands');
+    const on = (s.kind === 'hands');
     const nm = s.kind === 'hands'
       ? (s.main ? WEAPONS[s.main.weaponId].name + (s.off ? '+' + (isShield(s.off) ? OFFHANDS[s.off].name : WEAPONS[s.off].name) : '') : '—')
       : (s.id ? ((s.type === 'item' ? ITEMS[s.id].name + '×' + (s.count || 0) : ABILITIES[s.id].name)) : '—');
@@ -6634,7 +6609,7 @@ function drawHUD() {
 
   // 控制提示（卡片帶上方）
   ctx.textAlign = 'center'; ctx.font = '11px Consolas'; ctx.fillStyle = 'rgba(205,214,224,0.55)';
-  ctx.fillText('移動 WASD · Shift 奔跑 · 滾輪/X 換裝 · R 換彈 · F 互動 · G 指令 · H 自走撤離 · Shift+H 扈從先撤　（招式見下方快捷列）', cv.width / 2, cv.height - 78);
+  ctx.fillText('移動 WASD · Shift 奔跑 · 空白 dash · 左鍵 主手 · 右鍵 副手 · Q 聖怒 · F 處決/互動 · R 換彈　（技能見下方快捷列）', cv.width / 2, cv.height - 78);
   if (debugView) {
     ctx.fillStyle = '#7fe3ff';
     ctx.fillText(`debug(無迷霧): ON`, cv.width / 2, cv.height - 108);
@@ -6743,12 +6718,8 @@ function drawCard(p, x, y, w, h, i) {
   ctx.beginPath(); ctx.fillStyle = rarityColor(W.rarity); ctx.arc(bx + 3, y + 56, 3.5, 0, Math.PI * 2); ctx.fill();
   ctx.textAlign = 'left'; ctx.font = '11px Consolas';
   ctx.fillStyle = inactive ? '#6a727c' : '#cdd6e0'; ctx.fillText(W.name, bx + 11, y + 59);
-  const sOther = setOf(p, p.slotIdx === 0 ? 1 : 0);
-  if (sOther && sOther.main && !inactive) { ctx.font = '8px Consolas'; ctx.fillStyle = '#6f7e8c'; ctx.fillText('X⇄' + sOther.main.weapon.name, bx + 11 + ctx.measureText(W.name).width + 6, y + 59); ctx.font = '11px Consolas'; }
   ctx.textAlign = 'right'; ctx.font = '11px Consolas';
-  if (p.swapT > 0 && !inactive) {
-    ctx.fillStyle = '#ffd27a'; ctx.fillText('SWAP', x + w - pad, y + 59);
-  } else if (p.reloadT > 0 && !inactive) {
+  if (p.reloadT > 0 && !inactive) {
     ctx.fillStyle = '#7fa8ff'; ctx.fillText('RELOAD', x + w - pad, y + 59);
   } else if (isInfiniteAmmo(p.weaponId)) {
     ctx.fillStyle = inactive ? '#6a727c' : '#cdd6e0'; ctx.fillText('∞', x + w - pad, y + 59);
@@ -6837,12 +6808,11 @@ function drawKnightPanel(px, py, pw) {
   ctx.textAlign = 'left'; ctx.font = 'bold 15px Consolas'; ctx.fillStyle = '#e8c877'; ctx.fillText('◈ 騎士配裝　' + r.name, px, py - 26);
   ctx.font = '10px Consolas'; ctx.fillStyle = '#8b97a5'; ctx.fillText('倉庫物拖到裝備列＝穿 · 拖回倉庫＝脫 · 雙擊倉庫物＝快裝 · 右鍵倉庫物＝丟棄', px, py - 12);
   let yc = py;
-  // 武器組（主手 28 + 副手 22）
+  // 手部 set（主手 28 + 副手 22）
   const wset = (label, slot) => {
-    const wf = slot === 2 ? 'weaponId2' : 'weaponId', off = slot === 2 ? 'offId2' : 'offId';
-    const wid = r[wf], ww = wid ? WEAPONS[wid] : null, oid = r[off], oo = oid ? OFFHANDS[oid] : null;
-    const twoHand = wid && handsOf(wid) >= 2, aAmmo = slot === 2 ? (r.allocatedAmmo2 || 0) : (r.allocatedAmmo || 0);
-    const es = ww ? enhSummary(wid, slot === 2 ? r.quality2 : r.quality, slot === 2 ? r.enh2 : r.enh) : null;
+    const wid = r.weaponId, ww = wid ? WEAPONS[wid] : null, oid = r.offId, oo = oid ? OFFHANDS[oid] : null;
+    const twoHand = wid && handsOf(wid) >= 2, aAmmo = r.allocatedAmmo || 0;
+    const es = ww ? enhSummary(wid, r.quality, r.enh) : null;
     const onW = hot(['weapon']);
     ctx.fillStyle = onW ? 'rgba(95,208,158,0.16)' : 'rgba(26,34,46,0.9)'; ctx.fillRect(ix, yc, iw, 28);
     ctx.lineWidth = onW ? 2 : 1; ctx.strokeStyle = onW ? '#5fcf9e' : 'rgba(90,105,120,0.35)'; ctx.strokeRect(ix, yc, iw, 28);
@@ -6869,7 +6839,7 @@ function drawKnightPanel(px, py, pw) {
     }
     yc += 24;
   };
-  wset('武器 I', 1); wset('武器 II', 2);
+  wset('武器', 1);
   // 單列槽（甲 / 裝備 / 自由位）
   const oneSlot = (label, tint, accepts, text, col, meta) => {
     const on = hot(accepts);
@@ -7007,7 +6977,7 @@ function drawOrigin() {
     if (showSlots) {
       ctx.font = '11px Consolas'; ctx.fillStyle = '#7f8b99';
       ctx.fillText(
-        `槽1 ${wName(K.weaponId)}＋${oName(K.offId)}　·　槽2 ${wName(K.weaponId2)}＋${oName(K.offId2)}　·　` +
+        `手 ${wName(K.weaponId)}＋${oName(K.offId)}　·　` +
         `槽3 卷軸 ${aName(K.itemId)}　·　槽4 習得 ${aName(K.abilityId)}　·　甲 ${(ARMORS[K.armorId] || ARMORS.none).name}`,
         bx + 56, y + 78);
     }
@@ -7912,13 +7882,12 @@ let sandboxCfg = null;          // 上次設定（記憶 + localStorage）
 let sandboxLast = null;         // 上一場結果（撤離/陣亡）顯示用
 let sandboxEl = null, sandboxMembersEl = null, sandboxMapText = null, sandboxMapSel = null, sandboxMsgEl = null, sandboxResultEl = null, sandboxRows = [];
 
-const defaultMember = () => ({ classId: 'footman', weaponId: 'sword', offId: 'shield', weaponId2: 'longbow', abilityId: 'mend', equipId: '', itemId: '' });
-const randomMember = () => { const wp = randomWeaponPool(availPool('weapon', SANDBOX_WEAPON_IDS)); return { classId: rngPick(RECRUIT_CLASS_IDS), weaponId: rngPick(wp), weaponId2: rngPick(['longbow', 'dagger', 'javelin', ...wp]), abilityId: rngPick(availPool('ability', ABILITY_IDS)), equipId: rngPick(['', ...availPool('equip', EQUIP_IDS)]), itemId: rngPick(['', '', ...availPool('item', ITEM_IDS)]) }; };
+const defaultMember = () => ({ classId: 'footman', weaponId: 'sword', offId: 'shield', abilityId: 'mend', equipId: '', itemId: '' });
+const randomMember = () => { const wp = randomWeaponPool(availPool('weapon', SANDBOX_WEAPON_IDS)); return { classId: rngPick(RECRUIT_CLASS_IDS), weaponId: rngPick(wp), abilityId: rngPick(availPool('ability', ABILITY_IDS)), equipId: rngPick(['', ...availPool('equip', EQUIP_IDS)]), itemId: rngPick(['', '', ...availPool('item', ITEM_IDS)]) }; };
 function makeSandboxMember(m, used) {
   const r = makeRecruit(used);
   if (m.classId && UNIT_CLASSES[m.classId]) { r.classId = m.classId; const kit = classLoadout(m.classId); r.weaponId = kit.weaponId; r.offId = kit.offId; r.armorId = kit.armorId; r.hp = classOf(m.classId).hp; }
   if (m.weaponId && WEAPONS[m.weaponId] && isAvailable('weapon', m.weaponId)) r.weaponId = m.weaponId;
-  r.weaponId2 = (m.weaponId2 && WEAPONS[m.weaponId2] && isAvailable('weapon', m.weaponId2)) ? m.weaponId2 : FLOOR_WEAPON;   // 副武器（預設 pistol）
   if (m.abilityId && ABILITIES[m.abilityId] && isAvailable('ability', m.abilityId)) r.abilityId = m.abilityId;
   r.equipId = (m.equipId && EQUIPMENT[m.equipId] && isAvailable('equip', m.equipId)) ? m.equipId : null;
   r.itemId = (m.itemId && ITEMS[m.itemId] && isAvailable('item', m.itemId)) ? m.itemId : null;   // 道具槽（未解鎖不套用）
@@ -7927,7 +7896,7 @@ function makeSandboxMember(m, used) {
 }
 function loadSandboxCfg() { try { return JSON.parse(localStorage.getItem(SANDBOX_STORE_KEY) || 'null'); } catch (e) { return null; } }
 function saveSandboxCfg() {
-  const cfg = { members: sandboxRows.map(r => ({ classId: r.cls.value, weaponId: r.weapon.value, weaponId2: r.weapon2.value, abilityId: r.ability.value, equipId: r.equip.value, itemId: r.item.value })), map: (sandboxMapText ? sandboxMapText.value : '').trim(), mapSel: sandboxMapSel ? sandboxMapSel.value : 'alpha' };
+  const cfg = { members: sandboxRows.map(r => ({ classId: r.cls.value, weaponId: r.weapon.value, abilityId: r.ability.value, equipId: r.equip.value, itemId: r.item.value })), map: (sandboxMapText ? sandboxMapText.value : '').trim(), mapSel: sandboxMapSel ? sandboxMapSel.value : 'alpha' };
   sandboxCfg = cfg; try { localStorage.setItem(SANDBOX_STORE_KEY, JSON.stringify(cfg)); } catch (e) {}
 }
 function sandboxMsg(t) { if (sandboxMsgEl) sandboxMsgEl.textContent = t || ''; }
@@ -8173,7 +8142,7 @@ function sandboxStart() {
   if (!mapObj || typeof mapObj !== 'object') { sandboxMsg('地圖無效'); return; }
   MAPS.__sandbox = normalizeForPlay(mapObj);
   const used = new Set();
-  roster = sandboxRows.map(r => makeSandboxMember({ classId: r.cls.value, weaponId: r.weapon.value, weaponId2: r.weapon2.value, abilityId: r.ability.value, equipId: r.equip.value || null, itemId: r.item.value || null }, used));
+  roster = sandboxRows.map(r => makeSandboxMember({ classId: r.cls.value, weaponId: r.weapon.value, abilityId: r.ability.value, equipId: r.equip.value || null, itemId: r.item.value || null }, used));
   missionIndex = 0; roadCurrent = null; introActive = false; cutscene = null; introGuards = []; introConsole = null;
   forcedMap = '__sandbox'; fromSandbox = true; saveSandboxCfg();
   if (sandboxEl) sandboxEl.classList.remove('open');
@@ -8194,14 +8163,13 @@ function addMemberRow(m) {
   const wp = availPool('weapon', SANDBOX_WEAPON_IDS);   // 未解鎖的武器不顯示（局外解鎖過濾）
   const a = sbSelect(RECRUIT_CLASS_IDS, m.classId || 'footman', id => classOf(id).name);
   const w = sbSelect(wp, m.weaponId, id => WEAPONS[id].name);
-  const w2 = sbSelect(wp, m.weaponId2 || 'longbow', id => WEAPONS[id].name);
   const k = sbSelect(availPool('ability', ABILITY_IDS), m.abilityId, id => ABILITIES[id].name);
   const e = sbSelect(availPool('equip', EQUIP_IDS), m.equipId || '', id => EQUIPMENT[id].name, '(無裝備)');
   const it = sbSelect(availPool('item', ITEM_IDS), m.itemId || '', id => ITEMS[id].name, '(無道具)');   // 道具槽（含煙霧/手榴彈）
   const del = document.createElement('button'); del.className = 'x'; del.textContent = '✕';
-  const rec = { cls: a, weapon: w, weapon2: w2, ability: k, equip: e, item: it, row };
+  const rec = { cls: a, weapon: w, ability: k, equip: e, item: it, row };
   del.addEventListener('click', () => { const i = sandboxRows.indexOf(rec); if (i >= 0) sandboxRows.splice(i, 1); row.remove(); renumberMembers(); });
-  row.appendChild(a); row.appendChild(w); row.appendChild(w2); row.appendChild(k); row.appendChild(e); row.appendChild(it); row.appendChild(del);
+  row.appendChild(a); row.appendChild(w); row.appendChild(k); row.appendChild(e); row.appendChild(it); row.appendChild(del);
   sandboxMembersEl.appendChild(row); sandboxRows.push(rec); renumberMembers();
 }
 function renumberMembers() { sandboxRows.forEach((r, i) => { const idx = r.row.querySelector('.idx'); if (idx) idx.textContent = '#' + (i + 1); }); }
