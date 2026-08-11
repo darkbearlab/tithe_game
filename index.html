@@ -451,7 +451,13 @@ CONFIG.melee = {
   // 擊退：實際位移 ≈ knock / knockDecay。兩個單位半徑和＝24px，位移必須明顯大於它才「推得開」。
   knockDecay: 6,           // 擊退速度的指數衰減率（越大停得越快）
 
-  /* ── 體幹（poise）：解決「被打沒有代價」──────────────────────────────
+  /* ── 體幹（poise）：**只有敵人有**（使用者定案）─────────────────────
+     體幹在這套設計裡只有一個工作：把敵人推進踉蹌 → 開處決窗 → 讓玩家回血回怒。
+     它是**進攻的計量器**，不是防禦的計量器。
+     騎士自己沒有體幹（`makePlayer` 一律 0）：他挨打的代價是掉血，
+     他被打進硬直的唯一途徑是**破防**（舉盾但怒火付不出這一擊）——
+     那讓硬直的意思很乾淨：你不是「挨太多下」，你是「擋不起了」。
+     多一條會漲會退的騎士條只會和怒火條互相干擾，讀不出誰在說話。
      每次命中扣體幹；扣到 0＝體幹破＝大硬直 + 受傷加成（處決窗）+ 大幅擊退，之後體幹回滿。
      另外：**前搖中被命中＝揮擊直接被打斷**（重武器的 hyperArmor 免疫）＝搶到先手的人贏整次交鋒。 */
   poiseRegenDelay: 1.6,    // 多久沒被打才開始回體幹（太短＝連段打不破，體幹破永遠不會發生）
@@ -486,7 +492,6 @@ CONFIG.melee = {
   /* ── 攻擊權（1 對多的可讀性）────────────────────────────────────────
      同時只有 maxAttackers 隻近接敵可以進攻，其餘在 ringDist 外圍繞行伺機。
      不是放水：沒有這層，體幹只會讓被圍毆變成必死宣告，而不是有趣的壓力。 */
-  poiseKnight: 100,        // 騎士（我方單位）的體幹上限
   poiseDefault: 50,        // 敵人未指定 ENEMY_TYPES.poise 時的體幹上限
   maxAttackers: 2,         // 同時可進攻的近接敵數
   tokenHold: 1.1,          // 取得攻擊權後保有的秒數（沒打到也會過期讓給別人）
@@ -630,8 +635,8 @@ const OATHS = {
   // ── 綁定誓約（每位騎士各 1；boundTo＝出身 id）──
   bulwark:  { name: '壁壘之誓', kind: 'bound', boundTo: 'warden',     desc: '以盾為牆：招架窗放寬、承受更韌。',
               mods(k) { k.parryWinMul = (k.parryWinMul || 1) * 1.5; k.dmgResist = (k.dmgResist || 0) + 0.08; } },
-  unbowed:  { name: '不退之誓', kind: 'bound', boundTo: 'reaver',     desc: '不退：體幹更厚、回穩更快、扛傷。',
-              mods(k) { k.poiseMax = Math.round(k.poiseMax * 1.3); k.poise = k.poiseMax; k.poiseRegenMul = (k.poiseRegenMul || 1) * 1.6; k.dmgResist = (k.dmgResist || 0) + 0.06; } },
+  unbowed:  { name: '不退之誓', kind: 'bound', boundTo: 'reaver',     desc: '不退：怒火上限 +25、擋得起更多、扛傷。',
+              mods(k) { k.wrathMax += 25; k.wrath = k.wrathMax; k.blockWrathMul = (k.blockWrathMul || 1) * 0.7; k.dmgResist = (k.dmgResist || 0) + 0.06; } },
   gale:     { name: '疾風之誓', kind: 'bound', boundTo: 'ranger',     desc: '疾風：射擊發散大減、步伐更輕快（風箏）。',
               mods(k) { k.spreadMul = (k.spreadMul || 1) * 0.4; k.moveSpeed *= 1.12; } },
   incant:   { name: '咒能之誓', kind: 'bound', boundTo: 'adept',      desc: '咒能：術的怒火成本 −40%、施法前搖 −35%。',
@@ -932,8 +937,6 @@ function unlockWithHonor(kind, id) { const u = unlockDef(kind, id); if (!u || u.
    成本＝base × (下一級)，越後越貴。level 存在 meta.upgrades[id]。 */
 const UPGRADES = [
   { id: 'hp',         name: '堅韌', desc: '基礎生命 +15 / 級',      per: 15,   max: 5, cost: 40 },
-  { id: 'poise',      name: '鎮定', desc: '基礎體幹 +12 / 級',      per: 12,   max: 4, cost: 45 },
-  { id: 'poiseRegen', name: '穩固', desc: '體幹恢復 +25% / 級',     per: 0.25, max: 4, cost: 45 },
   { id: 'wrath',      name: '怒火', desc: '怒火上限 +12 / 級',      per: 12,   max: 4, cost: 40 },
   { id: 'wrathGain',  name: '不倦', desc: '怒火獲得 +20% / 級',     per: 0.20, max: 4, cost: 40 },
   { id: 'attack',     name: '鋒銳', desc: '攻擊力 +6% / 級',        per: 0.06, max: 5, cost: 55 },
@@ -1053,7 +1056,7 @@ function giveItemStack(id) { warehouse.push({ kind: 'item', id, count: ITEM_STAC
    血量刻意壓縮在同一個量級——重裝的質差來自**裝甲與體幹**而非血量（§使用者設計）。
    ===================================================================== */
 const UNIT_CLASSES = {
-  knight:      { name: '騎士',     hp: CONFIG.unitHp, poise: CONFIG.melee.poiseKnight, moveSpeed: CONFIG.moveSpeed, radius: CONFIG.unitRadius },   // 英雄：唯一管理怒火的單位
+  knight:      { name: '騎士',     hp: CONFIG.unitHp, moveSpeed: CONFIG.moveSpeed, radius: CONFIG.unitRadius },   // 英雄：唯一管理怒火、且**唯一沒有體幹**的單位
   levy:        { name: '農兵',     hp: 45,            poise: 25,  moveSpeed: CONFIG.enemy.moveSpeed, radius: CONFIG.unitRadius },
   footman:     { name: '徒步兵',   hp: CONFIG.enemy.hp, poise: 45, moveSpeed: 105, radius: CONFIG.unitRadius },
   spearman:    { name: '槍兵',     hp: CONFIG.enemy.hp, poise: 55, moveSpeed: 95,  radius: CONFIG.unitRadius },
@@ -2330,7 +2333,7 @@ function makePlayer(i, cfg, pos) {
     cls: CLS, className: CLS.name,
     pos: { x: pos.x, y: pos.y }, facing: 0, radius: CLS.radius,
     moveSpeed: CLS.moveSpeed * (1 + kUp('moveSpeed')),   // 與敵人同欄位名（移動碼一律讀 u.moveSpeed）
-    dmgMul: 1 + kUp('attack'), poiseRegenMul: 1 + kUp('poiseRegen'), swapMul: 1 / (1 + kUp('swap')), stealthMul: 1 - Math.min(kUp('stealth'), 0.7), backstabBonus: kUp('backstab'), scopeSteady: Math.min(kUp('steadyAim'), 0.9), invulnT: 0,   // meta 升級衍生欄位（騎士）
+    dmgMul: 1 + kUp('attack'), swapMul: 1 / (1 + kUp('swap')), stealthMul: 1 - Math.min(kUp('stealth'), 0.7), backstabBonus: kUp('backstab'), scopeSteady: Math.min(kUp('steadyAim'), 0.9), invulnT: 0,   // meta 升級衍生欄位（騎士）
     hp: startHp, maxHp,
     state: i === 0 ? 'CONTROLLED' : 'IDLE',
     disciplineOverride: cfg.disciplineOverride || null,
@@ -2357,7 +2360,8 @@ function makePlayer(i, cfg, pos) {
     aimT: 0, aimDur: 0,   // 遠程瞄準進度／所需時間（扈從也吃；騎士手動射擊不經此）
     cast: null,   // 施法前搖狀態 { slot, artId, t, dur }；卷軸即時＝不經過這裡
     parryT: 0, parryDur: 0, parryHit: false,   // 武器招架（無盾時的防禦）：動作計時 / 總長 / 這次有沒有接到攻擊
-    poiseMax: CLS.poise + kUp('poise'), poise: CLS.poise + kUp('poise'), poiseHitT: -99,     // 體幹：扣光＝大硬直＋處決窗（來自共用兵種表）
+    poiseMax: 0, poise: 0, poiseHitT: -99,   // **騎士沒有體幹**：0＝所有體幹閘門短路（applyPoise/tickResources/體幹條）。
+                                             // 他唯一會被打進硬直的方式是破防（guardBreak）。見 CONFIG.melee 的體幹註解。
     // 怒火：**只有玩家操作的騎士**管理（這是統一數值表唯一的例外，見 UNIT_CLASSES）。
     // 扈從吃 0＝所有 wrathMax 閘門短路，行為與敵人完全一致。
     // 之前扈從有 100 耐力卻沒有任何管理邏輯（AI 不會退出來回氣），打到見底就變沙包——
@@ -2721,7 +2725,7 @@ const arenaWeaponId = () => ARENA_WEAPON_IDS[((arenaWIdx % ARENA_WEAPON_IDS.leng
 const ARENA_MODES = {
   melee: {
     label: '近戰試作場', map: 'arena', weapon: 'sword', medieval: true,
-    desc: '揮斬 / 盾格 / 招架 / 體幹 / 擊退',
+    desc: '揮斬 / 盾格 / 招架 / 怒火 / 處決',
     detail: '左列訓練假人（緊排測 cleave、紫色的披甲測穿甲）· 右側三名劍兵會反擊',
     // 左列訓練假人（緊排測 cleave）+ 披甲假人（測穿甲）+ 右側三名劍兵（會反擊）
     spawn: [
@@ -3910,7 +3914,7 @@ function tickResources(u, dt) {
   const M = CONFIG.melee;
   if (u.poiseMax) {
     if (simTime - (u.poiseHitT || -99) >= M.poiseRegenDelay && u.staggerT <= 0)
-      u.poise = Math.min(u.poiseMax, (u.poise || 0) + M.poiseRegen * (u.poiseRegenMul || 1) * dt);   // meta 升級「穩固」
+      u.poise = Math.min(u.poiseMax, (u.poise || 0) + M.poiseRegen * dt);
     if (u._poiseLowFired && u.poise / u.poiseMax >= CONFIG.hooks.poiseLowFrac) u._poiseLowFired = false;
   }
   // 怒火：**只退不回**（DESIGN §2.2 ③），而且只在房裡還有活敵人時退——
@@ -3960,6 +3964,21 @@ function breakPoise(t, fromAng, by) {
   spawnFloater(t.pos, '體幹破', 'poise');
   Sfx.play('block', t.pos);
 }
+/* 破防：舉著盾，但怒火付不出這一擊的價錢。
+   騎士沒有體幹，所以這裡**不走 breakPoise**（那條是敵人的踉蹌 → 處決窗），
+   而是自己給硬直。意思因此很乾淨：騎士被定住不是因為「挨太多下」，是因為**擋不起了**。 */
+function guardBreak(u, fromAng, by) {
+  const M = CONFIG.melee;
+  u.guardBreakFxT = M.arcFadeT * 2;
+  u.staggerT = Math.max(u.staggerT || 0, M.poiseBreakStagger);
+  u.swing = null; u.cast = null; u.blocking = false; u.blockT = null;
+  if (fromAng != null) applyKnock(u, fromAng + Math.PI, (u.lastKnock || 160) * M.poiseBreakKnockMul);
+  Hooks.fire('guardBreak', { u, by: by || null });
+  spawnCrit(u.pos);
+  spawnFloater(u.pos, '破防', 'poise');
+  Sfx.play('block', u.pos);
+}
+
 /* ── 出口的洞 ─────────────────────────────────────────────────────── */
 // 位置：房間中央。但中央可能落在牆裡，所以取**離中央最近的 waypoint**——
 // waypoint 依定義是可站的點，這樣才保證跳得到（不會開在玩家走不進去的地方）。
@@ -4546,10 +4565,10 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
     poiseDmg *= M.blockPoiseMul;
     if (u.wrathMax) {
       const W = CONFIG.wrath;
-      const cost = (W.costBlockBase + poiseDmg * W.costBlockPerPoise) * blockWrathMulOf(u);
+      const cost = (W.costBlockBase + poiseDmg * W.costBlockPerPoise) * blockWrathMulOf(u) * (u.blockWrathMul || 1);   // 誓約「不退」：擋得便宜
       const enough = (u.wrath || 0) >= cost;
       spendWrath(u, cost);
-      if (!enough) { u.guardBreakFxT = M.arcFadeT * 2; breakPoise(u, fromAng, opts && opts.attacker); poiseDmg = 0; }
+      if (!enough) { guardBreak(u, fromAng, opts && opts.attacker); poiseDmg = 0; }
     }
     Hooks.fire('blockHit', { u, from: (opts && opts.attacker) || null });
     if (opts) opts = Object.assign({}, opts, { knock: (opts.knock || 0) * 0.35, stagger: 0 });   // 擋下＝擊退大減
@@ -6350,13 +6369,14 @@ function edgeMarker(worldPos, color, label, filled) {
   if (label) { ctx.font = 'bold 11px Consolas'; ctx.textAlign = 'center'; ctx.fillText(label, x, y - 11); ctx.textAlign = 'left'; }
   return onScreen;
 }
-/* 騎士的兩條資源（畫面中下，交戰時掃一眼就看得到）：
-   **怒火**＝容錯的價格，也是大絕招的彈藥；**體幹**＝再挨幾下會被打崩。
-   怒火條刻意比體幹條粗：它是這套戰鬥唯一要一直盯的東西。
-   條上那道刻痕＝減傷起點（CONFIG.wrath.drStart）——玩家得看得出「掉到這裡以下就開始痛了」。 */
+/* 騎士的資源條（畫面中下）——**只有一條：怒火**。
+   體幹條拿掉了：騎士沒有體幹（見 CONFIG.melee 的體幹註解），而且兩條會漲會退的條擺在一起
+   只會互相干擾，讀不出是誰在說話。要盯的東西只有一個，它就該是唯一的那條。
+   條上兩道刻痕＝減傷起點（`CONFIG.wrath.drStart`）與大絕招門檻（`ultCost`）——
+   玩家得看得出「掉到這裡以下就開始痛了」跟「到這裡就能放了」。 */
 function drawKnightResources() {
   const k = knight(); if (!k || k.state === 'DEAD') return;
-  const w = 220, h = 9, x = cv.width / 2 - w / 2, y = cv.height - 148;
+  const w = 240, h = 13, x = cv.width / 2 - w / 2, y = cv.height - 150;
   const bar = (yy, f, col, bg, label) => {
     ctx.fillStyle = bg; ctx.fillRect(x, yy, w, h);
     ctx.fillStyle = col; ctx.fillRect(x, yy, w * clamp(f, 0, 1), h);
@@ -6375,13 +6395,11 @@ function drawKnightResources() {
   ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x + w * W.drStart, y, 1, h);              // 減傷起點的刻痕
   ctx.fillStyle = 'rgba(255,214,120,0.55)'; ctx.fillRect(x + w * (W.ultCost / (k.wrathMax || 1)), y, 1, h);   // 大絕招門檻的刻痕
   if (ult) { ctx.font = 'bold 10px Consolas'; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,214,120,0.95)'; ctx.fillText('Q 聖怒', x + w + 6, y + h - 1); }
-  const poiseF = (k.poise || 0) / (k.poiseMax || 1);
-  bar(y + h + 3, poiseF, poiseF < 0.34 ? '#ffd24a' : 'rgba(200,160,85,0.9)', 'rgba(12,18,26,0.8)', '體幹');
-  // 硬直/破防的大字提示（被打崩時要非常清楚，否則玩家不知道自己為什麼不能動）
+  // 硬直/破防的大字提示（被定住時要非常清楚，否則玩家不知道自己為什麼不能動）
   if (k.staggerT > 0) {
     ctx.textAlign = 'center'; ctx.font = 'bold 17px Consolas';
     ctx.fillStyle = `rgba(255,190,90,${0.55 + 0.45 * Math.sin(simTime * 22)})`;
-    ctx.fillText(k.guardBreakFxT > 0 ? '破防！' : '體幹破 — 硬直中', cv.width / 2, y - 10);
+    ctx.fillText(k.guardBreakFxT > 0 ? '破防！— 怒火不夠擋' : '硬直中', cv.width / 2, y - 10);
     ctx.textAlign = 'left';
   } else if (k.noWrathFxT > 0) {
     ctx.textAlign = 'center'; ctx.font = 'bold 13px Consolas';
@@ -6407,10 +6425,6 @@ function drawScreenOverlays() {
     let col = p.hp / p.maxHp > 0.6 ? '#5fd06b' : low ? '#ff4d4d' : '#e0c24a';
     if (low && Math.sin(simTime * 18) > 0) col = '#ffffff';
     screenBar(s, p.hp / p.maxHp, col, -p.radius * cam.scale - 12);
-    if (p.poiseMax) {   // 體幹條（我方也看得到，被圍毆時知道自己快被打崩了）
-      const pf = clamp((p.poise || 0) / p.poiseMax, 0, 1);
-      screenBar(s, pf, pf < 0.34 ? '#ffd24a' : 'rgba(210,170,90,0.85)', -p.radius * cam.scale - 7);
-    }
     if (p.reloadT > 0) screenBar(s, 1 - p.reloadT / (p.reloadDur || p.weapon.reloadTime), '#7fa8ff', -p.radius * cam.scale - 2);
     ctx.font = 'bold 10px Consolas'; ctx.textAlign = 'center';
     ctx.fillStyle = (p.state === 'CONTROLLED') ? '#ffffff' : hsl(p.hue, 60, 72);

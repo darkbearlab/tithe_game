@@ -218,10 +218,11 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noMorale, noStealth, noTacticalAI] },
-  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, wrathGainHappened, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, wrathGainHappened, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
   { name: 'wrath',           frames: 240, enter: () => T.enterArena('melee'), poke: pokeWrath, invariants: [wrathRules] },
   { name: 'wrath-ult',       frames: 60,  enter: () => T.enterArena('melee'), poke: pokeUlt,   invariants: [ultimateWorks] },
+  { name: 'guard-break',     frames: 300, enter: () => T.enterArena('melee'), poke: pokeGuard, invariants: [guardBreakWorks, noPlayerPoise] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
@@ -244,7 +245,7 @@ for (const k of Object.keys(T.MAPS)) {
   SCENARIOS.push({
     name: 'map-' + k, frames: 240,
     enter: () => { bootCampaignToMap(); T.forceMap(k); T.startMission(); },
-    poke: pokeCombat, invariants: [soloKnight, noMorale, noStealth, noTacticalAI],
+    poke: pokeCombat, invariants: [soloKnight, noPlayerPoise, noMorale, noStealth, noTacticalAI],
   });
 }
 
@@ -356,6 +357,32 @@ function wrathRules() {
   if (P.after > P.mark - 2) return `放著不動 2 秒怒火只從 ${P.mark} 掉到 ${P.after}——戰鬥中的衰退沒在跑`;
   return null;
 }
+/* **騎士沒有體幹**（使用者定案）。體幹只有一個工作：把敵人推進踉蹌開處決窗，
+   它是進攻的計量器，不是防禦的計量器。這條擋的是「因為想要多一點深度」而把騎士那半加回來。 */
+function noPlayerPoise() {
+  for (const p of (T.players || [])) if (p && p.poiseMax) return `騎士帶著體幹上限 ${p.poiseMax}——體幹只有敵人該有`;
+  return null;
+}
+
+/* 破防：騎士唯一會被打進硬直的途徑（舉盾但怒火付不出這一擊）。
+   它從 breakPoise 拆出來變成獨立的 guardBreak()，所以需要一條自己的探針——
+   把怒火按在 0、舉著盾站在敵人刀口下，硬直就一定要發生。 */
+let sawGuardBreak = false;
+function pokeGuard(i) {
+  const k = T.knight; if (!k) return;
+  dragFoeToBlade();                 // 敵人釘在刀口前＝牠會還手
+  k.wrath = 0;                      // 永遠付不起這一擊的格擋費
+  if (i === 5) mouseEv('mousedown', 2);   // 舉盾，之後一直按著
+  if (k.guardBreakFxT > 0) sawGuardBreak = true;
+}
+function guardBreakWorks() {
+  const k = T.knight;
+  if (!k) return '沒抓到騎士';
+  if (!shieldEquipped(k)) return '試作場預設副手不是盾，這條探針量到的不是格擋（改 arenaOffIdx 或換情境）';
+  return sawGuardBreak ? null : '怒火 0 舉盾挨打 5 秒都沒破防——guardBreak 沒接上';
+}
+const shieldEquipped = (k) => !!(k.offId && k.offId !== 'dagger');
+
 /* 大絕招「聖怒」：怒火滿 → 清空換一發全場踉蹌。這條路徑在 Homeward 空了很久
    （useOathSkill 一直 return false），現在它是怒火唯一的大額出口，值得一條探針釘住。 */
 const ultProbe = { before: null, max: null, after: null, hit: false };
@@ -465,6 +492,7 @@ for (const s of list) {
     sawWrathGain = false; prevWrath = null; prevHp = null;
     wrathProbe.start = wrathProbe.max = wrathProbe.mark = wrathProbe.after = null; wrathProbe.foes = wrathProbe.died = false;
     ultProbe.before = ultProbe.max = ultProbe.after = null; ultProbe.hit = false;
+    sawGuardBreak = false;
     s.enter();
     grabPointer();
     stage = 'loop';
