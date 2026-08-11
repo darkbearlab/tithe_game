@@ -144,6 +144,8 @@ const EPILOGUE = `
   ARENA_WEAPON_IDS, ARENA_OFF_IDS, arenaSetWeapon, arenaSetOff,
   get drops() { return drops; }, get backpack() { return backpack; }, updateDrops,
   enterDescent, get descentPhase() { return descentPhase; }, get descentBag() { return descentBag; },
+  get waveIdx() { return waveIdx; }, get waveTotal() { return waveTotal; }, get wavePending() { return wavePending; },
+  get floorNo() { return floorNo; }, get roomNo() { return roomNo; }, nextRoom,
   update, draw, drawSeedTag,
   goMenu, initRun, chooseOrigin, departFromOrigin, enterOrigin, enterOathLoadout,
   selectNode, startMission, endMission, advanceNode,
@@ -221,7 +223,8 @@ const SCENARIOS = [
   { name: 'origin',          frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); } },
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
-  { name: 'combat',          frames: 900, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI] },
+  // 一間房現在是**三波**（CONFIG.waves.perRoom），所以「打到開洞」需要的幀數比單波多得多。
+  { name: 'combat',          frames: 3000, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI] },
   { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, wrathGainHappened, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
   { name: 'wrath',           frames: 240, enter: () => T.enterArena('melee'), poke: pokeWrath, invariants: [wrathRules] },
   { name: 'wrath-ult',       frames: 60,  enter: () => T.enterArena('melee'), poke: pokeUlt,   invariants: [ultimateWorks] },
@@ -230,6 +233,8 @@ const SCENARIOS = [
   { name: 'moveset-dual',    frames: 200, enter: () => T.enterArena('melee'), poke: pokeDual,    invariants: [dualOffhandWorks] },
   { name: 'drop-enh',        frames: 30,  enter: bootCombat, poke: pokeDrop, invariants: [dropKeepsEnh, executionWindowExists] },
   { name: 'room-awake',      frames: 2,   enter: bootCombat, poke: pokeAwake, invariants: [allAwakeOnEntry] },
+  { name: 'waves',           frames: 3000, enter: bootCombat, poke: pokeCombat, invariants: [wavesHappened] },
+  { name: 'rooms',           frames: 6,    enter: () => { bootCombat(); }, poke: pokeRooms, invariants: [roomChainWorks] },
   { name: 'descent',         frames: 40,  enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeDescent, invariants: [descentFlowWorks] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
@@ -393,6 +398,37 @@ function oneHandSet() {
 
 function noPlayerPoise() {
   for (const p of (T.players || [])) if (p && p.poiseMax) return `騎士帶著體幹上限 ${p.poiseMax}——體幹只有敵人該有`;
+  return null;
+}
+
+/* 波次（DESIGN.md §1／§5.1）：一間房不是「殺完一批就結束」，而是好幾波，每一波從不同的門進來。
+   這條顧兩件事：**下一波真的會來**（第一版少了 `!wavePending` 的閘門，門的計時器每幀被
+   重置回滿格，那一波永遠不會到），以及**門有先亮起來**（無預警冒出來是廉價的偷襲）。 */
+let sawWaveWarn = false, maxWaveIdx = 0;
+function sampleWaves() {
+  if (T.wavePending) sawWaveWarn = true;
+  if ((T.waveIdx || 0) > maxWaveIdx) maxWaveIdx = T.waveIdx;
+}
+function wavesHappened() {
+  if (T.waveTotal <= 1) return '這個情境只有一波，量不到東西';
+  if (!sawWaveWarn) return '整場沒有出現過「門亮起來」的預告——援軍是無預警冒出來的？';
+  if (maxWaveIdx < T.waveTotal - 1) return `只推進到第 ${maxWaveIdx + 1}/${T.waveTotal} 波——後面的波沒有來`;
+  return null;
+}
+
+/* 房間串接（DESIGN.md §5.5）：一層 N 間房，打完往下一層，路線圖完全不出現。 */
+const roomProbe = { f0: 0, r0: 0, f1: 0, r1: 0, fWrap: 0, rWrap: 0 };
+function pokeRooms(i) {
+  if (i === 0) { roomProbe.f0 = T.floorNo; roomProbe.r0 = T.roomNo; }
+  if (i === 1) { T.nextRoom(); roomProbe.f1 = T.floorNo; roomProbe.r1 = T.roomNo; }
+  if (i === 2) { for (let k = 0; k < T.CONFIG.floor.rooms; k++) T.nextRoom(); roomProbe.fWrap = T.floorNo; roomProbe.rWrap = T.roomNo; }
+}
+function roomChainWorks() {
+  const P = roomProbe;
+  if (P.r1 !== P.r0 + 1 || P.f1 !== P.f0) return `過一間房之後是 ${P.f1}-${P.r1}，應該是 ${P.f0}-${P.r0 + 1}`;
+  if (P.fWrap <= P.f0) return `連過 ${T.CONFIG.floor.rooms} 間房之後層數還是 ${P.fWrap}——沒有換層`;
+  if (P.rWrap > T.CONFIG.floor.rooms) return `換層之後房號是 ${P.rWrap}，沒有歸位`;
+  if (T.scene !== 'COMBAT') return `串接之後不在 COMBAT（${T.scene}）——下一間房沒有真的開始`;
   return null;
 }
 
@@ -680,7 +716,7 @@ for (const s of list) {
     sawWrathGain = false; prevWrath = null; prevHp = null;
     wrathProbe.start = wrathProbe.max = wrathProbe.mark = wrathProbe.after = null; wrathProbe.foes = wrathProbe.died = false;
     ultProbe.before = ultProbe.max = ultProbe.after = null; ultProbe.hit = false;
-    sawGuardBreak = false;
+    sawGuardBreak = false; sawWaveWarn = false; maxWaveIdx = 0;
     msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
     dropProbe.got = null;
     awakeProbe.sampled = false; awakeProbe.total = awakeProbe.idle = 0;
@@ -695,7 +731,7 @@ for (const s of list) {
       T.update(FIXED);
       T.draw();
       T.drawSeedTag();
-      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath();
+      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves();
     }
     releaseKeys();
     for (const inv of (s.invariants || [])) {

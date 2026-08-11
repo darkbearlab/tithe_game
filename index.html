@@ -118,6 +118,32 @@ const CONFIG = {
      （洞口的三選一獎勵是 D6 的後半，還沒做。） */
   exit: { openDur: 0.8, radius: 38, drawR: 46 },
 
+  /* ── 波次（DESIGN.md §1「不是無雙割草，而是不同個性鮮明的敵人穿插出現」）──────
+     一間房不是「殺完六個人就結束」，而是好幾波，**每一波從不同的門進來**。
+     這樣一間房才有形狀（開場 → 加壓 → 收尾），怒火的收支也才會跨越整場而不是每一小包各自結算。
+
+     ⚠️ 這**不是** Homeward 的追兵。那套是「時間到了就無限湧出」的懲罰時鐘，
+     方向和 TITHE 相反：清場後的閒逛已經由怒火衰退負責定價（§2.2），
+     再加一個無限時鐘只會逼玩家速通、把「房間之間才做決策」（§5.4）壓掉。
+     這裡拿回來的是它的**管線**（從別的點生成、直接 ENGAGED），不是它的觸發條件：
+     **清光一波才來下一波，而且波數是有限的**。
+
+     門一定要先亮起來再湧出（warn 秒）。§5.1 說房間沒有死角——
+     背後無預警冒出一波是廉價的偷襲，不是難度。 */
+  waves: {
+    perRoom: 3,        // 每房幾波（含第一波）
+    warn: 1.8,         // 門亮起到敵人湧出的秒數
+    tierPerFloor: 1,   // 每深一層，抽遭遇的 tier 上限 +1（愈往下愈兇）
+  },
+  /* ── 層與房間（DESIGN.md §5.5）────────────────────────────────────────
+     一層 rooms 間房，打完往下一層。房間目前是**手刻輪播**（pool 裡的地圖輪流用）——
+     程序生成要先把編輯器的「鋪滿網格點 + 自動整理連線」搬進遊戲端（尋路要 waypoint 圖），
+     那是獨立的一塊工，硬塞進來會讓這一步拖很長而且測不到重點。 */
+  floor: {
+    rooms: 6,
+    pool: ['alpha', 'bravo', 'field', 'lanes', 'outpost'],
+  },
+
   sprint: { mult: 1.9 },    // Shift 奔跑倍率（固定；不再隨負重遞減，見 sprintMult）
   // 武器數值移至下方 WEAPONS 目錄（可指派、未來可換）
 
@@ -2246,6 +2272,10 @@ let exitPrompt = false;  // 站上洞口的確認框（避免誤觸就掉下去�
    一次停頓做完兩件事，順序固定：**先三選一，再配裝**（獎勵先落袋，才知道自己在配什麼）。
    **暫停、不限時**——§5.4 已經承諾「思考在房間之間，執行在房間之內」，加倒數會逼玩家
    用手速做本來該用腦袋做的事。 */
+let waveIdx = 0, waveTotal = 1;   // 這一房打到第幾波 / 總共幾波
+let wavePending = null;           // { at:{x,y}, t } ＝門已經亮了，t 秒後湧出
+let floorNo = 1, roomNo = 1;      // 第幾層 · 這層的第幾間房
+let roomBannerT = 0;              // 進房橫幅的剩餘秒數
 let descentPhase = null;      // null＝不在這個畫面 / 'REWARD' / 'KIT'
 let descentOffers = null;     // 三選一（全揭露）
 let descentBag = [];          // 這一房撿到的 + 剛選的獎勵。**離開這個畫面就沒了**（§6.2b）
@@ -2582,6 +2612,7 @@ function initRun() {
   // roster[0] 由 chooseOrigin 覆寫成騎士；不再開場就塞三名扈從。
   roster = [makeRecruit(new Set(), true)]; missionIndex = 0;   // roster[0]＝騎士，抽貴氣名
   warehouse = []; backpack = []; drops = []; grantStartingGear();   // 已解鎖的固定起始裝備(喪鐘)每場自動入倉庫
+  floorNo = 1; roomNo = 1;   // 一路往下：層與房的計數只在 run 開始時歸零
   ammoStock = {}; for (const id of WEAPON_IDS) ammoStock[id] = WEAPONS[id].silent ? CONFIG.ammo.subsonicStart : CONFIG.ammo.stockStart;  // 共用彈藥儲備（消音武器＝稀少亞音速彈）
   restSel = null;
   genRoadmap();   // 本局程序生成路線圖（吃種子）
@@ -2717,6 +2748,12 @@ function startMission() {
     e.lastSeenT = 0;
   }
   simTime = 0; roomCleared = false;
+  // 波次：第一波已經在場上了（上面的遭遇／enemySpawns），所以 waveIdx 從 0 起算。
+  // 序章／最終挑戰／沙盒／編輯試玩／事件圖都是單波——它們是腳本化的場景，不是「一間房」。
+  waveIdx = 0;
+  waveTotal = (introActive || finaleActive || fromSandbox || fromEditor || MAP.eventMap) ? 1 : CONFIG.waves.perRoom;
+  wavePending = null;
+  roomBannerT = 2.6;
   deadCount = 0; result = null;
   scene = 'COMBAT';
   Input.aim = players[controlledId].facing;
@@ -2798,12 +2835,28 @@ function descentDrop(i) {
   const it = descentBag[i]; if (!it) return;
   descentBag.splice(i, 1); descentMsg = '丟掉了。';
 }
-// 落地：袋子清空（§6.2b：帶不過那道門），接回路線圖
+// 落地：袋子清空（§6.2b：帶不過那道門），直接進下一間房
 function descentLand() {
   if (scene !== 'DESCENT' || descentPhase !== 'KIT') return;
   descentBag = []; descentOffers = null; descentPhase = null; descentMsg = '';
   debrief = null;
-  advanceNode();
+  nextRoom();
+}
+/* 房間串接（§5.5）：一層 CONFIG.floor.rooms 間房，打完往下一層。
+   房間目前是**手刻輪播**——pool 裡的地圖依序輪流。程序生成要先把編輯器的
+   「鋪滿網格點 + 自動整理連線」搬進遊戲端（尋路要 waypoint 圖），那是獨立的一塊工。
+   **路線圖在這條路徑上完全不出現**：TITHE 沒有分岔，只有一路往下（§5.3）。 */
+function nextRoom() {
+  roomNo++;
+  if (roomNo > CONFIG.floor.rooms) { floorNo++; roomNo = 1; }
+  startRoom();
+}
+function startRoom() {
+  const pool = CONFIG.floor.pool.filter(k => MAPS[k]);
+  const idx = ((floorNo - 1) * CONFIG.floor.rooms + (roomNo - 1)) % Math.max(1, pool.length);
+  forcedMap = pool[idx] || 'alpha';
+  roadCurrent = null;
+  startMission();
 }
 const descentItemName = (it) => it.kind === 'weapon' ? WEAPONS[it.id].name
   : it.kind === 'off' ? (OFFHANDS[it.id] || {}).name
@@ -4084,6 +4137,44 @@ function guardBreak(u, fromAng, by) {
   spawnFloater(u.pos, '破防', 'poise');
   Sfx.play('block', u.pos);
 }
+
+/* ── 波次 ─────────────────────────────────────────────────────────────
+   清光一波 → 別的門亮起來 → warn 秒後湧出下一波 → 最後一波清光才開洞。
+   門的位置取「離騎士最遠的錨點」：不是為了公平，是為了**可讀**——
+   你要有時間看到它、轉過去、決定要不要衝上去堵門口。 */
+function waveGateFor() {
+  const kn = knight();
+  const cands = [];
+  if (MAP.accessPoints && MAP.accessPoints.length) cands.push(...MAP.accessPoints);
+  cands.push(...encounterAnchorsOf(MAP));
+  if (!cands.length) return { x: WORLD.w / 2, y: WORLD.h / 2 };
+  let best = cands[0], bd = -1;
+  for (const c of cands) {
+    const d = kn ? dist(kn.pos, c) : 0;
+    if (d > bd) { bd = d; best = c; }
+  }
+  return { x: best.x, y: best.y };
+}
+function queueNextWave() {
+  wavePending = { at: waveGateFor(), t: CONFIG.waves.warn };
+  Sfx.play('alert', wavePending.at);
+}
+function tickWave(dt) {
+  if (!wavePending) return;
+  wavePending.t -= dt;
+  if (wavePending.t > 0) return;
+  const at = wavePending.at;
+  wavePending = null;
+  waveIdx++;
+  // 波次內容沿用既有的遭遇模板（已經是設計過的兵種組合），tier 隨層數上升
+  const tier = (MAP.tier || 1) + (floorNo - 1) * CONFIG.waves.tierPerFloor;
+  const encId = pickEncounter(tier);
+  const enc = ENCOUNTERS[encId];
+  // 一律 'ambush' 開場＝直接 ENGAGED：門已經亮過了，湧出來的人沒有理由還在發呆
+  for (const e of spawnGroup(enc.units, at, 'enemy', 'ambush', knight() ? knight().pos : ENTRY)) enemies.push(e);
+  Hooks.fire('waveStart', { index: waveIdx, total: waveTotal, encId, at });
+}
+const waveActive = () => !!wavePending || waveIdx + 1 < waveTotal;   // 還有下一波沒來＝這房還沒完
 
 /* ── 出口的洞 ─────────────────────────────────────────────────────── */
 // 位置：房間中央。但中央可能落在牆裡，所以取**離中央最近的 waypoint**——
@@ -5649,11 +5740,19 @@ function update(dt) {
   // 7.5) 清場 → **開洞**（不是直接結算）。
   // 清場那一刻房間中央的地板碎裂、洞打開；玩家自己走過去跳下去才進下一層。
   // 中間那段時間是留給你的：撿東西、看戰場、喘一口氣。
-  if (!roomCleared && enemies.length && enemies.every(e => e.dead)) {
-    roomCleared = true;
-    // 序章是腳本化的演出（他是離開戰場，不是墜入地獄），不開洞、照舊直接收尾。
-    if (!introActive) openExitPortal();
+  // ⚠️ `!wavePending` 是必要的：門亮著的那 warn 秒場上仍然「全部都死了」，
+  //    少了它就會每一幀重新排一次下一波，計時器永遠回到滿格＝那一波永遠不會來。
+  if (!roomCleared && !wavePending && enemies.length && enemies.every(e => e.dead)) {
+    if (waveIdx + 1 < waveTotal && !introActive) {
+      queueNextWave();          // 還有下一波：別的門亮起來，先不開洞
+    } else {
+      roomCleared = true;
+      // 序章是腳本化的演出（他是離開戰場，不是墜入地獄），不開洞、照舊直接收尾。
+      if (!introActive) openExitPortal();
+    }
   }
+  tickWave(dt);
+  if (roomBannerT > 0) roomBannerT -= dt;
   tickExitPortal(dt);
 
   // 8) 計時 + 結算。**跳進洞**＝過關；騎士陣亡＝run 結束。
@@ -5710,7 +5809,7 @@ function draw() {
   // ---- 世界（鏡頭變換）----
   ctx.save(); applyCam();
   drawGrid(); drawBushes(); drawAreas(); drawLowWalls(); drawDestructibles(); drawWalls(); drawDoors(); drawButtons(); drawWaypoints(); drawZonesWorld();
-  drawDecals(); drawExitPortal(); drawCorpses(); drawDrops(); drawPrisoners(); drawIntroActors(); drawParticles(); drawBullets(); drawGrenades();
+  drawDecals(); drawExitPortal(); drawWaveGate(); drawCorpses(); drawDrops(); drawPrisoners(); drawIntroActors(); drawParticles(); drawBullets(); drawGrenades();
   drawMeleeFx([...enemies.filter(e => !e.dead && isRevealed(e)), ...players]);   // 近接弧畫在單位之下（不遮血條/身體）；敵人比照 drawEnemies 只畫已感知者
   drawEnemies(); drawPlayers(); drawFlashFx();
   drawStaggerMarks([...enemies.filter(e => !e.dead && isRevealed(e)), ...players]);
@@ -6556,9 +6655,27 @@ function drawKnightResources() {
 /* 拉鋸條（畫面正上方）＝這場仗的戰局。一條、一個中線，往哪邊推一眼就知道。
    刻度＝各兵種的崩潰門檻（「佔自己那半的 %」直接畫在自己那半上）。
    氣勢畫成半透明的推擠段＝看得出「這段是暫時的、會退回去」，而不是以為自己真的掉了那麼多。 */
+/* 下一波的門：先亮起來、再湧出（CONFIG.waves.warn 秒）。
+   §5.1 說房間沒有死角——背後無預警冒出一波是廉價的偷襲，不是難度。
+   所以它畫得很吵：地面收縮的環 + 光柱 + 螢幕邊緣指標。 */
+function drawWaveGate() {
+  if (!wavePending) return;
+  const p = clamp(1 - wavePending.t / Math.max(0.01, CONFIG.waves.warn), 0, 1);
+  const a = wavePending.at;
+  ctx.save();
+  ctx.strokeStyle = `rgba(255,90,70,${0.35 + 0.45 * p})`; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(a.x, a.y, 64 * (1 - p) + 16, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = `rgba(255,150,110,${0.25 + 0.3 * Math.abs(Math.sin(simTime * 9))})`; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(a.x, a.y, 74, 0, Math.PI * 2); ctx.stroke();
+  const g = ctx.createLinearGradient(a.x, a.y - 120, a.x, a.y);
+  g.addColorStop(0, 'rgba(255,90,70,0)'); g.addColorStop(1, `rgba(255,110,80,${0.30 * (0.4 + p)})`);
+  ctx.fillStyle = g; ctx.fillRect(a.x - 26, a.y - 120, 52, 120);
+  ctx.restore();
+}
 function drawScreenOverlays() {
   // 區域標記（永遠正立、離場時夾到邊緣）
   edgeMarker(ENTRY, '#caa05a', 'ENTRY', false);
+  if (wavePending) edgeMarker(wavePending.at, '#ff5a46', '援軍', true);   // 門在畫面外也要指得到
   if (exitPortalReady()) edgeMarker(exitPortal, '#ff9b5a', '出口', true);   // 洞開了：畫面邊緣指過去（清完場你可能離它很遠）
 
   // 我方單位：血條 + 編號（永遠可見）
@@ -6665,6 +6782,29 @@ function drawHUD() {
     return;   // 框開著就不畫其餘 HUD＝畫面乾淨、注意力在這一個決定上
   }
 
+  /* 左上角常駐一行：第幾層、第幾間房、第幾波。
+     §5.5 說「單一出口讓路線規劃消失了，便宜的補法是每層開頭報一次」——
+     一行字就夠，你要知道還剩多少、什麼時候該把資源留給層王。 */
+  if (!introActive && !arenaMode) {
+    ctx.textAlign = 'left'; ctx.font = 'bold 12px Consolas';
+    ctx.fillStyle = 'rgba(200,160,110,0.9)';
+    ctx.fillText(`第 ${floorNo} 層 · 第 ${roomNo}/${CONFIG.floor.rooms} 房`, 14, 22);
+    if (waveTotal > 1) {
+      ctx.font = '11px Consolas';
+      ctx.fillStyle = wavePending ? `rgba(255,110,90,${0.6 + 0.4 * Math.abs(Math.sin(simTime * 9))})` : 'rgba(150,165,180,0.85)';
+      ctx.fillText(wavePending ? `援軍逼近 ${Math.max(0, wavePending.t).toFixed(1)}s` : `第 ${waveIdx + 1}/${waveTotal} 波`, 14, 38);
+    }
+  }
+  // 進房橫幅：進去那一刻報一次自己在哪
+  if (roomBannerT > 0 && !introActive && !arenaMode) {
+    const a = Math.min(1, roomBannerT / 0.6);
+    ctx.textAlign = 'center'; ctx.font = 'bold 26px Consolas';
+    ctx.fillStyle = `rgba(255,205,150,${0.9 * a})`;
+    ctx.fillText(`第 ${floorNo} 層 · 第 ${roomNo} 房`, cv.width / 2, 96);
+    ctx.font = '12px Consolas'; ctx.fillStyle = `rgba(150,130,110,${0.85 * a})`;
+    ctx.fillText(`本層共 ${CONFIG.floor.rooms} 房 · 每房 ${waveTotal} 波`, cv.width / 2, 118);
+    ctx.textAlign = 'left';
+  }
   // 清場後的提示：洞在哪、要做什麼。刻意寫「跳下去」而不是「前往出口」——
   // 那是這個遊戲的動作（DESIGN.md §5.3：你是一路往下的）。
   if (exitPortalReady()) {
