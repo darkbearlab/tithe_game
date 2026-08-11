@@ -254,6 +254,26 @@ const CONFIG = {
    每把武器：威力 / 射速 / 射程 / 彈速 / 發散(基礎,連射,上限,回復) / 彈夾 / 換彈 / 總彈藥 /
             稀有度(rarity)
    ===================================================================== */
+/* ── 招式（move）＝武器是一袋招式（DESIGN.md §2.6b）──────────────────────
+   **左鍵＝主手的招式、右鍵＝副手的招式。** 雙手武器一把佔兩隻手，所以它自己供應左右兩招
+   （左＝light 輕擊、右＝heavy 重擊）；單手武器只需要 light，它在哪隻手就綁哪個鍵。
+
+   招式欄位（沒寫的吃 MOVE_DEFAULT）：
+     name          面板上的名字
+     swingStyle    'sweep'＝刀刃在判定窗內由一側掃到另一側（左右交替）；
+                   'thrust'＝突刺，刀尖沿正前方由近推到遠（arcDeg 只是刺擊的容錯寬度）
+     arcDeg        揮動總角度 / reach 觸及(px，另加目標半徑)
+     windup/activeT/recover  前搖 / 判定窗 / 後搖。節奏＝三者之和（近接沒有額外 CD）
+     cleave        單次最多命中數 / knock 擊退力(px/s)
+     stagger       直接硬直秒數。已由「體幹破」取代，全部留 0（欄位留給未來的特殊武器）
+     backstabMul   繞背額外倍率 / poiseDmg 體幹傷害（扣光＝體幹破＝處決窗）
+     dmgMul        乘在**武器**的 damage 上（所以「鋒利」詞條對輕重擊同時生效）
+     hyperArmor    判定窗中不被前搖打斷、且自己吃的體幹傷害減半＝重招的身分
+
+   武器層只留「這把武器是什麼」：damage / pierce / hands / rarity / 池旗標。
+   **揮擊不花任何資源**（DESIGN §2.2 ②）——攻擊免費是 push-forward 的前提。 */
+const MOVE_DEFAULT = { name: '揮擊', swingStyle: 'sweep', arcDeg: 90, reach: 60, windup: 0.12, activeT: 0.09, recover: 0.28, cleave: 1, knock: 200, stagger: 0, backstabMul: 1, poiseDmg: 16, dmgMul: 1, hyperArmor: false };
+const mv = (o) => Object.assign({}, MOVE_DEFAULT, o);
 // weight：重量（影響 Shift 奔跑倍率，越重跑越慢）
 // pierce：穿甲值 0~1（對裝甲敵人的有效擋格率 = armor.blockChance × (1−pierce)）。
 //   分級：pistol/smg/pdw/carbine=0（反人員，對甲無力）／rifle=0.5（過半穿）／dmr=0.9（裝甲可靠解）。
@@ -261,39 +281,34 @@ const CONFIG = {
 // hands：佔幾隻手（1＝可搭副手；2＝雙手武器，副手必空）。offhandOnly＝只能放副手（見 OFFHANDS）。
 // **格擋只有副手拿盾才有**；沒盾＝只能「武器招架」（窄窗、失敗自己硬直），見 CONFIG.melee.wp*
 const WEAPONS = {
-  // ===== HOMEWARD 近接武器（melee:true → 走揮斬管線 meleeSwing，不生子彈）=====
-  // 近接專屬欄位：arcDeg 揮動總角度 / reach 觸及(px，另加目標半徑) / windup 前搖 / activeT 判定窗 / recover 後搖
-  //   cleave 單次最多命中數 / knock 擊退力(px/s) / stagger 命中造成的硬直秒 / backstabMul 繞背額外倍率
-  //   swingStyle：'sweep'＝刀刃在判定窗內**由一側掃到另一側**（左右交替），只有刀刃掃過的瞬間才判定；
-  //               'thrust'＝突刺，刀尖沿正前方由近推到遠（arcDeg 只是刺擊的容錯寬度）。
-  //   poiseDmg：體幹傷害（扣光＝體幹破＝大硬直+處決窗）。**揮擊不花任何資源**——
-//     DESIGN §2.2：「攻擊不花怒火」是 push-forward 的前提，你永遠打得動。
-  //   hyperArmor：判定窗中不被前搖打斷、且體幹傷害減半＝重武器的身分（斧/鎚）
-  //   stagger：直接硬直秒數。現已由「體幹破」取代，全部留 0（欄位保留給未來的特殊武器）
-  // range 仍填 reach＝敵 AI 的接近距離判斷沿用同一欄位。
-  // 節奏＝windup+activeT+recover（近接沒有額外 CD，這一輪就是攻速）。
-  sword: { name: '長劍',  rarity: 'common',   weight: 1.5, damage: 30, fireRate: 6, range: 66, pierce: 0.35, melee: true, swingStyle: 'sweep', hands: 1,
-           arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, stagger: 0, backstabMul: 1.0, poiseDmg: 22,
+  // ===== 近接武器（melee:true → 走揮斬管線，不生子彈）=====
+  // 招式定義見上面 MOVE_DEFAULT。range 仍填 light 的 reach＝敵 AI 的接近距離判斷沿用同一欄位。
+  sword: { name: '長劍',  rarity: 'common',   weight: 1.5, damage: 30, fireRate: 6, range: 66, pierce: 0.35, melee: true, hands: 1,
+           moves: { light: mv({ name: '橫斬', arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, poiseDmg: 22 }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // 石中劍（事件解鎖，S2/S1 的產物）：傷害同長劍、**完全穿甲(pierce 1.0)**、noEnhance＝charges 已用盡不能再打。
-  stonesword: { name: '石中劍', rarity: 'legendary', weight: 1.5, damage: 30, fireRate: 6, range: 66, pierce: 1.0, melee: true, swingStyle: 'sweep', hands: 1, noEnhance: true,
-           arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, stagger: 0, backstabMul: 1.0, poiseDmg: 22,
+  stonesword: { name: '石中劍', rarity: 'legendary', weight: 1.5, damage: 30, fireRate: 6, range: 66, pierce: 1.0, melee: true, hands: 1, noEnhance: true,
+           moves: { light: mv({ name: '橫斬', arcDeg: 100, reach: 66, windup: 0.10, activeT: 0.09, recover: 0.26, cleave: 3, knock: 260, poiseDmg: 22 }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
-  axe:   { name: '雙手斧', rarity: 'common',  weight: 2.2, damage: 48, fireRate: 4, range: 62, pierce: 0.30, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 2,
-           arcDeg: 160, reach: 62, windup: 0.20, activeT: 0.14, recover: 0.38, cleave: 5, knock: 320, stagger: 0, backstabMul: 1.0, poiseDmg: 34,
+  // 雙手＝自己供應左右兩招。輕擊是原本那一刀；重擊是慢一倍、體幹傷害兩倍以上的縱劈＝**開處決窗的工具**
+  axe:   { name: '雙手斧', rarity: 'common',  weight: 2.2, damage: 48, fireRate: 4, range: 62, pierce: 0.30, melee: true, hands: 2,
+           moves: { light: mv({ name: '橫掃', arcDeg: 160, reach: 62, windup: 0.20, activeT: 0.14, recover: 0.38, cleave: 5, knock: 320, poiseDmg: 34, hyperArmor: true }),
+                    heavy: mv({ name: '劈落', arcDeg: 70,  reach: 68, windup: 0.34, activeT: 0.12, recover: 0.50, cleave: 2, knock: 520, poiseDmg: 80, dmgMul: 1.7, hyperArmor: true }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
-  mace:  { name: '戰鎚',  rarity: 'uncommon', weight: 2.4, damage: 38, fireRate: 3.5, range: 58, pierce: 0.95, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 1,
-           arcDeg: 80,  reach: 58, windup: 0.24, activeT: 0.09, recover: 0.42, cleave: 1, knock: 560, stagger: 0, backstabMul: 1.0, poiseDmg: 45,
+  mace:  { name: '戰鎚',  rarity: 'uncommon', weight: 2.4, damage: 38, fireRate: 3.5, range: 58, pierce: 0.95, melee: true, hands: 1,
+           moves: { light: mv({ name: '砸擊', arcDeg: 80, reach: 58, windup: 0.24, activeT: 0.09, recover: 0.42, cleave: 1, knock: 560, poiseDmg: 45, hyperArmor: true }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
-  spear: { name: '長槍',  rarity: 'common',   weight: 1.8, damage: 30, fireRate: 5, range: 104, pierce: 0.55, melee: true, swingStyle: 'thrust', hands: 2,
-           arcDeg: 16,  reach: 104, windup: 0.14, activeT: 0.08, recover: 0.30, cleave: 2, knock: 200, stagger: 0, backstabMul: 1.0, poiseDmg: 18,
+  // 長槍：左＝突刺（保留它「長 reach 逼你繞側」的身分，敵人 AI 也只用 light），右＝橫掃清身邊
+  spear: { name: '長槍',  rarity: 'common',   weight: 1.8, damage: 30, fireRate: 5, range: 104, pierce: 0.55, melee: true, hands: 2,
+           moves: { light: mv({ name: '突刺', swingStyle: 'thrust', arcDeg: 16, reach: 104, windup: 0.14, activeT: 0.08, recover: 0.30, cleave: 2, knock: 200, poiseDmg: 18 }),
+                    heavy: mv({ name: '橫掃', arcDeg: 170, reach: 76, windup: 0.26, activeT: 0.14, recover: 0.42, cleave: 5, knock: 300, poiseDmg: 40, dmgMul: 1.25 }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
-  dagger:{ name: '短劍',  rarity: 'common',   weight: 0.4, damage: 13, fireRate: 9, range: 44, pierce: 0.20, melee: true, swingStyle: 'sweep', hands: 1,
-           arcDeg: 60,  reach: 44, windup: 0.05, activeT: 0.06, recover: 0.16, cleave: 1, knock: 120, stagger: 0, backstabMul: 2.0, poiseDmg: 10,
+  dagger:{ name: '短劍',  rarity: 'common',   weight: 0.4, damage: 13, fireRate: 9, range: 44, pierce: 0.20, melee: true, hands: 1,
+           moves: { light: mv({ name: '刺劃', arcDeg: 60, reach: 44, windup: 0.05, activeT: 0.06, recover: 0.16, knock: 120, backstabMul: 2.0, poiseDmg: 10 }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // 底線武器（§7）：永遠有、彈藥無限。中世紀化後由「短刀」擔任（人人身上都有一把）
-  knife: { name: '短刀',  rarity: 'common',   weight: 0.2, damage: 9,  fireRate: 9, range: 38, pierce: 0.10, melee: true, swingStyle: 'sweep', hands: 1,
-           arcDeg: 55,  reach: 38, windup: 0.05, activeT: 0.05, recover: 0.16, cleave: 1, knock: 90,  stagger: 0, backstabMul: 2.0, poiseDmg: 7,
+  knife: { name: '短刀',  rarity: 'common',   weight: 0.2, damage: 9,  fireRate: 9, range: 38, pierce: 0.10, melee: true, hands: 1,
+           moves: { light: mv({ name: '割', arcDeg: 55, reach: 38, windup: 0.05, activeT: 0.05, recover: 0.16, knock: 90, backstabMul: 2.0, poiseDmg: 7 }) },
            magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // ===== HOMEWARD 中世紀遠程（Phase 2 的先遣；試作場 6/7 鍵可試）=====
   // 穿甲軸的遠程擔當（原版 rifle 0.5 / DMR 0.9 的位置）：長弓＝反人員、十字弓＝破甲。
@@ -309,18 +324,19 @@ const WEAPONS = {
   warbow:  { name: '戰弓',  rarity: 'uncommon', weight: 1.6, damage: 34, fireRate: 1.2, range: 1300, projSpeed: 2600, spreadBase: 1.2, spreadPerShot: 0.7, spreadMax: 5, spreadRecover: 9, magazine: 1, reloadTime: 1.7, pierce: 0.45, aimTime: 0.95, aimMoveMul: 0.35, reloadMoveMul: 0.6, hands: 2, tracer: true },   // B 狙擊型：長弓的上位，過半穿甲、略笨重
   // 術士騎士（救援變體 B1）的法杖：走遠程開火 AI（隊友本就會射），發射魔法彈＝彈藥無限、過半穿甲、視覺另畫。noRandom＝不進任何隨機池。
   staff:   { name: '法杖',  rarity: 'rare', weight: 1.4, damage: 30, fireRate: 1.2, range: 900, projSpeed: 320, spreadBase: 1.0, spreadPerShot: 0.5, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.55, aimTime: 0, reloadMoveMul: 0.85, hands: 2, magic: true, infinite: true, noRandom: true },   // A 彈幕型：魔法彈本來就畫成發光光矢＝最適合當慢而顯眼的那種
-  falchion:{ name: '彎刀',  rarity: 'uncommon', weight: 1.3, damage: 34, fireRate: 6, range: 62, pierce: 0.25, melee: true, swingStyle: 'sweep', hands: 1,
-             arcDeg: 120, reach: 62, windup: 0.09, activeT: 0.09, recover: 0.24, cleave: 4, knock: 240, stagger: 0, backstabMul: 1.0, poiseDmg: 24,
+  falchion:{ name: '彎刀',  rarity: 'uncommon', weight: 1.3, damage: 34, fireRate: 6, range: 62, pierce: 0.25, melee: true, hands: 1,
+             moves: { light: mv({ name: '廣掃', arcDeg: 120, reach: 62, windup: 0.09, activeT: 0.09, recover: 0.24, cleave: 4, knock: 240, poiseDmg: 24 }) },
              magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },   // 單手廣掃：對付雜兵群
   // 最終解鎖（通過真相挑戰）：原版 Siren 致敬 The Patriot（無限彈但全場聽得見）→ 中世紀等價物：
   // 「喪鐘」＝雙手大劍，每一擊的鳴響全場聽得見（loud）＝威力極高但徹底放棄潛行。敘事於 Phase 4 重寫。
-  knell:   { name: '喪鐘',  rarity: 'legendary', weight: 2.8, damage: 58, fireRate: 3, range: 78, pierce: 0.75, melee: true, swingStyle: 'sweep', hyperArmor: true, hands: 2, loud: true, noRandom: true,
-             arcDeg: 150, reach: 78, windup: 0.18, activeT: 0.13, recover: 0.34, cleave: 4, knock: 420, stagger: 0, backstabMul: 1.0, poiseDmg: 50,
+  knell:   { name: '喪鐘',  rarity: 'legendary', weight: 2.8, damage: 58, fireRate: 3, range: 78, pierce: 0.75, melee: true, hands: 2, loud: true, noRandom: true,
+             moves: { light: mv({ name: '掃鳴', arcDeg: 150, reach: 78, windup: 0.18, activeT: 0.13, recover: 0.34, cleave: 4, knock: 420, poiseDmg: 50, hyperArmor: true }),
+                      heavy: mv({ name: '鳴響', arcDeg: 200, reach: 86, windup: 0.30, activeT: 0.16, recover: 0.46, cleave: 6, knock: 560, poiseDmg: 95, dmgMul: 1.6, hyperArmor: true }) },
              magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },
   // --- 敵人專屬武器（不入玩家戰利品池）---
   fangs:  { name:'獠牙',  rarity:'common',   weight: 0,   damage: 7,  fireRate: 8,  range: 34,  projSpeed: 520, spreadBase: 6,   spreadPerShot: 0,   spreadMax: 6,  spreadRecover: 20, magazine: 999, reloadTime: 0.1, pierce: 0, hands: 0 },   // 戰狼：貼臉短間距連咬（走一般射擊管線）
-  club:   { name:'木棍',  rarity:'common',   weight: 1.0, damage: 18, fireRate: 5, range: 54, pierce: 0.05, melee: true, swingStyle: 'sweep', hands: 1,
-            arcDeg: 90,  reach: 54, windup: 0.16, activeT: 0.09, recover: 0.32, cleave: 1, knock: 180, stagger: 0, backstabMul: 1.0, poiseDmg: 14,
+  club:   { name:'木棍',  rarity:'common',   weight: 1.0, damage: 18, fireRate: 5, range: 54, pierce: 0.05, melee: true, hands: 1,
+            moves: { light: mv({ name: '掄擊', arcDeg: 90, reach: 54, windup: 0.16, activeT: 0.09, recover: 0.32, knock: 180, poiseDmg: 14 }) },
             magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },   // 農兵：慢、弱、體幹傷害低
 };
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -3764,7 +3780,17 @@ function shieldOf(u) {
   const off = s ? s.off : (u && u.offId);
   return isShield(off) ? OFFHANDS[off] : null;
 }
-const canBlock = (u) => !!shieldOf(u) && !!(u.weapon && u.weapon.melee);
+const canBlock = (u) => !!shieldOf(u) && !!(u.weapon && u.weapon.melee) && (u.weapon.hands || 1) < 2;   // 雙手武器佔滿兩手＝沒有副手＝不能格擋
+/* 招式取用（DESIGN.md §2.6b）。沒寫 moves 的武器（遠程）回 null。
+   heavy 只有雙手武器才有；沒有 heavy 的武器右鍵不會走揮擊分支。 */
+const lightOf = (W) => (W && W.moves && W.moves.light) || null;
+const heavyOf = (W) => (W && W.moves && W.moves.heavy) || null;
+// 副手那把「武器」（不是盾）＝雙持。回傳武器定義，沒有就 null。
+function offWeaponOf(u) {
+  const st = activeSet(u);
+  const off = st ? st.off : (u && u.offId);
+  return (off && !isShield(off) && WEAPONS[off]) ? WEAPONS[off] : null;
+}
 // 盾的參數（沒盾則回 CONFIG.melee 的預設，供非玩家單位沿用）
 const blockArcOf = (u) => { const sh = shieldOf(u); return (sh ? sh.blockArcDeg : CONFIG.melee.blockArcDeg); };
 const blockResistOf = (u) => { const sh = shieldOf(u); return (sh ? sh.blockResist : CONFIG.melee.blockResist); };
@@ -3916,7 +3942,7 @@ function swapWeapon(u) {
    攻擊權（token）＝讓 1 對多 可讀：同時只有幾隻能進攻，其餘繞行伺機。 */
 const poiseMaxOf = (u) => (u.poiseMax || 1);
 const inSwingActive = (u) => !!(u.swing && u.swing.t >= u.swing.windup && u.swing.t < u.swing.windup + u.swing.active);
-const hasHyperArmor = (u) => !!(u.weapon && u.weapon.hyperArmor && inSwingActive(u));
+const hasHyperArmor = (u) => !!(u.swing && u.swing.mv.hyperArmor && inSwingActive(u));   // hyperArmor 是**招式**的性質，不是武器的
 // 每幀推進體幹（受擊後有延遲才回）與怒火（只退不回）＋ hpLow/poiseLow 門檻重新武裝
 function tickResources(u, dt) {
   const M = CONFIG.melee;
@@ -4131,8 +4157,8 @@ const totalAttackTokens = () => { let n = 0; for (const [, m] of attackTokens) n
 function friendlyInSwingArc(u, aimPos) {
   const FF = CONFIG.friendlyFire;
   if (!FF.enabled || !FF.aiHoldFire) return false;
-  const W = u.weapon; if (!W || !W.melee) return false;
-  const half = (W.arcDeg || 90) * Math.PI / 360, reach = (W.reach || W.range);
+  const M = lightOf(u.weapon); if (!M) return false;   // AI 只用 light（重擊是玩家的；要給菁英再說）
+  const half = M.arcDeg * Math.PI / 360, reach = M.reach;
   const dT = aimPos ? dist(u.pos, aimPos) : Infinity;
   for (const o of [...activePlayers(), ...enemies]) {
     if (o === u || o.dead) continue;
@@ -4144,22 +4170,30 @@ function friendlyInSwingArc(u, aimPos) {
   return false;
 }
 
-function startSwing(u, fireRateMult) {
-  const W = u.weapon;
-  if (u.swing || u.staggerT > 0 || u.swapT > 0 || u.parryT > 0 || u.cast || u.exec || u.dash) return false;   // 揮擊中/硬直中/換手中/招架中/施法前搖中/處決中/dash 中不能再揮
+/* 出一招。`move`＝招式定義（省略＝主手的 light）；`srcW`＝供應傷害/穿甲的那把武器
+   （副手揮擊時是副手那把，不是 u.weapon）；`hand`＝'main' | 'off'，只影響演出。
+   招式的所有參數在這裡**複製進 swing**，之後 tickMelee / meleeHitTest 一律讀 swing，
+   不再回頭讀武器——這樣同一把武器的兩招才能真的長得不一樣。 */
+function startSwing(u, move, fireRateMult, hand, srcW) {
+  const W = srcW || u.weapon;
+  const M = move || lightOf(W);
+  if (!M) return false;
+  if (u.swing || u.staggerT > 0 || u.parryT > 0 || u.cast || u.exec || u.dash) return false;   // 揮擊中/硬直中/招架中/施法前搖中/處決中/dash 中不能再揮
   // **揮擊不花任何資源**（DESIGN §2.2 ②）：你永遠打得動，因為往前打是唯一的活路。
   const rm = CONFIG.tempo / Math.max(0.05, (fireRateMult || 1) * (u.buffFire || 1));   // 攻速 buff＝縮短全段；× tempo＝整體前後搖更長
   u.swingDir = -(u.swingDir || -1);   // 左右交替：連續揮擊會是 →、←、→…（不是每次都同一邊）
   u.swing = {
-    t: 0, windup: W.windup * rm, active: W.activeT * rm, recover: W.recover * rm,
+    t: 0, windup: M.windup * rm, active: M.activeT * rm, recover: M.recover * rm,
     hits: new Set(), n: 0,
+    mv: M, W,                 // 招式定義 + 出招的那把武器（傷害/穿甲來源）
+    hand: hand || 'main',
     dir: u.swingDir,          // +1＝順時針掃、-1＝逆時針掃（thrust 不用）
     off: 0, prevOff: 0,       // 刀刃相對 facing 的角度（本幀 / 上一幀）＝判定用的角度帶
     reachF: 1, prevReachF: 1, // 刀尖伸出比例（thrust 用）
   };
   u.blocking = false;   // 揮擊即放下盾
   if (arenaMode && u.id === KNIGHT_ID && u.faction === 'player') { arenaStats.swings++; arenaStats.lastHits = 0; arenaStats.lastDmg = 0; }
-  Hooks.fire('attackStart', { u, W, melee: true });
+  Hooks.fire('attackStart', { u, W, move: M, melee: true });
   Sfx.play('swing', u.pos);
   return true;
 }
@@ -4172,9 +4206,8 @@ function tickMelee(u, dt) {
   tickWeaponParry(u, dt);
   const s = u.swing;
   if (!s) return false;
-  const W = u.weapon;
-  const half = (W.arcDeg || 90) * Math.PI / 360;
-  const thrust = W.swingStyle === 'thrust';
+  const half = s.mv.arcDeg * Math.PI / 360;
+  const thrust = s.mv.swingStyle === 'thrust';
   const prev = s.t; s.t += dt;
   const p0 = swingProgress(s, prev), p1 = swingProgress(s, s.t);
   if (thrust) {   // 突刺：角度不動，刀尖由 thrustMinReachF 推到滿
@@ -4205,12 +4238,12 @@ const outDmgMul = (u) => (u.dmgMul || 1) * ((u.berserk && u.hp < u.maxHp * u.ber
 // 刀刃掃過的角度帶判定：只有「上一幀→本幀」之間掃過的角度算命中（再各放寬 bladeHalfDeg＝刀刃厚度）。
 // 距離吃 reach × 當下刀尖伸出比例；視線被牆擋則打不到。同一目標每次揮擊只吃一下。
 function meleeHitTest(u, s) {
-  const W = u.weapon;
+  const M = s.mv, W = s.W;   // 招式（形狀/體幹/擊退）＋ 出招的那把武器（傷害/穿甲）
   const bladeHalf = CONFIG.melee.bladeHalfDeg * Math.PI / 180;
   const lo = Math.min(s.prevOff, s.off) - bladeHalf;   // 本幀刀刃掃過的角度帶（相對 facing）
   const hi = Math.max(s.prevOff, s.off) + bladeHalf;
-  const reach = (W.reach || W.range) * Math.max(s.prevReachF, s.reachF) * (u.reachMul || 1);   // 誓約「長驅」：reach 加長
-  const cleave = W.cleave || 1;
+  const reach = M.reach * Math.max(s.prevReachF, s.reachF) * (u.reachMul || 1);   // 誓約「長驅」：reach 加長
+  const cleave = M.cleave || 1;
   const targets = [...activePlayers(), ...enemies.filter(e => !e.dead)].filter(t => canHarm(u, t));   // 友軍誤傷：揮到誰就是誰（斧的 cleave 會砍到自己的扈從）
   for (const t of targets) {
     if (s.n >= cleave) break;
@@ -4225,11 +4258,11 @@ function meleeHitTest(u, s) {
     s.hits.add(t); s.n++;
     const fromAng = angTo(t.pos, u.pos);                  // 目標→攻擊者＝來向（damageUnit 用來判繞背/格擋）
     const back = Math.abs(angDiff(fromAng, t.facing)) > Math.PI / 2;   // 從目標背面砍＝短劍背刺加成
-    let dmg = W.damage * (back ? (W.backstabMul || 1) : 1) * outDmgMul(u);   // meta 升級「鋒銳」+ 誓約「無畏」
+    let dmg = W.damage * (M.dmgMul || 1) * (back ? (M.backstabMul || 1) : 1) * outDmgMul(u);   // 招式倍率 × 背刺 × meta「鋒銳」/誓約「無畏」
     if (u.faction !== 'player' && t.faction === 'player') dmg *= CONFIG.enemy.meleeDmgMul;   // 英雄 vs 群體：AI 近接對我方減傷
     if (isFriendlyHit(u.faction, t)) dmg *= CONFIG.friendlyFire.dmgMul;                      // 誤傷倍率
     const hp0 = t.hp, stag0 = t.staggerT || 0, swing0 = !!t.swing;
-    const blocked = damageUnit(t, dmg, clamp((W.pierce || 0) + (u.pierceBonus || 0), 0, 1), fromAng, { melee: true, attacker: u, knock: (W.knock || 0) * (u.knockMul || 1), stagger: W.stagger || 0, poiseDmg: W.poiseDmg || 0 });   // 誓約「長驅」：pierceBonus 破甲 + knockMul 逼退
+    const blocked = damageUnit(t, dmg, clamp((W.pierce || 0) + (u.pierceBonus || 0), 0, 1), fromAng, { melee: true, attacker: u, knock: (M.knock || 0) * (u.knockMul || 1), stagger: M.stagger || 0, poiseDmg: M.poiseDmg || 0 });   // 誓約「長驅」：pierceBonus 破甲 + knockMul 逼退
     Hooks.fire('attackHit', { u, t, dealt: Math.max(0, hp0 - t.hp), melee: true, blocked, backstab: back, armorDeflect: (hp0 === t.hp && !blocked) });
     if (arenaMode) {   // 試作場即時數據：本次揮擊打中幾隻、實際扣多少血（含裝甲/格擋後的真值）
       const dealt = Math.max(0, hp0 - t.hp);
@@ -4310,7 +4343,7 @@ function swingTurnRate(u) {
 // spreadDeg：本發實際發散；bloomAdd>0 才累積連射發散。回傳是否真的開了一槍。
 function fireUnit(u, angle, spreadDeg, fireRateMult, bloomAdd) {
   const W = u.weapon;
-  if (W.melee) return startSwing(u, fireRateMult);   // 近接武器：走揮斬管線，不生子彈
+  if (W.melee) return startSwing(u, lightOf(W), fireRateMult, 'main', W);   // 近接＝主手輕擊（左鍵）；右鍵那招在輸入層另外派工
   if (u.reloadT > 0 || u.fireCooldown > 0 || u.swapT > 0) return false;   // 換槍期間不能開火
   if (u.ammoInMag <= 0) { startReload(u); return false; }
   const pellets = W.pellets || 1;   // 霰彈：單次擊發多顆彈丸，各自抽散布
@@ -4514,7 +4547,8 @@ function aimGate(u, dt, midBurst) {
 // 友軍誤傷：AI 的遠程攻擊在射線被自己人擋住時收火（近接是短距離掃擊，不套這條，否則 AI 會完全不敢動手）
 function enemyAttack(e, ang, dt) {
   if (!e.weapon.melee && friendlyInLineOfFire(e, { x: e.pos.x + Math.cos(ang) * e.weapon.range, y: e.pos.y + Math.sin(ang) * e.weapon.range })) { e.holdFireT = 0.2; e.aimT = 0; return; }
-  if (e.weapon.melee && friendlyInSwingArc(e, { x: e.pos.x + Math.cos(ang) * e.weapon.reach, y: e.pos.y + Math.sin(ang) * e.weapon.reach })) { e.holdFireT = 0.2; return; }   // 扇形內有自己人＝不揮
+  const eM = lightOf(e.weapon);
+  if (eM && friendlyInSwingArc(e, { x: e.pos.x + Math.cos(ang) * eM.reach, y: e.pos.y + Math.sin(ang) * eM.reach })) { e.holdFireT = 0.2; return; }   // 扇形內有自己人＝不揮
   const midBurst = (e.attack === 'burst' && e.weapon.burst && e.burstLeft < e.weapon.burst.size);   // 連射中段不重新瞄
   if (!aimGate(e, dt, midBurst)) return;
   if (e.attack !== 'burst') { enemyFire(e, ang); return; }
@@ -5033,7 +5067,7 @@ function enemyTick(e, dt) {
     moveToward(e, goalPos, spd * dt);
   } else {
     // 一般接敵：朝目標尋路，停在自己武器打得到的距離上（近接貼上去、遠程停在射程內）。
-    const standoff = melee ? Math.max(16, (e.weapon.reach || 40) * 0.85) : e.weapon.range * 0.8;
+    const standoff = melee ? Math.max(16, ((lightOf(e.weapon) || {}).reach || 40) * 0.85) : e.weapon.range * 0.8;
     if (dist(e.pos, goalPos) > standoff) navMoveTo(e, goalPos, spd * dt);
     else e.currentNode = nearestNode(e.pos, false);
   }
@@ -5454,16 +5488,27 @@ function update(dt) {
   if (controlledId != null) {
     const u = players[controlledId];
     if (u.state === 'CONTROLLED') {
+      /* 右鍵＝**副手的招式**（DESIGN.md §2.6b）。副手四選一＝右鍵四種，沒有一個是嚴格最優：
+           盾   → 按住格擋 / 點按招架（花怒火買安全，招架回怒）
+           空手 → 點按徒手招架（窄窗、空招自己硬直；只有讀對招才活，賭性最高）
+           武器 → 點按＝**副手揮擊**（雙持：防禦整個沒有，換到兩套攻擊節奏與繞背）
+         主手是雙手武器時它自己佔滿兩隻手 → 右鍵＝**重擊**（一樣沒有防禦，換到 hyperArmor 與巨大體幹傷）。
+         遠程主手：右鍵仍是望遠（isScoping 只認非近接），弓弩的「重擊」就是瞄準。 */
       const isMelee = !!u.weapon.melee;
-      // 右鍵三態：近戰+盾＝按住格擋 / 近戰無盾＝點按招架（窄窗、空招會自己硬直）/ 遠程＝望遠
+      const twoH = (u.weapon.hands || 1) >= 2;
       const wantDefend = scopeHeld || scopeToggled;
+      const tapped = wantDefend && !u.defendHeldPrev;   // 這一幀剛按下（按住對非格擋的分支沒有意義＝不能龜）
       if (isMelee && canBlock(u)) {
         if (wantDefend && !u.blocking && !u.swing && u.staggerT <= 0) { u.blocking = true; u.blockT = simTime; Sfx.play('block', u.pos); }
         else if (!wantDefend && u.blocking) { u.blocking = false; u.blockT = null; }
       } else {
         if (u.blocking) { u.blocking = false; u.blockT = null; }
-        // 無盾：右鍵「按下的那一瞬間」觸發一次招架動作（按住沒有用＝不能龜）
-        if (isMelee && wantDefend && !u.defendHeldPrev) startWeaponParry(u);
+        if (isMelee && tapped) {
+          const offW = offWeaponOf(u);
+          if (twoH) startSwing(u, heavyOf(u.weapon), 1, 'main');          // 雙手：重擊
+          else if (offW) startSwing(u, lightOf(offW), 1, 'off', offW);    // 雙持：副手那把自己的輕擊（傷害也算它的）
+          else startWeaponParry(u);                                       // 空手：徒手招架
+        }
       }
       u.defendHeldPrev = wantDefend;
       // 硬直中：完全不能動、不能轉、不能攻擊（被鎚打中/招架失敗的代價）
@@ -5610,17 +5655,22 @@ function drawArenaHUD() {
   const W = k.weapon, S = arenaStats;
   const pad = 10;
   // 左上：武器參數
+  // 近接：一招一段。雙手武器有兩招（左＝light、右＝heavy），單手只有 light。
+  const moveRows = (label, M) => M ? [
+    ['── ' + label + '：' + M.name, M.swingStyle === 'thrust' ? '突刺' : '橫掃(左右交替)'],
+    ['傷害', Math.round(W.damage * (M.dmgMul || 1))], [M.swingStyle === 'thrust' ? '刺擊寬容' : '揮動角', M.arcDeg + '°'], ['觸及', M.reach],
+    ['前搖', M.windup.toFixed(2) + 's'], ['判定', M.activeT.toFixed(2) + 's'], ['後搖', M.recover.toFixed(2) + 's'],
+    ['一擊間隔', (M.windup + M.activeT + M.recover).toFixed(2) + 's'],
+    ['DPS(理論)', Math.round(W.damage * (M.dmgMul || 1) / (M.windup + M.activeT + M.recover))],
+    ['體幹傷害', M.poiseDmg], ['cleave', M.cleave],
+    ['擊退距離', Math.round((M.knock || 0) / CONFIG.melee.knockDecay) + 'px'],
+    ['背刺', '×' + (M.backstabMul || 1)], ['hyperArmor', M.hyperArmor ? '有(判定窗)' : '—'],
+  ] : [];
   const rows = W.melee ? [
-    ['揮法', W.swingStyle === 'thrust' ? '突刺' : '橫掃(左右交替)'],
-    ['傷害', W.damage], [W.swingStyle === 'thrust' ? '刺擊寬容' : '揮動角', W.arcDeg + '°'], ['觸及', W.reach], ['穿甲', W.pierce],
-    ['前搖', W.windup.toFixed(2) + 's'], ['判定', W.activeT.toFixed(2) + 's'], ['後搖', W.recover.toFixed(2) + 's'],
-    ['一擊間隔', (W.windup + W.activeT + W.recover).toFixed(2) + 's'],
-    ['DPS(理論)', Math.round(W.damage / (W.windup + W.activeT + W.recover))],
-    ['體幹傷害', W.poiseDmg], ['命中回怒', CONFIG.wrath.gainHit + (W.wrathAdd || 0)],
-    ['hyperArmor', W.hyperArmor ? '有(判定窗)' : '—'],
-    ['cleave', W.cleave], ['擊退距離', Math.round((W.knock || 0) / CONFIG.melee.knockDecay) + 'px'],
-    ['背刺', '×' + (W.backstabMul || 1)],
+    ['穿甲', W.pierce], ['命中回怒', CONFIG.wrath.gainHit + (W.wrathAdd || 0)],
     ['穿甲 vs 重裝(0.85)', Math.round(0.85 * (1 - W.pierce) * 100) + '% 被彈開'],
+    ...moveRows('左鍵', lightOf(W)),
+    ...moveRows('右鍵', heavyOf(W)),
   ] : (function () {
     // 彈速：實際速度 = projSpeed × CONFIG.juice.bulletSpeedMul（原版設 4 讓槍戰接近 hitscan）
     // 這裡把「實際速度」與「飛 500px 要多久」算出來，調慢彈道時有數字可依據。
@@ -6056,12 +6106,12 @@ function telegraphOf(u) {
   if (u.id === KNIGHT_ID && u.faction === 'player') return null;   // 只跳過騎士本人；扈從照畫（FF 開著，你要看得到別站進他們的火線）
   const W = u.weapon; if (!W) return null;
   const s = u.swing;
-  if (W.melee && s && s.t < s.windup) {               // 近接：前搖期間＝扇形
+  if (W.melee && s && s.t < s.windup) {               // 近接：前搖期間＝扇形（形狀讀**當下這一招**）
     return {
       kind: 'arc',
       p: clamp(s.t / Math.max(0.001, s.windup), 0, 1),
-      reach: W.reach || W.range,
-      half: (W.arcDeg || 90) * Math.PI / 360,
+      reach: s.mv.reach,
+      half: s.mv.arcDeg * Math.PI / 360,
     };
   }
   if (!W.melee && u.aimT > 0 && u.aimDur > 0) {       // 遠程：瞄準期間＝長方形彈道走廊（被牆截斷）
@@ -6114,7 +6164,6 @@ function drawMeleeFx(list) {
     if (u.dead || u.state === 'DEAD') continue;
     drawTelegraph(u);   // AI 的出手預告（畫在武器特效之前＝在最底層）
     const W = u.weapon; if (!W || !W.melee) continue;
-    const reach = W.reach || W.range, half = (W.arcDeg || 90) * Math.PI / 360;
     const foe = (u.faction !== 'player');
     // 盾格弧：舉盾中畫正面護弧（招架窗內更亮＝看得出「現在擋下就是招架」）
     if (blockActive(u)) {
@@ -6131,7 +6180,8 @@ function drawMeleeFx(list) {
     }
     const s = u.swing;
     if (s) {
-      const thrust = W.swingStyle === 'thrust';
+      const reach = s.mv.reach, half = s.mv.arcDeg * Math.PI / 360;   // 形狀來自這一招，不是武器
+      const thrust = s.mv.swingStyle === 'thrust';
       const inWindup = s.t < s.windup;
       const inActive = !inWindup && s.t < s.windup + s.active;
       const after = s.t - s.windup - s.active;

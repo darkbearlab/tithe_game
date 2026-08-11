@@ -141,6 +141,7 @@ const EPILOGUE = `
   get roadmap() { return roadmap; },
   get roster() { return roster; },
   CONFIG, WEAPONS, ARENA_MODES, MAPS, ORIGIN_IDS, ENCOUNTER_IDS,
+  ARENA_WEAPON_IDS, ARENA_OFF_IDS, arenaSetWeapon, arenaSetOff,
   update, draw, drawSeedTag,
   goMenu, initRun, chooseOrigin, departFromOrigin, enterOrigin, enterOathLoadout,
   selectNode, startMission, endMission, advanceNode,
@@ -223,6 +224,8 @@ const SCENARIOS = [
   { name: 'wrath',           frames: 240, enter: () => T.enterArena('melee'), poke: pokeWrath, invariants: [wrathRules] },
   { name: 'wrath-ult',       frames: 60,  enter: () => T.enterArena('melee'), poke: pokeUlt,   invariants: [ultimateWorks] },
   { name: 'guard-break',     frames: 300, enter: () => T.enterArena('melee'), poke: pokeGuard, invariants: [guardBreakWorks, noPlayerPoise] },
+  { name: 'moveset-2h',      frames: 200, enter: () => T.enterArena('melee'), poke: pokeTwoHand, invariants: [twoHandHeavyWorks] },
+  { name: 'moveset-dual',    frames: 200, enter: () => T.enterArena('melee'), poke: pokeDual,    invariants: [dualOffhandWorks] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
@@ -373,6 +376,51 @@ function noPlayerPoise() {
   return null;
 }
 
+/* 主副手＝左右鍵（DESIGN.md §2.6b）。右鍵這一路有四個分支，其中兩個是全新的，
+   而且**兩個都只在特定配裝下才走得到**，所以各給一個情境把配裝擺好再按。
+     · 雙手武器 → 右鍵＝重擊（招式不同於左鍵：起手更長、體幹傷更高）
+     · 雙持     → 右鍵＝副手那把自己的輕擊（傷害算副手的）
+   （盾＝格擋走 guard-break 情境；空手＝徒手招架走既有的 wpWindow 路徑。） */
+const msProbe = { light: null, heavy: null, offHand: false, offW: null };
+function setKit(mainId, offId) {
+  T.arenaSetWeapon(T.ARENA_WEAPON_IDS.indexOf(mainId));
+  T.arenaSetOff(T.ARENA_OFF_IDS.indexOf(offId));
+}
+// 雙手斧：左鍵記下 light 的名字，右鍵記下 heavy 的名字，兩者必須不同
+function pokeTwoHand(i) {
+  const k = T.knight; if (!k) return;
+  if (i === 0) setKit('axe', null);
+  if (i === 10) mouseEv('mousedown', 0);
+  if (i === 14) mouseEv('mouseup', 0);
+  if (i > 10 && i < 60 && k.swing && !msProbe.light) msProbe.light = k.swing.mv.name;
+  if (i === 100) mouseEv('mousedown', 2);
+  if (i === 104) mouseEv('mouseup', 2);
+  if (i > 100 && k.swing && !msProbe.heavy) msProbe.heavy = k.swing.mv.name;
+}
+function twoHandHeavyWorks() {
+  const k = T.knight;
+  if (!k || (k.weapon.hands || 1) < 2) return '沒換成雙手武器，這條探針量不到東西';
+  if (!msProbe.light) return '左鍵沒有揮出 light';
+  if (!msProbe.heavy) return '右鍵沒有揮出任何招——雙手武器的重擊沒接上';
+  if (msProbe.light === msProbe.heavy) return `左右鍵揮的是同一招（${msProbe.light}）——heavy 沒被選到`;
+  return null;
+}
+// 雙持（主手劍 + 副手短劍）：右鍵揮出來的那一招，傷害來源必須是**副手那把**
+function pokeDual(i) {
+  const k = T.knight; if (!k) return;
+  if (i === 0) setKit('sword', 'dagger');
+  if (i === 40) mouseEv('mousedown', 2);
+  if (i === 44) mouseEv('mouseup', 2);
+  if (i > 40 && k.swing && k.swing.hand === 'off') { msProbe.offHand = true; msProbe.offW = k.swing.W && k.swing.W.name; }
+}
+function dualOffhandWorks() {
+  const k = T.knight;
+  if (!k) return '沒抓到騎士';
+  if (!msProbe.offHand) return '右鍵沒有揮出副手那一招——雙持的副手攻擊沒接上';
+  if (msProbe.offW !== T.WEAPONS.dagger.name) return `副手揮擊的傷害來源是「${msProbe.offW}」，應該是副手那把短劍`;
+  return null;
+}
+
 /* 破防：騎士唯一會被打進硬直的途徑（舉盾但怒火付不出這一擊）。
    它從 breakPoise 拆出來變成獨立的 guardBreak()，所以需要一條自己的探針——
    把怒火按在 0、舉著盾站在敵人刀口下，硬直就一定要發生。 */
@@ -502,6 +550,7 @@ for (const s of list) {
     wrathProbe.start = wrathProbe.max = wrathProbe.mark = wrathProbe.after = null; wrathProbe.foes = wrathProbe.died = false;
     ultProbe.before = ultProbe.max = ultProbe.after = null; ultProbe.hit = false;
     sawGuardBreak = false;
+    msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
     s.enter();
     grabPointer();
     stage = 'loop';
