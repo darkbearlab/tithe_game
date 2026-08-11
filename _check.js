@@ -158,6 +158,8 @@ const EPILOGUE = `
   get exitPortal() { return exitPortal; },
   get descend() { return descend; },
   get floaters() { return floaters; },
+  get motes() { return motes; },
+  get moteGrabs() { return moteGrabs; },
   setScene(s) { scene = s; },
   forceMap(k) { forcedMap = k; },
 };
@@ -236,7 +238,7 @@ const SCENARIOS = [
   { name: 'room-awake',      frames: 2,   enter: bootCombat, poke: pokeAwake, invariants: [allAwakeOnEntry] },
   { name: 'waves',           frames: 3000, enter: bootCombat, poke: pokeCombat, invariants: [wavesHappened] },
   { name: 'rooms',           frames: 6,    enter: () => { bootCombat(); }, poke: pokeRooms, invariants: [roomChainWorks] },
-  { name: 'crystal',         frames: 2400,  enter: () => T.enterArena('melee'), poke: pokeCombat, invariants: [crystalStacks] },
+  { name: 'crystal',         frames: 2400,  enter: () => T.enterArena('melee'), poke: pokeCombat, invariants: [crystalStacks, motesWork] },
   { name: 'free-slots',      frames: 4,    enter: () => {
       bootCombat();
       // 第 1 格放**習得**、第 2 格放**道具**——舊版剛好相反（1 只收卷軸、2 只收習得）
@@ -455,6 +457,26 @@ function descentTimesOut() {
   if (!toProbe.entered) return '沒有進到整備階段，這條量不到東西';
   if (toProbe.sceneEnd === 'DESCENT') return '倒數歸零之後還停在下墜畫面——限時沒生效';
   if (toProbe.bagEnd !== 0) return `倒數歸零之後袋子還有 ${toProbe.bagEnd} 件——沒裝上的應該直接丟掉`;
+  return null;
+}
+
+/* 擊殺噴發（CONFIG.motes）：資源不再是「直接加數字」，而是噴出去再飛回來。
+   兩件事要守：**噴得出來**，而且**吸得回去**（飛出去卻永遠回不來＝資源憑空蒸發，
+   而且因為沒有任何紅字，玩起來只會覺得「怎麼越打越窮」）。
+   ⚠️ 一般擊殺**不噴血**——血是處決專屬（§2.4）。混在一起的話處決就失去獨佔。 */
+let sawMote = false, sawAbsorb = false, sawBloodMote = false;
+function sampleMotes() {
+  const k = T.knight; if (!k) return;
+  const ms = T.motes || [];
+  if (ms.length) sawMote = true;
+  if (ms.some(m => m.kind === 'blood')) sawBloodMote = true;
+  /* ⚠️ 吸收**要看計數器**，不能看「怒火往上跳」：命中回怒每一刀都在跳，
+     那條件被普通攻擊滿足，探針會靜靜地空轉（第一版就是這樣，把吸收整段刪掉還是綠的）。 */
+  if ((T.moteGrabs || 0) > 0) sawAbsorb = true;
+}
+function motesWork() {
+  if (!sawMote) return '整場沒有噴出過任何東西——擊殺噴發沒接上';
+  if (!sawAbsorb) return '噴出去的東西沒有被吸收——資源會憑空蒸發（而且不會有任何紅字）';
   return null;
 }
 
@@ -834,6 +856,7 @@ for (const s of list) {
     sawGuardBreak = false; sawWaveWarn = false; maxWaveIdx = 0;
     stuckSwing = null; swingStarts = 0; prevSwinging = false;
     maxCrystal = 0; sawCrystal = false;
+    sawMote = sawAbsorb = sawBloodMote = false;
     seqProbe.seen = {}; seqProbe.minScale = 1;
     toProbe.entered = toProbe.ticked = false; toProbe.sceneEnd = null; toProbe.bagEnd = -1;
     msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
@@ -851,7 +874,7 @@ for (const s of list) {
       T.tickDescent(FIXED);   // 下墜整備的倒數不在 update 裡（那只跑 COMBAT），主迴圈另外推
       T.draw();
       T.drawSeedTag();
-      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves(); sampleSwing(); sampleCrystal(); sampleSeq();
+      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves(); sampleSwing(); sampleCrystal(); sampleSeq(); sampleMotes();
     }
     releaseKeys();
     for (const inv of (s.invariants || [])) {
