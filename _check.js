@@ -143,7 +143,7 @@ const EPILOGUE = `
   CONFIG, WEAPONS, ENEMY_TYPES, ARENA_MODES, MAPS, ORIGIN_IDS, ENCOUNTER_IDS,
   ARENA_WEAPON_IDS, ARENA_OFF_IDS, arenaSetWeapon, arenaSetOff,
   get drops() { return drops; }, get backpack() { return backpack; }, updateDrops,
-  enterDescent, tickDescent, get descentPhase() { return descentPhase; }, get descentBag() { return descentBag; },
+  enterDescent, tickDescent, descentEquipTo, get descentPhase() { return descentPhase; }, get descentBag() { return descentBag; },
   get descentT() { return descentT; }, set descentT(v) { descentT = v; },
   get waveIdx() { return waveIdx; }, get waveTotal() { return waveTotal; }, get wavePending() { return wavePending; },
   get floorNo() { return floorNo; }, get roomNo() { return roomNo; }, nextRoom,
@@ -245,7 +245,7 @@ const SCENARIOS = [
       T.startMission();
     }, invariants: [freeSlotsAreGeneric] },
   { name: 'descent-timeout', frames: 40, enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeTimeout, invariants: [descentTimesOut] },
-  { name: 'descent',         frames: 40,  enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeDescent, invariants: [descentFlowWorks] },
+  { name: 'descent',         frames: 40,  enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeDescent, invariants: [descentFlowWorks, swapGoesBackToBag] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
@@ -516,11 +516,16 @@ function roomChainWorks() {
   return null;
 }
 
+/* 換下來的東西要**回袋子**，不是消失（使用者定案：讓人再猶豫一次，反正落地就沒了）。 */
+function swapGoesBackToBag() {
+  return descProbe.swapBack ? null : '換下來的東西沒有回到袋子裡——它被吃掉了';
+}
+
 /* 下墜整備（DESIGN.md §5.4b）：先三選一 → 再配裝 → 落地。
    整條路徑都用鍵盤驅動（1~9 / D / Enter），所以 harness 不需要點座標就走得完——
    這是刻意的：滑鼠 hit-test 的探針很容易在版面微調後變成假綠。
    這條顧的是「這一停真的走得完」：選了獎勵要進袋、裝上要離開袋子、落地要把袋子清空。 */
-const descProbe = { phase0: null, afterPick: null, bagAfterPick: 0, bagAfterEquip: 0, sceneEnd: null, bagEnd: 0, equipping: null, rosterChanged: false };
+const descProbe = { phase0: null, afterPick: null, bagAfterPick: 0, sceneEnd: null, bagEnd: 0, equipping: null, rosterChanged: false, swapBack: false, stillInBag: false };
 /* 裝上去的那一件，現在應該真的掛在騎士身上的對應欄位。
    ⚠️ 術/道具要查**自由位（freeExtra）**，不是舊的 itemId/abilityId——
    自由位統一之後那兩個欄位只是初始值的入口，裝上去不會寫回去。
@@ -537,9 +542,20 @@ function pokeDescent(i) {
   if (i === 1) T.descentBag.push({ kind: 'armor', id: 'mail' });
   if (i === 2) key('keydown', '1');                       // 選第一個獎勵
   if (i === 4) { descProbe.afterPick = T.descentPhase; descProbe.bagAfterPick = T.descentBag.length; }
-  if (i === 5) descProbe.equipping = T.descentBag[0];     // 記下等一下要裝的是哪一件
-  if (i === 6) key('keydown', '1');                       // 把袋子第一件裝上
-  if (i === 8) { descProbe.bagAfterEquip = T.descentBag.length; descProbe.rosterChanged = onBody(T.roster[0], descProbe.equipping); }
+  /* 裝備一律**指定槽位**（拖曳）。探針直接呼叫 descentEquipTo 而不是點座標——
+     滑鼠 hit-test 的探針很容易在版面微調之後變成假綠（CLAUDE.md 那條）。 */
+  if (i === 5) descProbe.equipping = T.descentBag[0];     // 記下等一下要裝的是哪一件（甲）
+  if (i === 6) T.descentEquipTo(0, 'armor');
+  if (i === 8) {
+    // ⚠️ 不能用「袋子變短了」當判準：置換會把換下來的推回袋子，長度是**不變**的。
+    descProbe.stillInBag = T.descentBag.indexOf(descProbe.equipping) >= 0;
+    descProbe.rosterChanged = onBody(T.roster[0], descProbe.equipping);
+    // 再裝一次同一格：這次身上已經有東西了，被換下的必須回到袋子
+    const before = T.descentBag.length;
+    T.descentBag.push({ kind: 'armor', id: 'plate' });
+    T.descentEquipTo(T.descentBag.length - 1, 'armor');
+    descProbe.swapBack = T.descentBag.length === before + 1 && T.descentBag.some(x => x.kind === 'armor' && x.id === 'mail');
+  }
   if (i === 10) key('keydown', 'Enter');                  // 落地
   if (i === 12) { descProbe.sceneEnd = T.scene; descProbe.bagEnd = T.descentBag.length; }
 }
@@ -562,7 +578,7 @@ function descentFlowWorks() {
   if (P.phase0 !== 'REWARD') return `進來的時候不是三選一階段（${P.phase0}）——順序應該是先選獎勵`;
   if (P.afterPick !== 'KIT') return `選完獎勵沒有進配裝階段（${P.afterPick}）`;
   if (!P.bagAfterPick) return '選到的獎勵沒有進袋子';
-  if (P.bagAfterEquip >= P.bagAfterPick) return '按了裝上，袋子裡的東西沒有少一件';
+  if (P.stillInBag) return '裝上去的那一件還留在袋子裡';
   if (!P.rosterChanged) return `按了裝上，但「${P.equipping && P.equipping.kind}/${P.equipping && P.equipping.id}」沒有出現在騎士對應的欄位上`;
   if (P.sceneEnd === 'DESCENT') return '按了 Enter 還停在下墜畫面——落地沒接上';
   if (P.bagEnd) return '落地之後袋子還有東西——袋子不該帶過那道門（§6.2b）';
@@ -823,7 +839,7 @@ for (const s of list) {
     dropProbe.got = null;
     awakeProbe.sampled = false; awakeProbe.total = awakeProbe.idle = 0;
     descProbe.phase0 = descProbe.afterPick = descProbe.sceneEnd = descProbe.equipping = null;
-    descProbe.bagAfterPick = descProbe.bagAfterEquip = descProbe.bagEnd = 0; descProbe.rosterChanged = false;
+    descProbe.bagAfterPick = descProbe.bagEnd = 0; descProbe.rosterChanged = false; descProbe.swapBack = false; descProbe.stillInBag = false;
     s.enter();
     grabPointer();
     stage = 'loop';

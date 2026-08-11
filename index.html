@@ -2378,6 +2378,9 @@ let descentOffers = null;     // 三選一（全揭露）
 let descentBag = [];          // 這一房撿到的 + 剛選的獎勵。**離開這個畫面就沒了**（§6.2b）
 let descentMsg = '';
 let descentRects = [];        // 可點區域（每幀於 draw 重建）
+let descentSlotRects = [];    // 身上的槽位（拖曳的落點）
+let descentBagRects = [];     // 袋子裡的列（拖曳的起點）
+let descentDrag = null;       // { idx, it, moved, overSlot }
 let result;
 let scene = 'MAP';           // 場景：MAP | COMBAT | REST | RUNEND | RUNWIN | EDITOR
 let forcedMap = null;        // 非 null 時 startMission 強制用此地圖鍵（關卡編輯器試玩用）
@@ -2986,34 +2989,59 @@ function drawDescentMotes() {
   ctx.fillStyle = g; ctx.fillRect(0, cv.height - 190, cv.width, 190);
 }
 // 把袋子裡的第 i 件裝到身上（改 roster；下一房 makePlayer 會照它重建）
-function descentEquip(i) {
-  if (scene !== 'DESCENT' || descentPhase !== 'KIT') return;
-  const it = descentBag[i]; if (!it) return;
-  const r = roster[KNIGHT_ID]; if (!r) return;
-  if (it.kind === 'weapon') {
-    if (!WEAPONS[it.id]) return;
+/* 整備的置換：**指定槽位**，而且**換下來的東西回袋子**（使用者定案）。
+   舊版是「自己挑第一個空的自由位」——玩家看不出東西去了哪，滿了還會直接覆蓋，
+   那是替玩家做決定。現在一律要指名槽位（滑鼠拖曳，或 harness 直接呼叫），
+   而且被換下的回到袋子裡讓你再猶豫一次（反正落地就沒了，猶豫是免費的）。
+
+   slot：'main' | 'off' | 'armor' | 'equip' | 'free0'..'free3'
+   回傳 true＝真的裝上了。 */
+function slotAccepts(slot, kind) {
+  if (slot === 'main') return kind === 'weapon';
+  if (slot === 'off') return kind === 'off' || kind === 'weapon';   // 副手也能放單手武器＝雙持
+  if (slot === 'armor') return kind === 'armor';
+  if (slot === 'equip') return kind === 'equip';
+  if (slot.startsWith('free')) return kind === 'ability' || kind === 'item';
+  return false;
+}
+function descentEquipTo(i, slot) {
+  if (scene !== 'DESCENT' || descentPhase !== 'KIT') return false;
+  const it = descentBag[i]; if (!it) return false;
+  const r = roster[KNIGHT_ID]; if (!r) return false;
+  if (!slotAccepts(slot, it.kind)) { descentMsg = '這一格放不了這個東西'; return false; }
+  const nameOf = (x) => x && x.id ? descentItemName(x) : null;
+  let back = null;   // 被換下來的：回袋子，不是丟掉
+
+  if (slot === 'main') {
+    if (!WEAPONS[it.id]) return false;
+    if (r.weaponId) back = { kind: 'weapon', id: r.weaponId, quality: r.quality, enh: (r.enh || []).slice() };
     r.weaponId = it.id; r.quality = it.quality; r.enh = (it.enh || []).slice();
-    if (handsOf(it.id) >= 2) r.offId = null;                      // 雙手武器佔滿兩隻手
-    descentMsg = `換上 ${WEAPONS[it.id].name}`;
-  } else if (it.kind === 'off') {
-    if (handsOf(r.weaponId) >= 2) { descentMsg = '雙手武器佔滿兩隻手，副手空著'; return; }
-    r.offId = it.id; descentMsg = `副手換成 ${OFFHANDS[it.id].name}`;
-  } else if (it.kind === 'armor') { r.armorId = it.id; descentMsg = `換上 ${ARMORS[it.id].name}`; }
-  else if (it.kind === 'ability' || it.kind === 'item') {
-    // 自由位每一格都通用：塞進**第一個空的**，滿了就覆蓋最後一格（並告訴玩家換掉了什麼）
+    if (handsOf(it.id) >= 2 && r.offId) {   // 雙手武器佔滿兩隻手：副手退回袋子
+      descentBag.push(isShield(r.offId) ? { kind: 'off', id: r.offId } : { kind: 'weapon', id: r.offId });
+      r.offId = null;
+    }
+  } else if (slot === 'off') {
+    if (handsOf(r.weaponId) >= 2) { descentMsg = '主手是雙手武器，副手放不下東西'; return false; }
+    if (r.offId) back = isShield(r.offId) ? { kind: 'off', id: r.offId } : { kind: 'weapon', id: r.offId };
+    r.offId = it.id;
+  } else if (slot === 'armor') {
+    if (r.armorId && r.armorId !== 'none') back = { kind: 'armor', id: r.armorId };
+    r.armorId = it.id;
+  } else if (slot === 'equip') {
+    if (r.equipId) back = { kind: 'equip', id: r.equipId };
+    r.equipId = it.id;
+  } else {
+    const fi = parseInt(slot.slice(4), 10);
+    if (!(fi >= 0 && fi < memberFreeSlots(KNIGHT_ID))) return false;
     r.freeExtra = freeEntries(r).slice(); r.itemId = null; r.abilityId = null;
-    const cap = memberFreeSlots(KNIGHT_ID);
-    let at = -1;
-    for (let k = 0; k < cap; k++) if (!r.freeExtra[k] || !r.freeExtra[k].id) { at = k; break; }
-    const replaced = at < 0 ? r.freeExtra[cap - 1] : null;
-    if (at < 0) at = cap - 1;
-    r.freeExtra[at] = it.kind === 'ability' ? { kind: 'ability', id: it.id } : { kind: 'item', id: it.id, count: 1 };
-    const nm = artOf(it.id) ? artOf(it.id).name : it.id;
-    descentMsg = replaced && replaced.id ? `自由位 ${at + 1}：${artOf(replaced.id) ? artOf(replaced.id).name : replaced.id} → ${nm}` : `自由位 ${at + 1} 放入 ${nm}`;
+    const old = r.freeExtra[fi];
+    if (old && old.id) back = old.kind === 'ability' ? { kind: 'ability', id: old.id } : { kind: 'item', id: old.id, count: old.count || 1 };
+    r.freeExtra[fi] = it.kind === 'ability' ? { kind: 'ability', id: it.id } : { kind: 'item', id: it.id, count: it.count || 1 };
   }
-  else if (it.kind === 'equip') { r.equipId = it.id; descentMsg = `配戴 ${EQUIPMENT[it.id].name}`; }
-  else { descentMsg = '這東西裝不上去'; return; }
   descentBag.splice(i, 1);
+  if (back) descentBag.push(back);
+  descentMsg = back ? `${nameOf(back)} → ${descentItemName(it)}（換下的回袋子）` : `裝上 ${descentItemName(it)}`;
+  return true;
 }
 function descentDrop(i) {
   if (scene !== 'DESCENT' || descentPhase !== 'KIT') return;
@@ -3023,7 +3051,7 @@ function descentDrop(i) {
 // 落地：袋子清空（§6.2b：帶不過那道門），直接進下一間房
 function descentLand() {
   if (scene !== 'DESCENT' || descentPhase !== 'KIT') return;
-  descentBag = []; descentOffers = null; descentPhase = null; descentMsg = ''; descentT = 0;
+  descentBag = []; descentOffers = null; descentPhase = null; descentMsg = ''; descentT = 0; descentDrag = null;
   debrief = null;
   nextRoom();
 }
@@ -3093,6 +3121,33 @@ function offerDetail(o) {
     }
   }
   return rows;
+}
+/* 一行摘要：整備要看得出「這東西是什麼、換上去差在哪」，不能只有名字。
+   刻意壓成一行——這一段是限時的，讀不完的資訊等於沒有。 */
+function itemSummary(it) {
+  if (!it || !it.id) return '';
+  if (it.kind === 'weapon') {
+    const W = WEAPONS[it.id], L = lightOf(W);
+    if (!W.melee) return `${W.damage} 傷 · 幹 ${W.poiseDmg || 0} · 反甲 ${(W.pierce || 0).toFixed(2)} · 射程 ${W.range}`;
+    const H = heavyOf(W);
+    return `${Math.round(W.damage * ((L && L.dmgMul) || 1))} 傷 · 幹 ${L ? L.poiseDmg : 0} · 反甲 ${(W.pierce || 0).toFixed(2)} · ${L ? (L.windup + L.activeT + L.recover).toFixed(2) : '?'}s` + (H ? ` · 右:${H.name}` : '');
+  }
+  if (it.kind === 'off') { const O = OFFHANDS[it.id]; return `護弧 ${O.blockArcDeg}° · 減傷 ${Math.round(O.blockResist * 100)}% · 怒火×${O.wrathMul} · 招架×${O.parryWinMul}`; }
+  if (it.kind === 'armor') { const A = ARMORS[it.id]; return `移速×${A.moveMul} · 回怒×${A.wrathGainMul} ·（人間的甲在地獄沒有防護）`; }
+  if (it.kind === 'equip') {
+    const fx = (EQUIPMENT[it.id] || {}).fx || {};
+    const NAMES = { maxHpAdd: '生命', dmgResist: '減傷', spreadMul: '發散', reloadMul: '裝填', magMul: '彈夾', moveMul: '移速', senseMul: '感知' };
+    return Object.keys(fx).map(k => `${NAMES[k] || k}${k === 'maxHpAdd' ? '+' : '×'}${fx[k]}`).join(' · ') || '—';
+  }
+  const A = artOf(it.id);
+  if (!A) return '';
+  const bits = [`怒火 ${A.wrathCost != null ? A.wrathCost : '—'}`];
+  if (A.castTime != null) bits.push(`前搖 ${A.castTime}s`);
+  if (A.heal) bits.push(`回復 +${A.heal}`);
+  if (A.bolt) bits.push(`彈道 ${A.bolt.dmg} 傷`);
+  if (A.grenade) bits.push(`爆裂 ${A.grenade.dmg}×${A.grenade.pellets}`);
+  if (it.kind === 'item') bits.push(`×${it.count || 1}`);
+  return bits.join(' · ');
 }
 const descentItemName = (it) => it.kind === 'weapon' ? WEAPONS[it.id].name
   : it.kind === 'off' ? (OFFHANDS[it.id] || {}).name
@@ -5710,7 +5765,7 @@ cv.addEventListener('click', () => {
   }
   else if (scene === 'REST' || scene === 'ARMORY' || scene === 'TUTOR' || scene === 'ORIGIN' || scene === 'OATHS' || scene === 'BLACKSMITH') restClick(mouse.mx, mouse.my);
   else if (scene === 'EVENT') eventClick(mouse.mx, mouse.my);
-  else if (scene === 'DESCENT') { for (const q of descentRects) if (mouse.mx >= q.x && mouse.mx <= q.x + q.w && mouse.my >= q.y && mouse.my <= q.y + q.h) { q.fn(); return; } }
+  else if (scene === 'DESCENT') { if (descentDrag && descentDrag.moved) return; for (const q of descentRects) if (mouse.mx >= q.x && mouse.mx <= q.x + q.w && mouse.my >= q.y && mouse.my <= q.y + q.h) { q.fn(); return; } }
   else if (scene === 'RUNEND' || scene === 'RUNWIN') goMenu();
   else if (scene === 'MENU') menuClick(mouse.mx, mouse.my);
   else if (scene === 'ARENASEL') arenaSelClick(mouse.mx, mouse.my);
@@ -5762,11 +5817,31 @@ document.addEventListener('pointerlockchange', () => {
 });
 cv.addEventListener('mousemove', e => {
   if (pointerLocked) aimDir += (e.movementX || 0) * CONFIG.mouseSensitivity * (isScoping() ? CONFIG.scope.sensMul : 1);  // 戰鬥：滑鼠位移轉向（望遠靈敏度倍率＝鉤子）
-  else { const p = canvasPos(e); mouse.mx = p.x; mouse.my = p.y; if (restDrag) restDragMoved = true; }            // 選單：追蹤游標位置（休息關拖曳中＝標記已移動）
+  else {
+    const p = canvasPos(e); mouse.mx = p.x; mouse.my = p.y; if (restDrag) restDragMoved = true;   // 選單：追蹤游標位置（休息關拖曳中＝標記已移動）
+    if (descentDrag) {   // 整備拖曳：標記已移動 + 記下現在懸在哪一格（畫面要亮起來）
+      descentDrag.moved = true; descentDrag.overSlot = null;
+      for (const q of descentSlotRects) {
+        if (q.locked || !slotAccepts(q.key, descentDrag.it.kind)) continue;
+        if (p.x >= q.x && p.x <= q.x + q.w && p.y >= q.y && p.y <= q.y + q.h) { descentDrag.overSlot = q.key; break; }
+      }
+    }
+  }
 });
 cv.addEventListener('mousedown', e => {
   if (scene === 'EDITOR') { if (e.button === 2) editorEraseAt(snapPt({ x: mouse.mx, y: mouse.my })); else editorMouseDown(); return; }
   if (scene === 'REST') { const p = canvasPos(e); if (restMouseDown(p.x, p.y, e.button)) e.preventDefault(); return; }   // 配裝拖曳起手（右鍵＝丟棄）
+  if (scene === 'DESCENT') {   // 整備：從袋子的某一列拖出一件東西
+    if (e.button === 0 && descentPhase === 'KIT') {
+      for (const b of descentBagRects) {
+        if (mouse.mx >= b.x && mouse.mx <= b.x + b.w && mouse.my >= b.y && mouse.my <= b.y + b.h) {
+          const it = descentBag[b.idx]; if (it) descentDrag = { idx: b.idx, it, moved: false, overSlot: null };
+          break;
+        }
+      }
+    }
+    return;
+  }
   if (scene !== 'COMBAT' || !pointerLocked) return;
   if (cutscene && cutscene.lock) {   // 演出：有對白→左鍵續播；無對白(處決拍)→放行 mouse.down 給 shoot 拍讀取
     if (cutscene.choice) return;     // 對話分歧用數字鍵選，吞掉點擊
@@ -5778,7 +5853,15 @@ cv.addEventListener('mousedown', e => {
   if (e.button === 0) mouse.down = true;                                  // 左鍵開火
   else if (e.button === 2) { if (CONFIG.scope.toggle) scopeToggled = !scopeToggled; else scopeHeld = true; }   // 右鍵＝望遠/偵察（按住；技能改空白鍵）
 });
-window.addEventListener('mouseup', e => { if (scene === 'EDITOR' && e.button === 0) { editorMouseUp(); return; } if (scene === 'REST') { if (e.button === 0) { const p = canvasPos(e); restMouseUp(p.x, p.y); } return; } if (e.button === 0) mouse.down = false; else if (e.button === 2 && !CONFIG.scope.toggle) scopeHeld = false; });
+window.addEventListener('mouseup', e => {
+  if (scene === 'DESCENT') {   // 整備：放手＝落在哪一格就裝到哪一格（沒落在格子上＝取消，東西留在袋子）
+    if (descentDrag) {
+      if (descentDrag.overSlot) descentEquipTo(descentDrag.idx, descentDrag.overSlot);
+      descentDrag = null;
+    }
+    return;
+  }
+  if (scene === 'EDITOR' && e.button === 0) { editorMouseUp(); return; } if (scene === 'REST') { if (e.button === 0) { const p = canvasPos(e); restMouseUp(p.x, p.y); } return; } if (e.button === 0) mouse.down = false; else if (e.button === 2 && !CONFIG.scope.toggle) scopeHeld = false; });
 cv.addEventListener('dblclick', e => { if (scene === 'REST') { const p = canvasPos(e); restDblClick(p.x, p.y); } });
 
 // 編輯器滑鼠：UI 區優先(原始游標)，否則畫布放置(對齊游標)；拖拉工具於 mouseup 落筆
@@ -5860,8 +5943,7 @@ window.addEventListener('keydown', e => {
     if (descentPhase === 'REWARD') { if (n >= 1 && n <= (descentOffers || []).length) { descentPick(n - 1); e.preventDefault(); } return; }
     if (k === 'enter') { descentLand(); e.preventDefault(); return; }
     if (k === 'd') { descentDrop(0); e.preventDefault(); return; }
-    if (n >= 1 && n <= descentBag.length) { descentEquip(n - 1); e.preventDefault(); }
-    return;
+    return;   // 裝備一律用拖曳指定槽位——舊版的「數字鍵自己挑一格」是替玩家做決定
   }
   if (scene === 'RUNEND' || scene === 'RUNWIN') { if (k === 'r') goMenu(); return; }
   if (scene === 'MENU') return;   // 主選單以滑鼠點選
@@ -7944,7 +8026,7 @@ function drawDescentClock(f) {
   ctx.restore();
 }
 function drawDescent() {
-  descentRects = [];
+  descentRects = []; descentSlotRects = []; descentBagRects = [];
   const g = ctx.createLinearGradient(0, 0, 0, cv.height);
   g.addColorStop(0, '#160d0a'); g.addColorStop(1, '#070506');
   ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -7996,57 +8078,80 @@ function drawDescent() {
     return;
   }
 
-  // ── 配裝 ──
+  // ── 配裝：左＝身上的槽位（放得下就是拖曳目標）、右＝袋子 ──
   const r = roster[KNIGHT_ID] || {};
-  const wN = (id) => (id && WEAPONS[id] ? WEAPONS[id].name : '—');
-  const oN = (id) => (id && OFFHANDS[id] ? OFFHANDS[id].name : '空手');
-  const aN = (id) => (id && artOf(id) ? artOf(id).name : '—');
-  const lx = cv.width / 2 - 300, rx = cv.width / 2 + 16, colW = 284;
+  const lx = cv.width / 2 - 330, rx = cv.width / 2 + 24, colW = 306;
   ctx.font = 'bold 14px Consolas'; ctx.fillStyle = '#c9a06a';
-  ctx.fillText('身上（帶得過去）', lx, 148);
-  ctx.fillText('袋子（帶不過去）', rx, 148);
-  ctx.font = '13px Consolas';
-  /* 自由位要**列出來**：它們是「裝非武器的東西會放到哪」的答案。
-     這裡本來還在讀 itemId/abilityId——那兩個欄位在自由位統一之後永遠是 null，
-     所以畫面上「卷軸／習得」永遠顯示空的，玩家自然看不出東西裝到哪去了。 */
+  ctx.fillText('身上（帶得過去）', lx, 150);
+  ctx.fillText('袋子（帶不過去）', rx, 150);
+  ctx.font = '10px Consolas'; ctx.fillStyle = '#7a6a5c';
+  ctx.fillText('把袋子裡的東西拖到左邊的格子＝換上；換下來的會回袋子', rx, 166);
+
   const fe = freeEntries(r);
-  const body = [
-    ['主手', wN(r.weaponId) + (r.quality >= 2 ? ' ' + '★'.repeat(r.quality) : '')],
-    ['副手', handsOf(r.weaponId) >= 2 ? '（雙手武器佔滿）' : oN(r.offId)],
-    ['甲', (ARMORS[r.armorId] || ARMORS.none).name],
-    ['裝備', r.equipId && EQUIPMENT[r.equipId] ? EQUIPMENT[r.equipId].name : '—'],
+  const slots = [
+    { key: 'main', label: '主手', item: r.weaponId ? { kind: 'weapon', id: r.weaponId, quality: r.quality, enh: r.enh } : null },
+    { key: 'off', label: '副手', item: handsOf(r.weaponId) >= 2 ? null : (r.offId ? (isShield(r.offId) ? { kind: 'off', id: r.offId } : { kind: 'weapon', id: r.offId }) : null),
+      locked: handsOf(r.weaponId) >= 2, lockMsg: '雙手武器佔滿' },
+    { key: 'armor', label: '甲', item: (r.armorId && r.armorId !== 'none') ? { kind: 'armor', id: r.armorId } : null },
+    { key: 'equip', label: '裝備', item: r.equipId ? { kind: 'equip', id: r.equipId } : null },
   ];
   for (let fi = 0; fi < memberFreeSlots(KNIGHT_ID); fi++) {
     const ex = fe[fi];
-    body.push(['自由 ' + (fi + 1), ex && ex.id ? (aN(ex.id) + (ex.kind === 'item' ? ' ×' + (ex.count || 0) : '')) : '—（空）']);
+    slots.push({ key: 'free' + fi, label: '自由 ' + (fi + 1), item: (ex && ex.id) ? ex : null });
   }
-  body.forEach(([k, v], i) => {
-    const y = 176 + i * 26;
-    ctx.fillStyle = 'rgba(24,19,16,0.9)'; ctx.fillRect(lx, y - 15, colW, 22);
-    ctx.fillStyle = '#7f8b99'; ctx.fillText(k, lx + 8, y);
-    ctx.fillStyle = '#e8eef5'; ctx.fillText(v, lx + 76, y);
+  // 一行槽位：名稱 + 一行摘要（數值/效果）。拖曳中且放得下＝亮起來。
+  const rowH = 40, y0 = 178;
+  slots.forEach((sl, i) => {
+    const y = y0 + i * (rowH + 4);
+    const hot = descentDrag && slotAccepts(sl.key, descentDrag.it.kind) && !sl.locked;
+    const over = hot && descentDrag.overSlot === sl.key;
+    ctx.fillStyle = over ? 'rgba(95,208,158,0.20)' : hot ? 'rgba(95,208,158,0.08)' : 'rgba(24,19,16,0.9)';
+    ctx.fillRect(lx, y, colW, rowH);
+    ctx.lineWidth = over ? 2 : 1; ctx.strokeStyle = over ? '#5fcf9e' : hot ? 'rgba(95,207,158,0.45)' : 'rgba(90,105,120,0.30)';
+    ctx.strokeRect(lx, y, colW, rowH);
+    ctx.font = 'bold 10px Consolas'; ctx.fillStyle = '#7f8b99'; ctx.fillText(sl.label, lx + 8, y + 15);
+    ctx.font = '13px Consolas'; ctx.fillStyle = sl.item ? descentItemColor(sl.item) : '#5f6870';
+    ctx.fillText(sl.item ? descentItemName(sl.item) : (sl.locked ? '（' + sl.lockMsg + '）' : '—（空）'), lx + 60, y + 16);
+    ctx.font = '10px Consolas'; ctx.fillStyle = '#8b97a5';
+    ctx.fillText(itemSummary(sl.item), lx + 60, y + 31);
+    descentSlotRects.push({ x: lx, y, w: colW, h: rowH, key: sl.key, locked: !!sl.locked });
   });
 
   if (!descentBag.length) {
-    ctx.fillStyle = '#6a5f55'; ctx.fillText('（空）', rx + 8, 176);
+    ctx.font = '13px Consolas'; ctx.fillStyle = '#6a5f55'; ctx.fillText('（空）', rx + 8, y0 + 20);
   } else {
     descentBag.forEach((it, i) => {
-      const y = 176 + i * 30;
-      if (y > cv.height - 130) return;
-      ctx.fillStyle = 'rgba(24,19,16,0.9)'; ctx.fillRect(rx, y - 16, colW, 24);
-      ctx.font = 'bold 11px Consolas'; ctx.fillStyle = '#c9a06a'; ctx.fillText(`${i + 1}`, rx + 6, y);
+      const y = y0 + i * (rowH + 4);
+      if (y > cv.height - 150) return;
+      const dragging = descentDrag && descentDrag.idx === i;
+      ctx.globalAlpha = dragging ? 0.35 : 1;
+      ctx.fillStyle = 'rgba(24,19,16,0.9)'; ctx.fillRect(rx, y, colW, rowH);
+      ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(90,105,120,0.30)'; ctx.strokeRect(rx, y, colW, rowH);
       ctx.font = '13px Consolas'; ctx.fillStyle = descentItemColor(it);
-      ctx.fillText(descentItemName(it) + (it.quality >= 2 ? ' ' + '★'.repeat(it.quality) : ''), rx + 22, y);
-      dBtn(rx + colW - 96, y - 15, 44, 20, '裝上', () => descentEquip(i));
-      dBtn(rx + colW - 48, y - 15, 44, 20, '丟掉', () => descentDrop(i), 'rgba(160,120,110,0.7)');
+      ctx.fillText(descentItemName(it) + (it.quality >= 2 ? ' ' + '★'.repeat(it.quality) : ''), rx + 10, y + 16);
+      ctx.font = '10px Consolas'; ctx.fillStyle = '#8b97a5';
+      ctx.fillText(itemSummary(it), rx + 10, y + 31);
+      ctx.globalAlpha = 1;
+      dBtn(rx + colW - 46, y + 10, 40, 20, '丟掉', () => descentDrop(i), 'rgba(160,120,110,0.7)');
+      descentBagRects.push({ x: rx, y, w: colW - 52, h: rowH, idx: i });
     });
   }
+  // 拖曳中的殘影：跟著游標
+  if (descentDrag && descentDrag.moved) {
+    const it = descentDrag.it;
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = 'rgba(30,24,20,0.96)'; ctx.fillRect(mouse.mx - 90, mouse.my - 16, 200, 34);
+    ctx.lineWidth = 2; ctx.strokeStyle = descentItemColor(it); ctx.strokeRect(mouse.mx - 90, mouse.my - 16, 200, 34);
+    ctx.font = '13px Consolas'; ctx.fillStyle = descentItemColor(it); ctx.fillText(descentItemName(it), mouse.mx - 82, mouse.my - 1);
+    ctx.font = '10px Consolas'; ctx.fillStyle = '#8b97a5'; ctx.fillText(itemSummary(it), mouse.mx - 82, mouse.my + 13);
+    ctx.globalAlpha = 1;
+  }
   ctx.textAlign = 'center';
-  if (descentMsg) { ctx.font = '12px Consolas'; ctx.fillStyle = '#9fb3c8'; ctx.fillText(descentMsg, cv.width / 2, cv.height - 108); }
-  ctx.font = '11px Consolas'; ctx.fillStyle = '#6a5f55';
-  ctx.fillText('數字鍵 裝上 · D 丟掉最上面那件 · Enter 落地', cv.width / 2, cv.height - 86);
+  if (descentMsg) { ctx.font = '12px Consolas'; ctx.fillStyle = '#9fb3c8'; ctx.fillText(descentMsg, cv.width / 2, cv.height - 106); }
   ctx.font = 'bold 13px Consolas'; ctx.fillStyle = descentT < 8 ? '#ff6a5a' : '#c9a06a';
-  ctx.fillText(`地面逼近 ${descentT.toFixed(1)}s　·　沒裝上的會留在這裡`, cv.width / 2, cv.height - 128);
+  ctx.fillText(`地面逼近 ${descentT.toFixed(1)}s　·　沒裝上的會留在這裡`, cv.width / 2, cv.height - 126);
+  ctx.font = '11px Consolas'; ctx.fillStyle = '#6a5f55';
+  ctx.fillText('拖曳＝換上（換下的回袋子）　·　Enter 落地', cv.width / 2, cv.height - 88);
   ctx.textAlign = 'left';
   dBtn(cv.width / 2 - 70, cv.height - 72, 140, 34, '落　地', () => descentLand());
   drawDescentClock(descentT / Math.max(0.01, CONFIG.descent.kitTime));   // 限時外框畫在最後＝蓋在所有東西之上
