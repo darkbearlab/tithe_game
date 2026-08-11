@@ -143,7 +143,8 @@ const EPILOGUE = `
   CONFIG, WEAPONS, ENEMY_TYPES, ARENA_MODES, MAPS, ORIGIN_IDS, ENCOUNTER_IDS,
   ARENA_WEAPON_IDS, ARENA_OFF_IDS, arenaSetWeapon, arenaSetOff,
   get drops() { return drops; }, get backpack() { return backpack; }, updateDrops,
-  enterDescent, get descentPhase() { return descentPhase; }, get descentBag() { return descentBag; },
+  enterDescent, tickDescent, get descentPhase() { return descentPhase; }, get descentBag() { return descentBag; },
+  get descentT() { return descentT; }, set descentT(v) { descentT = v; },
   get waveIdx() { return waveIdx; }, get waveTotal() { return waveTotal; }, get wavePending() { return wavePending; },
   get floorNo() { return floorNo; }, get roomNo() { return roomNo; }, nextRoom,
   update, draw, drawSeedTag,
@@ -224,7 +225,7 @@ const SCENARIOS = [
   { name: 'oaths',           frames: 60,  enter: () => { T.initRun(); T.enterOrigin(); T.chooseOrigin('warden'); } },
   { name: 'roadmap',         frames: 60,  enter: bootCampaignToMap },
   // 一間房現在是**三波**（CONFIG.waves.perRoom），所以「打到開洞」需要的幀數比單波多得多。
-  { name: 'combat',          frames: 3000, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noStuckSwing, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI] },
+  { name: 'combat',          frames: 3300, enter: bootCombat, poke: pokeCombat, invariants: [soloKnight, combatHappened, portalRun, noStuckSwing, noPlayerPoise, noWeaponTurnCap, oneHandSet, noMorale, noStealth, noTacticalAI] },
   { name: 'combat-arena-melee',  frames: 900, enter: () => T.enterArena('melee'),  poke: pokeCombat, invariants: [combatHappened, floatersHappened, executionHappened, dashHappened, wrathGainHappened, noStuckSwing, noPlayerPoise, noMorale, noStealth, noTacticalAI] },
   { name: 'wrath',           frames: 240, enter: () => T.enterArena('melee'), poke: pokeWrath, invariants: [wrathRules] },
   { name: 'wrath-ult',       frames: 60,  enter: () => T.enterArena('melee'), poke: pokeUlt,   invariants: [ultimateWorks] },
@@ -243,6 +244,7 @@ const SCENARIOS = [
       T.roster[0].itemId = null; T.roster[0].abilityId = null;
       T.startMission();
     }, invariants: [freeSlotsAreGeneric] },
+  { name: 'descent-timeout', frames: 40, enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeTimeout, invariants: [descentTimesOut] },
   { name: 'descent',         frames: 40,  enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeDescent, invariants: [descentFlowWorks] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
@@ -435,6 +437,24 @@ function noStuckSwing() { return stuckSwing || null; }
 function introKeepsSwinging() {
   if (stuckSwing) return stuckSwing;
   return swingStarts >= 2 ? null : `整個序章只揮出 ${swingStarts} 刀——腳本那一刀之後揮擊管線就卡住了`;
+}
+
+/* 整備限時（§5.4b）：三選一不限時、**整備 30 秒**。時間到＝沒裝上的直接丟掉、自動落地。
+   （倒數不在 update() 裡跑——那支只跑 COMBAT——所以 harness 也要另外推 tickDescent，
+   不然這條會永遠量不到東西。） */
+const toProbe = { entered: false, ticked: false, sceneEnd: null, bagEnd: -1 };
+function pokeTimeout(i) {
+  if (i === 1) T.descentBag.push({ kind: 'armor', id: 'mail' });
+  if (i === 2) key('keydown', '1');                     // 選獎勵 → 進整備
+  if (i === 4) { toProbe.entered = T.descentPhase === 'KIT'; T.descentT = 0.05; }   // 把倒數推到快歸零
+  if (i === 6) toProbe.ticked = T.descentT <= 0.05;
+  if (i === 10) { toProbe.sceneEnd = T.scene; toProbe.bagEnd = T.descentBag.length; }
+}
+function descentTimesOut() {
+  if (!toProbe.entered) return '沒有進到整備階段，這條量不到東西';
+  if (toProbe.sceneEnd === 'DESCENT') return '倒數歸零之後還停在下墜畫面——限時沒生效';
+  if (toProbe.bagEnd !== 0) return `倒數歸零之後袋子還有 ${toProbe.bagEnd} 件——沒裝上的應該直接丟掉`;
+  return null;
 }
 
 /* 結晶：騎士唯一的護身（擊殺疊、時間掉、清場凍結、跨房保留）。
@@ -781,6 +801,7 @@ for (const s of list) {
     sawGuardBreak = false; sawWaveWarn = false; maxWaveIdx = 0;
     stuckSwing = null; swingStarts = 0; prevSwinging = false;
     maxCrystal = 0; sawCrystal = false;
+    toProbe.entered = toProbe.ticked = false; toProbe.sceneEnd = null; toProbe.bagEnd = -1;
     msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
     dropProbe.got = null;
     awakeProbe.sampled = false; awakeProbe.total = awakeProbe.idle = 0;
@@ -793,6 +814,7 @@ for (const s of list) {
       NOW += FIXED * 1000;
       if (s.poke) s.poke(i);
       T.update(FIXED);
+      T.tickDescent(FIXED);   // 下墜整備的倒數不在 update 裡（那只跑 COMBAT），主迴圈另外推
       T.draw();
       T.drawSeedTag();
       sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves(); sampleSwing(); sampleCrystal();

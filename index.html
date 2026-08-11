@@ -135,6 +135,18 @@ const CONFIG = {
     warn: 1.8,         // 門亮起到敵人湧出的秒數
     tierPerFloor: 1,   // 每深一層，抽遭遇的 tier 上限 +1（愈往下愈兇）
   },
+  /* ── 下墜整備（DESIGN.md §5.4b）──────────────────────────────────────
+     **三選一不限時、整備限時。** 兩段的性質不一樣：
+       三選一是**獎勵時刻**（全揭露、兩秒的事）。加倒數會把它從深思變成反射——
+       那不是同一種多巴胺，那是壓力。你不會對一個獎勵按碼表。
+       整備是**雜務**（拿地上撿到的隨機劍去比身上那把）。一層六房下來它會變成苦工，
+       而且袋子本來就要清空（§6.2b），所以「沒決定就沒了」不會讓你失去本來屬於你的東西。
+     袋子空的時候直接落地——不要讓玩家盯著一個倒數的圈發呆。
+     （若之後自動吸取讓袋子太大，把 kitTime 改成 base + 每件 N 秒即可，一行的事。） */
+  descent: {
+    kitTime: 30,     // 整備階段的秒數
+    vacuum: 0.85,    // 跳下去之前把地上剩的東西全部捲進來的演出長度
+  },
   /* ── 層與房間（DESIGN.md §5.5）────────────────────────────────────────
      一層 rooms 間房，打完往下一層。房間目前是**手刻輪播**（pool 裡的地圖輪流用）——
      程序生成要先把編輯器的「鋪滿網格點 + 自動整理連線」搬進遊戲端（尋路要 waypoint 圖），
@@ -2322,6 +2334,8 @@ let waveIdx = 0, waveTotal = 1;   // 這一房打到第幾波 / 總共幾波
 let wavePending = null;           // { at:{x,y}, t } ＝門已經亮了，t 秒後湧出
 let floorNo = 1, roomNo = 1;      // 第幾層 · 這層的第幾間房
 let roomBannerT = 0;              // 進房橫幅的剩餘秒數
+let vacuumT = 0;              // >0＝正在把地上的東西捲進來（按下「跳」之後、真的掉下去之前）
+let descentT = 0;             // 整備階段的剩餘秒數（只有 KIT 階段在跑）
 let descentPhase = null;      // null＝不在這個畫面 / 'REWARD' / 'KIT'
 let descentOffers = null;     // 三選一（全揭露）
 let descentBag = [];          // 這一房撿到的 + 剛選的獎勵。**離開這個畫面就沒了**（§6.2b）
@@ -2868,8 +2882,22 @@ function descentPick(i) {
   descentBag.push(o.type === 'weapon' ? { kind: 'weapon', id: o.id, quality: o.quality, enh: [] }
                 : o.type === 'ability' ? { kind: 'ability', id: o.id }
                 : { kind: o.type, id: o.id });
-  descentOffers = null; descentPhase = 'KIT';
+  descentOffers = null;
+  enterKitPhase();
+}
+/* 進整備階段。**袋子空的就直接落地**——不要讓玩家盯著一個倒數的圈發呆
+   （自動吸取之後這其實不常見，但空袋子時停 30 秒是純粹的浪費）。 */
+function enterKitPhase() {
+  descentPhase = 'KIT';
+  descentT = CONFIG.descent.kitTime;
   descentMsg = '裝上或丟掉——袋子帶不到下一房。';
+  if (!descentBag.length) descentLand();
+}
+// 整備倒數：歸零＝沒裝上的直接丟掉、自動落地（這就是限時的意思）
+function tickDescent(dt) {
+  if (scene !== 'DESCENT' || descentPhase !== 'KIT') return;
+  descentT -= dt;
+  if (descentT <= 0) { descentT = 0; descentLand(); }
 }
 // 把袋子裡的第 i 件裝到身上（改 roster；下一房 makePlayer 會照它重建）
 function descentEquip(i) {
@@ -2909,7 +2937,7 @@ function descentDrop(i) {
 // 落地：袋子清空（§6.2b：帶不過那道門），直接進下一間房
 function descentLand() {
   if (scene !== 'DESCENT' || descentPhase !== 'KIT') return;
-  descentBag = []; descentOffers = null; descentPhase = null; descentMsg = '';
+  descentBag = []; descentOffers = null; descentPhase = null; descentMsg = ''; descentT = 0;
   debrief = null;
   nextRoom();
 }
@@ -4221,6 +4249,33 @@ function guardBreak(u, fromAng, by) {
   spawnCrit(u.pos);
   spawnFloater(u.pos, '破防', 'poise');
   Sfx.play('block', u.pos);
+}
+
+/* 跳下去之前，**把這一層地上剩下的東西全部捲進來**（使用者定案）。
+   移掉「我是不是漏撿了什麼」這個焦慮，順便給落地一個視覺節拍。
+   演出跑完才真的 endMission()。 */
+function startVacuum() {
+  if (!drops.length) { endMission(); return; }
+  vacuumT = CONFIG.descent.vacuum;
+  Sfx.play('pickup', knight() ? knight().pos : ENTRY);
+}
+function tickVacuum(dt) {
+  if (vacuumT <= 0) return;
+  const kn = knight();
+  vacuumT -= dt;
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    if (!kn) { drops.splice(i, 1); continue; }
+    const dx = kn.pos.x - d.pos.x, dy = kn.pos.y - d.pos.y, L = Math.hypot(dx, dy) || 1;
+    const step = Math.max(280, L * 6) * dt;
+    if (L <= step) {   // 到手：進袋子（和走過去撿是同一份資料，強化不能掉）
+      backpack.push({ kind: d.kind, id: d.id, ammo: d.ammo, quality: d.quality, enh: (d.enh || []).slice() });
+      spawnPickup(d.pos); drops.splice(i, 1); continue;
+    }
+    d.pos.x += dx / L * step; d.pos.y += dy / L * step;
+    if (Math.random() < 0.3) particles.push(mkPart(d.pos, 60, 0.3, '#ffd27a'));
+  }
+  if (vacuumT <= 0 || !drops.length) { vacuumT = 0; endMission(); }
 }
 
 /* ── 波次 ─────────────────────────────────────────────────────────────
@@ -5637,7 +5692,7 @@ window.addEventListener('keydown', e => {
      **刻意不收 Esc**——瀏覽器會在 Esc 解除 pointer lock，畫面會直接掉回「未鎖定」的黑幕，
      看起來像當機。取消一律用 Backspace（或右鍵）。 */
   if (scene === 'COMBAT' && exitPrompt) {
-    if (k === 'enter') { exitPrompt = false; endMission(); e.preventDefault(); return; }
+    if (k === 'enter') { exitPrompt = false; startVacuum(); e.preventDefault(); return; }
     if (k === 'backspace') { exitPrompt = false; if (exitPortal) exitPortal.declined = true; e.preventDefault(); return; }
     e.preventDefault(); return;   // 框開著的時候吞掉其餘輸入
   }
@@ -5838,6 +5893,7 @@ function update(dt) {
     }
   }
   tickWave(dt);
+  tickVacuum(dt);
   if (roomBannerT > 0) roomBannerT -= dt;
   tickExitPortal(dt);
 
@@ -5881,7 +5937,7 @@ function draw() {
   if (scene === 'BLACKSMITH') { drawBlacksmith(); return; }
   if (scene === 'ORIGIN') { drawOrigin(); return; }
   if (scene === 'OATHS') { drawOathLoadout(); return; }
-  if (scene === 'DESCENT') { drawDescent(); return; }
+  if (scene === 'DESCENT') { drawDescent(); return; }   // 倒數在主迴圈推（update 只跑 COMBAT）
   if (scene === 'RUNEND') { drawRunEnd(); return; }
   if (scene === 'DEBRIEF') { drawDebrief(); return; }
   if (scene === 'RUNWIN') { drawRunWin(); return; }
@@ -7713,6 +7769,26 @@ function dBtn(x, y, w, h, label, fn, col) {
   ctx.fillText(label, x + w / 2, y + h / 2); ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   descentRects.push({ x, y, w, h, fn });
 }
+/* 限時外框：從畫面頂端中央出發、**順時針**沿著邊框消失。
+   高對比（白→紅）而且畫在最外緣＝不擋任何內容，但你絕對看得到它在縮。 */
+function drawDescentClock(f) {
+  const w = cv.width, h = cv.height, cx = w / 2;
+  const segs = [   // 順時針走一圈：上半右 → 右 → 下 → 左 → 上半左
+    [cx, 0, w, 0], [w, 0, w, h], [w, h, 0, h], [0, h, 0, 0], [0, 0, cx, 0],
+  ];
+  const lens = segs.map(([x0, y0, x1, y1]) => Math.hypot(x1 - x0, y1 - y0));
+  let left = lens.reduce((a, b) => a + b, 0) * clamp(f, 0, 1);
+  const urgent = f < 0.25;
+  ctx.save();
+  ctx.lineWidth = urgent ? 10 : 7; ctx.lineCap = 'butt';
+  ctx.strokeStyle = urgent ? `rgba(255,70,60,${0.75 + 0.25 * Math.abs(Math.sin(simTime * 10))})` : 'rgba(255,240,220,0.92)';
+  for (let i = 0; i < segs.length && left > 0; i++) {
+    const [x0, y0, x1, y1] = segs[i], L = lens[i];
+    const t = Math.min(1, left / L); left -= L;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t); ctx.stroke();
+  }
+  ctx.restore();
+}
 function drawDescent() {
   descentRects = [];
   const g = ctx.createLinearGradient(0, 0, 0, cv.height);
@@ -7784,8 +7860,11 @@ function drawDescent() {
   if (descentMsg) { ctx.font = '12px Consolas'; ctx.fillStyle = '#9fb3c8'; ctx.fillText(descentMsg, cv.width / 2, cv.height - 108); }
   ctx.font = '11px Consolas'; ctx.fillStyle = '#6a5f55';
   ctx.fillText('數字鍵 裝上 · D 丟掉最上面那件 · Enter 落地', cv.width / 2, cv.height - 86);
+  ctx.font = 'bold 13px Consolas'; ctx.fillStyle = descentT < 8 ? '#ff6a5a' : '#c9a06a';
+  ctx.fillText(`地面逼近 ${descentT.toFixed(1)}s　·　沒裝上的會留在這裡`, cv.width / 2, cv.height - 128);
   ctx.textAlign = 'left';
   dBtn(cv.width / 2 - 70, cv.height - 72, 140, 34, '落　地', () => descentLand());
+  drawDescentClock(descentT / Math.max(0.01, CONFIG.descent.kitTime));   // 限時外框畫在最後＝蓋在所有東西之上
 }
 
 /* ---- 戰果結算畫面（COMBAT 勝利 → 此 → 路線圖）---- */
@@ -8680,6 +8759,7 @@ function frame(now) {
     while (acc >= FIXED) { update(FIXED); acc -= FIXED; }
   }
   if (scene === 'ENDING') endingTick(delta);   // 結局/揭示逐行出（非 COMBAT，update 不跑，這裡用真實 delta 計時）
+  if (scene === 'DESCENT') tickDescent(delta);   // 整備倒數（同理：非 COMBAT，update 不跑）
   draw();
   drawSeedTag();   // 角落淡色顯示本局種子（疊在所有場景之上）
   requestAnimationFrame(frame);
