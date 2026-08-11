@@ -218,7 +218,7 @@ const CONFIG = {
   fog: { enabled: false, color: '#05070b', skeletonAlpha: 0.16 },
 
   // 旋轉鏡頭（跟隨騎士、使其朝上）；anchorY＝單位在畫面的縱向位置(0.5置中, 越大越靠下→前方視野越長)
-  camera: { scale: 1.0, followLerp: 9, rotateLerp: 8, anchorY: 0.66 },
+  camera: { scale: 1.25, followLerp: 9, rotateLerp: 8, anchorY: 0.66 },   // scale 越大＝離玩家越近（1.0 是 Homeward 的戰術視野；TITHE 貼近一點才有份量）
   // 望遠/偵察（右鍵按住）：鏡頭往前帶(anchorY↓ 看更前)+微縮(scale)、降發散穩定、禁奔跑、移速降(moveMul)。
   // toggle＝改成切換模式(留給未來 option)；sensMul＝望遠時滑鼠靈敏度倍率(留給未來 option)。moveMul＝穩住細瞄的機動代價(meta「沉著」可減輕)。
   scope: { anchorY: 0.82, scale: 0.86, spreadMul: 0.5, moveMul: 0.6, toggle: false, sensMul: 1.0 },
@@ -246,7 +246,8 @@ const CONFIG = {
     // 敵人轉得慢才有「繞到他背後」這個玩法（flank/backstab 都看目標的 facing），
     // 也才讀得出遠程預告鎖死朝向的那一下。逐兵種可在 UNIT_CLASSES 用 turn 覆寫。
     turnSpeed: 480,
-    hp: 70,
+    hp: 95,          // 敵人基礎 HP。**刻意偏高**：處決窗要有意義，敵人就不能三刀死——
+                     // 破幹早於打死的差距越大，窗出現得越早、也越值得你走過去吃那一口。
     reactionDelay: 0.35,
     strength: 1.0,
     // AI 近接打在我方身上的傷害倍率。敵我共用同一份 WEAPONS，但這是「英雄 vs 群體」的遊戲：
@@ -340,15 +341,17 @@ const WEAPONS = {
   // magazine 1 + reloadTime＝每發搭箭/絞弦；特定魔法（火矢等）之後進 Phase 2 一樣走此管線。
   // aimTime＝AI 射這把武器前的瞄準時間（＝預告長方形填滿所需秒數）；玩家不受此限
   // B 狙擊型：長預告 + 朝向鎖死 + 近乎 hitscan。你躲的是預告走廊，不是箭。
-  longbow: { name: '長弓',   rarity: 'common',   damage: 26, fireRate: 1.4, range: 1200, projSpeed: 2400, spreadBase: 1.6, spreadPerShot: 0.8, spreadMax: 6, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.15, aimTime: 0.9, reloadMoveMul: 0.65, hands: 2, tracer: true },
-  crossbow:{ name: '十字弓', rarity: 'uncommon', damage: 42, fireRate: 1.0, range: 1300, projSpeed: 2800, spreadBase: 1.0, spreadPerShot: 0.6, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 2.6, pierce: 0.85, aimTime: 1.2, aimMoveMul: 0.15, reloadMoveMul: 0, hands: 2, tracer: true },   // B 狙擊型的極端：瞄最久、絞弦裝填 2.6s 完全定身、一發最痛
+  longbow: { name: '長弓',   rarity: 'common',   damage: 26, fireRate: 1.4, range: 1200, projSpeed: 2400, spreadBase: 1.6, spreadPerShot: 0.8, spreadMax: 6, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.15, poiseDmg: 16, knock: 90, aimTime: 0.9, reloadMoveMul: 0.65, hands: 2, tracer: true },
+  crossbow:{ name: '十字弓', rarity: 'uncommon', damage: 42, fireRate: 1.0, range: 1300, projSpeed: 2800, spreadBase: 1.0, spreadPerShot: 0.6, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 2.6, pierce: 0.85, poiseDmg: 42, knock: 260, aimTime: 1.2, aimMoveMul: 0.15, reloadMoveMul: 0, hands: 2, tracer: true },   // B 狙擊型的極端：瞄最久、絞弦裝填 2.6s 完全定身、一發最痛
   // 投槍＝**單手**遠程：唯一能搭盾的投射武器（射程短、彈數少），劍盾流的補牌
   // A 彈幕型：沒有預告，改成慢而顯眼的飛行物——你躲的是投槍本身。
-  javelin: { name: '投槍',  rarity: 'common',   damage: 34, fireRate: 1.2, range: 620,  projSpeed: 300, spreadBase: 2.2, spreadPerShot: 1.0, spreadMax: 8, spreadRecover: 9, magazine: 1, reloadTime: 1.3, pierce: 0.45, aimTime: 0, orb: '255,180,110', hands: 1 },
+  // 投槍：出手慢、但**每一發都該有宰制力**——高傷、高體幹傷、過半破甲、擊退明顯。
+  // 它是唯一能搭盾的投射武器，定位是「劍盾流開場先釘住一個」，不是持續輸出。
+  javelin: { name: '投槍',  rarity: 'common',   damage: 52, fireRate: 1.2, range: 620,  projSpeed: 300, spreadBase: 1.6, spreadPerShot: 1.0, spreadMax: 8, spreadRecover: 9, magazine: 1, reloadTime: 0.9, pierce: 0.65, poiseDmg: 55, knock: 340, aimTime: 0, orb: '255,180,110', hands: 1 },
   // 局外解鎖武器（榮譽；解鎖後才進招募/loot 池，仍 RNG 取得）
-  warbow:  { name: '戰弓',  rarity: 'uncommon', damage: 34, fireRate: 1.2, range: 1300, projSpeed: 2600, spreadBase: 1.2, spreadPerShot: 0.7, spreadMax: 5, spreadRecover: 9, magazine: 1, reloadTime: 1.7, pierce: 0.45, aimTime: 0.95, aimMoveMul: 0.35, reloadMoveMul: 0.6, hands: 2, tracer: true },   // B 狙擊型：長弓的上位，過半穿甲、略笨重
+  warbow:  { name: '戰弓',  rarity: 'uncommon', damage: 34, fireRate: 1.2, range: 1300, projSpeed: 2600, spreadBase: 1.2, spreadPerShot: 0.7, spreadMax: 5, spreadRecover: 9, magazine: 1, reloadTime: 1.7, pierce: 0.45, poiseDmg: 24, knock: 140, aimTime: 0.95, aimMoveMul: 0.35, reloadMoveMul: 0.6, hands: 2, tracer: true },   // B 狙擊型：長弓的上位，過半穿甲、略笨重
   // 術士騎士（救援變體 B1）的法杖：走遠程開火 AI（隊友本就會射），發射魔法彈＝彈藥無限、過半穿甲、視覺另畫。noRandom＝不進任何隨機池。
-  staff:   { name: '法杖',  rarity: 'rare', damage: 30, fireRate: 1.2, range: 900, projSpeed: 320, spreadBase: 1.0, spreadPerShot: 0.5, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.55, aimTime: 0, reloadMoveMul: 0.85, hands: 2, magic: true, infinite: true, noRandom: true },   // A 彈幕型：魔法彈本來就畫成發光光矢＝最適合當慢而顯眼的那種
+  staff:   { name: '法杖',  rarity: 'rare', damage: 30, fireRate: 1.2, range: 900, projSpeed: 320, spreadBase: 1.0, spreadPerShot: 0.5, spreadMax: 4, spreadRecover: 9, magazine: 1, reloadTime: 1.5, pierce: 0.55, poiseDmg: 20, knock: 120, aimTime: 0, reloadMoveMul: 0.85, hands: 2, magic: true, infinite: true, noRandom: true },   // A 彈幕型：魔法彈本來就畫成發光光矢＝最適合當慢而顯眼的那種
   falchion:{ name: '彎刀',  rarity: 'uncommon', damage: 34, fireRate: 6, range: 62, pierce: 0.25, melee: true, hands: 1,
              moves: { light: mv({ name: '廣掃', arcDeg: 120, reach: 62, windup: 0.09, activeT: 0.09, recover: 0.24, cleave: 4, knock: 240, poiseDmg: 24 }) },
              magazine: 999, reloadTime: 0.1, projSpeed: 0, spreadBase: 0, spreadPerShot: 0, spreadMax: 0, spreadRecover: 1 },   // 單手廣掃：對付雜兵群
@@ -510,7 +513,7 @@ CONFIG.melee = {
      另外：**前搖中被命中＝揮擊直接被打斷**（重武器的 hyperArmor 免疫）＝搶到先手的人贏整次交鋒。 */
   poiseRegenDelay: 1.6,    // 多久沒被打才開始回體幹（太短＝連段打不破，體幹破永遠不會發生）
   poiseRegen: 18,          // 體幹回復速度 /s
-  poiseBreakStagger: 1.8,  // 體幹破的硬直秒數＝**處決窗**。刻意長：處決是唯一的回血手段，
+  poiseBreakStagger: 2.6,  // 體幹破的硬直秒數＝**處決窗**。刻意長：處決是唯一的回血手段，
                            // 窗太短就變成「看到了但跑不過去」，那不是難度，是挫折。
   staggerDmg: 15,          // 失衡打斷：單擊(post-armor)≥此值 → 打斷「預告中」動作(近接前搖/遠程瞄準/施法前搖)，所有單位同一把尺。實測：農兵/劍兵/槍兵砸不斷、披甲士/軍士(鎚斧)會斷。體幹破是另一層(重硬直)
   poiseBreakDmgMul: 1.6,   // 硬直中受到的傷害倍率（處決窗）
@@ -587,11 +590,17 @@ CONFIG.melee = {
    不負責製造稀缺。永遠的保底手段是免費的 dash。 */
 CONFIG.wrath = {
   max: 100,                // 上限（開場即為此值）
-  decay: 4.5,              // 戰鬥中的衰退 /s（房裡還有活敵人時才跑；清場凍結）
-  gainHit: 5,              // 命中回怒（小）：保底，只要還在揮就不會枯竭
-  gainHitBlocked: 2,       // 命中但被盾擋下/被甲彈開＝打了個寂寞，只給零頭
-  gainParry: 18,           // 招架回怒（中）：獎勵讀招
-  gainExec: 36,            // 處決回怒（大）：與回血同一個動作＝處決是雙重補給
+  decay: 2.2,              // 戰鬥中的衰退 /s（房裡還有活敵人時才跑；清場凍結）
+  /* **最後一次回怒之後 decayDelay 秒才開始扣。**
+     實測回饋：沒有這個緩衝的話「不是純 aggro 就根本累積不起來」——
+     連段中每一刀拿到的怒火會在下一刀之前就被磨掉一部分，等於只有貼身連打才存得到東西。
+     緩衝把「不出手＝慢性繳械」這個訊息保留下來（放著不打照樣掉），
+     但不再懲罰「打一下、走位、再打一下」這種正常的節奏。 */
+  decayDelay: 1.3,
+  gainHit: 8,              // 命中回怒（小）：保底，只要還在揮就不會枯竭
+  gainHitBlocked: 3,       // 命中但被盾擋下/被甲彈開＝打了個寂寞，只給零頭
+  gainParry: 22,           // 招架回怒（中）：獎勵讀招
+  gainExec: 45,            // 處決回怒（大）：與回血同一個動作＝處決是雙重補給
   costBlockBase: 7,        // 擋下一擊的固定成本
   costBlockPerPoise: 0.6,  // 擋下一擊的額外成本＝來襲體幹傷害 × 此值（重武器砸盾特別貴）
   costSprint: 16,          // 奔跑消耗 /s
@@ -1104,16 +1113,16 @@ function giveItemStack(id) { warehouse.push({ kind: 'item', id, count: ITEM_STAC
    ===================================================================== */
 const UNIT_CLASSES = {
   knight:      { name: '騎士',     hp: CONFIG.unitHp, moveSpeed: CONFIG.moveSpeed, radius: CONFIG.unitRadius },   // 英雄：唯一管理怒火、且**唯一沒有體幹**的單位
-  levy:        { name: '農兵',     hp: 45,            poise: 18,  moveSpeed: CONFIG.enemy.moveSpeed, radius: CONFIG.unitRadius },
+  levy:        { name: '農兵',     hp: 62,            poise: 18,  moveSpeed: CONFIG.enemy.moveSpeed, radius: CONFIG.unitRadius },
   footman:     { name: '徒步兵',   hp: CONFIG.enemy.hp, poise: 30, moveSpeed: 105, radius: CONFIG.unitRadius },
   spearman:    { name: '槍兵',     hp: CONFIG.enemy.hp, poise: 32, moveSpeed: 95,  radius: CONFIG.unitRadius },
   shieldman:   { name: '盾兵',     hp: CONFIG.enemy.hp, poise: 34, moveSpeed: 90,  radius: CONFIG.unitRadius },
-  wolf:        { name: '戰狼',     hp: 45,            poise: 18,  moveSpeed: 165, radius: 9,  turn: 560 },   // 轉得快＝繞不掉
-  archer:      { name: '弓手',     hp: 60,            poise: 18,  moveSpeed: 95,  radius: CONFIG.unitRadius },
-  arbalest:    { name: '弩手',     hp: 70,            poise: 32,  moveSpeed: 70,  radius: CONFIG.unitRadius, turn: 420 },
+  wolf:        { name: '戰狼',     hp: 58,            poise: 18,  moveSpeed: 165, radius: 9,  turn: 560 },   // 轉得快＝繞不掉
+  archer:      { name: '弓手',     hp: 78,            poise: 18,  moveSpeed: 95,  radius: CONFIG.unitRadius },
+  arbalest:    { name: '弩手',     hp: 88,            poise: 32,  moveSpeed: 70,  radius: CONFIG.unitRadius, turn: 420 },
   manatarms:   { name: '披甲士',   hp: CONFIG.enemy.hp, poise: 44, moveSpeed: 70, radius: 14, armor: CONFIG.armor.blockChance, turn: 360 },   // 笨重＝繞得掉
   serjeant:    { name: '軍士',     hp: CONFIG.enemy.hp, poise: 44, moveSpeed: 85, radius: 14, armor: CONFIG.armor.blockChance, turn: 380 },
-  civilian:    { name: '平民',     hp: 30,            poise: 12,  moveSpeed: 95,  radius: 11 },
+  civilian:    { name: '平民',     hp: 34,            poise: 12,  moveSpeed: 95,  radius: 11 },
   dummy:       { name: '訓練假人', hp: 400,           poise: 70,  moveSpeed: 0,   radius: 13 },
   dummy_armor: { name: '披甲假人', hp: 400,           poise: 130, moveSpeed: 0,   radius: 15, armor: CONFIG.armor.blockChance },
 };
@@ -4078,7 +4087,8 @@ function tickResources(u, dt) {
   }
   // 怒火：**只退不回**（DESIGN §2.2 ③），而且只在房裡還有活敵人時退——
   // 清場那一刻凍結，換房不另外扣（懲罰仔細撿東西的玩家是最糟的一種扣款）。
-  if (u.wrathMax && wrathDecaying()) u.wrath = Math.max(0, (u.wrath || 0) - CONFIG.wrath.decay * dt);
+  if (u.wrathMax && wrathDecaying() && simTime - (u.wrathT || -99) >= CONFIG.wrath.decayDelay)
+    u.wrath = Math.max(0, (u.wrath || 0) - CONFIG.wrath.decay * dt);
   if (u._hpLowFired && u.maxHp && u.hp / u.maxHp >= CONFIG.hooks.hpLowFrac) u._hpLowFired = false;
 }
 /* ── 怒火的四個入口（其餘地方一律走這四個，不要直接動 u.wrath）──────────
@@ -4089,7 +4099,7 @@ function tickResources(u, dt) {
 const wrathDecaying = () => !roomCleared && enemies.some(e => !e.dead);
 function hasWrath(u, n) { return !u.wrathMax || (u.wrath || 0) >= n; }
 function spendWrath(u, n) { if (!u.wrathMax) return true; u.wrath = Math.max(0, (u.wrath || 0) - n); return true; }
-function gainWrath(u, n) { if (!u || !u.wrathMax || !(n > 0)) return; u.wrath = Math.min(u.wrathMax, (u.wrath || 0) + n * (u.wrathGainMul || 1)); }
+function gainWrath(u, n) { if (!u || !u.wrathMax || !(n > 0)) return; u.wrath = Math.min(u.wrathMax, (u.wrath || 0) + n * (u.wrathGainMul || 1)); u.wrathT = simTime; }
 // 想花但花不起：閃一下 + 掛勾（給之後的聖物/語音接線）
 function failWrath(u) { u.noWrathFxT = 0.25; if (arenaMode && u.id === KNIGHT_ID && u.faction === 'player') arenaStats.noWrath++; Hooks.fire('wrathEmpty', { u }); }
 // 怒火減傷：drStart 以下完全沒有，往上線性長到 drMax。乘算套在 damageUnit 最後＝永遠看得出效果。
@@ -4527,6 +4537,7 @@ function fireUnit(u, angle, spreadDeg, fireRateMult, bloomAdd) {
       x: u.pos.x + Math.cos(angle) * (u.radius + 2), y: u.pos.y + Math.sin(angle) * (u.radius + 2),
       vx: Math.cos(a) * W.projSpeed * CONFIG.juice.bulletSpeedMul, vy: Math.sin(a) * W.projSpeed * CONFIG.juice.bulletSpeedMul,   // 碰撞是掃描式（不穿透），所以放慢彈速不會漏判
       dmg: W.damage * dmgF * outDmgMul(u), faction: u.faction, range: W.range, traveled: 0,   // meta 升級「鋒銳」+ 誓約「無畏」
+      poiseDmg: W.poiseDmg || 0, knock: W.knock || 0,   // **遠程也要打體幹**：沒有這個，弓弩投槍永遠開不出處決窗（§2.4 的迴圈對它們是斷的）
       ox: u.pos.x, oy: u.pos.y,   // 發射原點（低矮牆「貼牆可越射」判定用）
       pierce: clamp((W.pierce || 0) + (u.pierceBonus || 0), 0, 1),   // 穿甲：對裝甲敵人的擋格率衰減（誓約「重弩/長驅」：pierceBonus +）
       pierceThru: u.magicPierce || 0,   // 貫穿：可穿過幾名敵人繼續飛（誓約「法脈」＝魔法彈直線貫穿）
@@ -5094,7 +5105,7 @@ function updateBullets(dt) {
         if (isFriendlyHit(b.faction, t)) dmg *= CONFIG.friendlyFire.dmgMul;              // 誤傷倍率
         const wasAlive = !t.dead && t.hp > 0;
         const hpB0 = t.hp;
-        const bBlocked = damageUnit(t, dmg, b.pierce || 0, angTo(t.pos, { x: b.ox, y: b.oy }), { attacker: b.owner || null });   // attacker＝擊殺歸屬/Hooks（無 melee 旗標＝不觸發近戰限定效果）
+        const bBlocked = damageUnit(t, dmg, b.pierce || 0, angTo(t.pos, { x: b.ox, y: b.oy }), { attacker: b.owner || null, poiseDmg: b.poiseDmg || 0, knock: b.knock || 0 });   // attacker＝擊殺歸屬/Hooks（無 melee 旗標＝不觸發近戰限定效果）
         if (b.owner) Hooks.fire('attackHit', { u: b.owner, t, dealt: Math.max(0, hpB0 - t.hp), melee: false, blocked: bBlocked, backstab: false, armorDeflect: (hpB0 === t.hp && !bBlocked) });
         if (arenaMode && b.owner === knight()) arenaStats.lastShotDist = Math.round(b.traveled);   // 射擊試作場：顯示這發打了多遠
         if ((b.pierceThru || 0) > 0) { b.pierceThru--; (b.hitSet || (b.hitSet = new Set())).add(t); continue; }   // 誓約「法脈」：貫穿一名、記下已命中、繼續飛
