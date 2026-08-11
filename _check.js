@@ -235,6 +235,13 @@ const SCENARIOS = [
   { name: 'room-awake',      frames: 2,   enter: bootCombat, poke: pokeAwake, invariants: [allAwakeOnEntry] },
   { name: 'waves',           frames: 3000, enter: bootCombat, poke: pokeCombat, invariants: [wavesHappened] },
   { name: 'rooms',           frames: 6,    enter: () => { bootCombat(); }, poke: pokeRooms, invariants: [roomChainWorks] },
+  { name: 'free-slots',      frames: 4,    enter: () => {
+      bootCombat();
+      // 第 1 格放**習得**、第 2 格放**道具**——舊版剛好相反（1 只收卷軸、2 只收習得）
+      T.roster[0].freeExtra = [{ kind: 'ability', id: 'firebolt' }, { kind: 'item', id: 'tonic', count: 2 }];
+      T.roster[0].itemId = null; T.roster[0].abilityId = null;
+      T.startMission();
+    }, invariants: [freeSlotsAreGeneric] },
   { name: 'descent',         frames: 40,  enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeDescent, invariants: [descentFlowWorks] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
@@ -427,6 +434,18 @@ function noStuckSwing() { return stuckSwing || null; }
 function introKeepsSwinging() {
   if (stuckSwing) return stuckSwing;
   return swingStarts >= 2 ? null : `整個序章只揮出 ${swingStarts} 刀——腳本那一刀之後揮擊管線就卡住了`;
+}
+
+/* 自由位（1~N）每一格都是**通用**的：卷軸、習得、消耗品放進任何一格都可以。
+   舊版把第 1 格寫死成 itemId、第 2 格寫死成 abilityId（「每種類各限一個」），
+   那是 Homeward 留下的欄位形狀不是設計。這條擋的是它偷偷長回來。 */
+function freeSlotsAreGeneric() {
+  const k = T.knight; if (!k || !k.slots) return '沒抓到騎士的槽位';
+  const free = k.slots.filter(sl => sl && sl.kind === 'free');
+  if (free.length < 2) return `只有 ${free.length} 個自由位`;
+  if (free[0].type !== 'ability' || free[0].id !== 'firebolt') return `第 1 個自由位是 ${free[0].type}/${free[0].id}，應該是習得 firebolt——自由位還是分種類的`;
+  if (free[1].type !== 'item' || free[1].id !== 'tonic') return `第 2 個自由位是 ${free[1].type}/${free[1].id}，應該是道具 tonic——自由位還是分種類的`;
+  return null;
 }
 
 /* 波次（DESIGN.md §1／§5.1）：一間房不是「殺完一批就結束」，而是好幾波，每一波從不同的門進來。

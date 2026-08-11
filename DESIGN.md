@@ -489,7 +489,9 @@ DOOM 的壓力來源相反：**所有東西都在攻擊你，同時**。之所�
 - `WEAPON_QUALITY`（精良度 1–5 ＝強化格數預算）+ `AFFIXES`（詞條）+ `weaponInst`/`effWeapon` 實例系統
   ——這已經是一套 loot 骨架，直接用
 - `RARITY_COLOR` 稀有度配色已有
-- `1`~`N` 自由位 + 底部快捷列（`castArt` / `drawHotkeyBar`）**整套沿用**，只把成本從 CD 改成怒火
+- `1`~`N` 自由位 + 底部快捷列（`castArt` / `drawHotkeyBar`）**整套沿用**，只把成本從 CD 改成怒火。
+  **每一格都是通用的**——卷軸、習得、消耗品放進哪一格都可以。舊版把第 1 格寫死成 `itemId`、
+  第 2 格寫死成 `abilityId`（＝每種類各限一個），那是 Homeward 留下的欄位形狀，不是設計。
 - ~~**要修的既有 bug**：`updateDrops()` 撿取時只帶 `{kind, id, ammo}`，把 `quality` / `enh` 丟掉了~~
   ✅ 已修，並加了探針 `drop-enh`（撿起來的武器必須帶著精良度與詞條）。
 
