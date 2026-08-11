@@ -132,7 +132,15 @@ const CONFIG = {
      背後無預警冒出一波是廉價的偷襲，不是難度。 */
   waves: {
     perRoom: 3,        // 每房幾波（含第一波）
-    warn: 1.8,         // 門亮起到敵人湧出的秒數
+    warn: 1.2,         // 門亮起到敵人湧出的秒數
+    /* **不用等全殲**（玩測回饋）：一波一波清乾淨才來下一波，中間會有一段空白，
+       而且整房變成三個各自獨立的小仗。改成兩個條件先到先算：
+         · gap 秒到了（不管你打得怎麼樣，下一波都會來）
+         · 場上剩下的活敵人 ≤ pressureLeft（你清得快，壓力就提早補上）
+       所以「邊打邊增援」是常態，全殲只是其中一種走法。 */
+    gap: 11,           // 兩波之間的最長間隔（秒）
+    pressureLeft: 2,   // 場上剩這麼少就提早開下一波
+    gates: 2,          // 一波從幾個門同時湧出（分散＝不會全部從同一個角落來）
     tierPerFloor: 1,   // 每深一層，抽遭遇的 tier 上限 +1（愈往下愈兇）
   },
   /* ── 下墜整備（DESIGN.md §5.4b）──────────────────────────────────────
@@ -146,7 +154,9 @@ const CONFIG = {
   descent: {
     kitTime: 30,     // 整備階段的秒數
     seq: { hold: 0.5, pull: 0.85, hold2: 0.5, sink: 0.45 },   // 跳下去那一段的四拍（見 descend 狀態機）
-    riseRate: 26,    // 下墜畫面上「往上飛」的粒子生成速率（顆/s）＝你正在往下掉
+    riseRate: 90,    // 下墜畫面上「往上飛」的粒子生成速率（顆/s）＝你正在往下掉
+    riseSpeed: [260, 900],   // 上升速度區間（px/s）。快才像在墜落，不是在飄
+    emberFrac: 0.55,         // 有多少比例是「火星」（下半亮、會閃、偏橘紅），其餘是暗碎屑
   },
   /* ── 層與房間（DESIGN.md §5.5）────────────────────────────────────────
      一層 rooms 間房，打完往下一層。房間目前是**手刻輪播**（pool 裡的地圖輪流用）——
@@ -299,7 +309,10 @@ const CONFIG = {
     // 敵人轉得慢才有「繞到他背後」這個玩法（flank/backstab 都看目標的 facing），
     // 也才讀得出遠程預告鎖死朝向的那一下。逐兵種可在 UNIT_CLASSES 用 turn 覆寫。
     turnSpeed: 480,
-    hp: 95,          // 敵人基礎 HP。**刻意偏高**：處決窗要有意義，敵人就不能三刀死——
+    spreadR: 110,        // 同一組敵人散開的半徑（舊值 44＝擠成一坨）
+    spreadAnchors: 3,    // 開場的遭遇最多分散到幾個錨點（一組人不會全部從同一個角落冒出來）
+    openingCut: 1,       // 開場的遭遇砍掉幾隻（玩測回饋：數量少一點、每隻有份量。至少留 2 隻）
+    hp: 135,         // 敵人基礎 HP。**刻意偏高**：處決窗要有意義，敵人就不能三刀死——
                      // 破幹早於打死的差距越大，窗出現得越早、也越值得你走過去吃那一口。
     reactionDelay: 0.35,
     strength: 1.0,
@@ -1166,16 +1179,16 @@ function giveItemStack(id) { warehouse.push({ kind: 'item', id, count: ITEM_STAC
    ===================================================================== */
 const UNIT_CLASSES = {
   knight:      { name: '騎士',     hp: CONFIG.unitHp, moveSpeed: CONFIG.moveSpeed, radius: CONFIG.unitRadius },   // 英雄：唯一管理怒火、且**唯一沒有體幹**的單位
-  levy:        { name: '農兵',     hp: 62,            poise: 18,  moveSpeed: CONFIG.enemy.moveSpeed, radius: CONFIG.unitRadius },
-  footman:     { name: '徒步兵',   hp: CONFIG.enemy.hp, poise: 30, moveSpeed: 105, radius: CONFIG.unitRadius },
-  spearman:    { name: '槍兵',     hp: CONFIG.enemy.hp, poise: 32, moveSpeed: 95,  radius: CONFIG.unitRadius },
-  shieldman:   { name: '盾兵',     hp: CONFIG.enemy.hp, poise: 34, moveSpeed: 90,  radius: CONFIG.unitRadius },
-  wolf:        { name: '戰狼',     hp: 58,            poise: 18,  moveSpeed: 165, radius: 9,  turn: 560 },   // 轉得快＝繞不掉
-  archer:      { name: '弓手',     hp: 78,            poise: 18,  moveSpeed: 95,  radius: CONFIG.unitRadius },
-  arbalest:    { name: '弩手',     hp: 88,            poise: 32,  moveSpeed: 70,  radius: CONFIG.unitRadius, turn: 420 },
-  manatarms:   { name: '披甲士',   hp: CONFIG.enemy.hp, poise: 44, moveSpeed: 70, radius: 14, armor: CONFIG.armor.blockChance, turn: 360 },   // 笨重＝繞得掉
-  serjeant:    { name: '軍士',     hp: CONFIG.enemy.hp, poise: 44, moveSpeed: 85, radius: 14, armor: CONFIG.armor.blockChance, turn: 380 },
-  civilian:    { name: '平民',     hp: 34,            poise: 12,  moveSpeed: 95,  radius: 11 },
+  levy:        { name: '農兵',     hp: 105,            poise: 40,  moveSpeed: CONFIG.enemy.moveSpeed, radius: CONFIG.unitRadius },
+  footman:     { name: '徒步兵',   hp: CONFIG.enemy.hp, poise: 55, moveSpeed: 105, radius: CONFIG.unitRadius },
+  spearman:    { name: '槍兵',     hp: CONFIG.enemy.hp, poise: 58, moveSpeed: 95,  radius: CONFIG.unitRadius },
+  shieldman:   { name: '盾兵',     hp: CONFIG.enemy.hp, poise: 62, moveSpeed: 90,  radius: CONFIG.unitRadius },
+  wolf:        { name: '戰狼',     hp: 92,            poise: 30,  moveSpeed: 165, radius: 9,  turn: 560 },   // 轉得快＝繞不掉
+  archer:      { name: '弓手',     hp: 112,            poise: 38,  moveSpeed: 95,  radius: CONFIG.unitRadius },
+  arbalest:    { name: '弩手',     hp: 135,           poise: 52,  moveSpeed: 70,  radius: CONFIG.unitRadius, turn: 420 },
+  manatarms:   { name: '披甲士',   hp: CONFIG.enemy.hp, poise: 70, moveSpeed: 70, radius: 14, armor: CONFIG.armor.blockChance, turn: 360 },   // 笨重＝繞得掉
+  serjeant:    { name: '軍士',     hp: CONFIG.enemy.hp, poise: 70, moveSpeed: 85, radius: 14, armor: CONFIG.armor.blockChance, turn: 380 },
+  civilian:    { name: '平民',     hp: 52,            poise: 16,  moveSpeed: 95,  radius: 11 },
   dummy:       { name: '訓練假人', hp: 400,           poise: 70,  moveSpeed: 0,   radius: 13 },
   dummy_armor: { name: '披甲假人', hp: 400,           poise: 130, moveSpeed: 0,   radius: 15, armor: CONFIG.armor.blockChance },
 };
@@ -1216,6 +1229,8 @@ const ENEMY_TYPES = {
      否則敵人會在踉蹌之前就先流血流死，處決窗根本不會出現，
      而處決是唯一的回血手段（DESIGN §2.4），迴圈就接不起來。
      實測過：舊數值下 48 個組合裡有 34 個開不出處決窗（雜兵的 HP≈傷害×2、體幹卻要兩三刀）。
+     **第二輪（玩測回饋）**：體幹再往上拉了一輪。上一版壓太低，變成「砍一刀 → 處決」，
+     每個敵人都沒有份量。現在雜兵要兩三刀才破幹，但仍然嚴格早於打死。
      修正方向照 §2.8 推論 3——**降體幹，不是加血**：威脅該來自傷害與速度，不是血條長度。
      重裝的體幹看起來偏低（44 vs 徒步兵 30），但那是因為**armorPoiseMul 才是他們的體幹**：
      砍不進去的那一擊體幹傷害 ×1.7，所以對非破甲武器他們實際上很耐打。
@@ -1308,7 +1323,7 @@ function spawnGroup(units, anchor, faction, opening, facePos) {
   const out = [];
   units.forEach((u, i) => {
     const ang = (i / Math.max(1, units.length)) * Math.PI * 2;
-    const r = units.length > 1 ? 44 : 0;
+    const r = units.length > 1 ? CONFIG.enemy.spreadR : 0;   // 散得開一點：擠成一團會變成一次砍到全部
     const pos = { x: anchor.x + Math.cos(ang) * r, y: anchor.y + Math.sin(ang) * r };
     const node = nearestNode(pos, false);
     const facing = facePos ? angTo(pos, facePos) : Math.PI;
@@ -1332,7 +1347,14 @@ function placeEncounter(encId, map) {
     spawned.push(...spawnGroup(enc.units, aA, 'enemy', 'threeway', aB));
     spawned.push(...spawnGroup(enc.factionB, aB, 'rioter', 'threeway', aA));
   } else {
-    spawned.push(...spawnGroup(enc.units, pick(0), 'enemy', enc.opening, ENTRY));
+    /* **分散到多個錨點**：整組人擠在同一個點會變成「一坨」，一刀掃過去全中，
+       而且讀不出誰是誰（§1：不同個性鮮明的敵人穿插出現）。 */
+    const units = enc.units.slice(0, Math.max(2, enc.units.length - CONFIG.enemy.openingCut));
+    const nA = Math.max(1, Math.min(CONFIG.enemy.spreadAnchors, anchors.length, units.length));
+    for (let g = 0; g < nA; g++) {
+      const part = units.filter((_, i) => i % nA === g);
+      if (part.length) spawned.push(...spawnGroup(part, pick(g), 'enemy', enc.opening, ENTRY));
+    }
   }
   return spawned;
 }
@@ -2334,7 +2356,8 @@ let exitPortal = null;   // 清場後開啟的洞 { x, y, t, open }（t＝開啟
    **暫停、不限時**——§5.4 已經承諾「思考在房間之間，執行在房間之內」，加倒數會逼玩家
    用手速做本來該用腦袋做的事。 */
 let waveIdx = 0, waveTotal = 1;   // 這一房打到第幾波 / 總共幾波
-let wavePending = null;           // { at:{x,y}, t } ＝門已經亮了，t 秒後湧出
+let wavePending = null;           // { gates:[{x,y}], t } ＝門已經亮了，t 秒後湧出
+let waveTimer = 0;                // 距離下一波的最長等待（見 CONFIG.waves.gap）
 let floorNo = 1, roomNo = 1;      // 第幾層 · 這層的第幾間房
 let roomBannerT = 0;              // 進房橫幅的剩餘秒數
 /* 跳下去的節奏（使用者定案）：踩進洞口之後不是「唰一下就換幕」，而是一段有呼吸的序列
@@ -2841,7 +2864,7 @@ function startMission() {
   // 序章／最終挑戰／沙盒／編輯試玩／事件圖都是單波——它們是腳本化的場景，不是「一間房」。
   waveIdx = 0;
   waveTotal = (introActive || finaleActive || fromSandbox || fromEditor || MAP.eventMap) ? 1 : CONFIG.waves.perRoom;
-  wavePending = null;
+  wavePending = null; waveTimer = CONFIG.waves.gap;
   roomBannerT = 2.6;
   deadCount = 0; result = null;
   scene = 'COMBAT';
@@ -2916,26 +2939,51 @@ function tickDescent(dt) {
   let n = D.riseRate * dt;
   while (n > 0) {
     if (n >= 1 || Math.random() < n) {
-      descentMotes.push({ x: Math.random() * cv.width, y: cv.height + 8,
-        v: 120 + Math.random() * 380, r: 0.8 + Math.random() * 2.2, a: 0.25 + Math.random() * 0.5,
-        hue: Math.random() < 0.25 ? '255,180,120' : '210,150,110' });
+      const ember = Math.random() < D.emberFrac;
+      const [v0, v1] = D.riseSpeed;
+      descentMotes.push({
+        x: Math.random() * cv.width, y: cv.height + 10,
+        v: v0 + Math.random() * (v1 - v0),
+        sway: (Math.random() * 2 - 1) * 26,          // 橫向飄一點，不然像掃描線
+        r: ember ? 1.2 + Math.random() * 2.6 : 0.7 + Math.random() * 1.6,
+        a: ember ? 0.55 + Math.random() * 0.45 : 0.18 + Math.random() * 0.3,
+        life: 0, ember,
+      });
     }
     n -= 1;
   }
   for (let i = descentMotes.length - 1; i >= 0; i--) {
     const m = descentMotes[i];
-    m.y -= m.v * dt;
-    if (m.y < -10) descentMotes.splice(i, 1);
+    m.y -= m.v * dt; m.x += m.sway * dt; m.life += dt;
+    if (m.y < -14) descentMotes.splice(i, 1);
   }
   if (descentPhase !== 'KIT') return;
   descentT -= dt;
   if (descentT <= 0) { descentT = 0; descentLand(); }
 }
 function drawDescentMotes() {
+  /* 火星：**畫面下半最亮、往上逐漸熄掉**——那是「從底下的火裡竄上來」的讀法。
+     用加色疊加畫，密的地方會自然疊成一片火光。 */
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
   for (const m of descentMotes) {
-    ctx.fillStyle = `rgba(${m.hue},${m.a})`;
-    ctx.fillRect(m.x - m.r / 2, m.y - m.r * 2, m.r, m.r * 4);   // 拉長成短條＝速度感
+    const up = clamp(m.y / cv.height, 0, 1);        // 1＝還在畫面底部，0＝快到頂了
+    const fade = m.ember ? up * up : 0.35 + 0.65 * up;   // 火星往上熄得快，暗碎屑比較平均
+    const a = m.a * fade;
+    if (a < 0.01) continue;
+    const len = m.r * (m.ember ? 5 : 3.2) * (0.6 + m.v / 900);   // 越快拉得越長
+    ctx.fillStyle = m.ember ? `rgba(255,${140 + Math.round(90 * up)},70,${a})` : `rgba(190,150,120,${a})`;
+    ctx.fillRect(m.x - m.r / 2, m.y - len, m.r, len);
+    if (m.ember && up > 0.55) {   // 底部那一段的火星帶一點光暈＝火在下面燒
+      ctx.fillStyle = `rgba(255,120,50,${a * 0.35})`;
+      ctx.fillRect(m.x - m.r * 1.6, m.y - len * 0.5, m.r * 3.2, len * 0.5);
+    }
   }
+  ctx.restore();
+  // 畫面底緣的火光帶：所有火星都是從這裡竄出來的
+  const g = ctx.createLinearGradient(0, cv.height, 0, cv.height - 190);
+  g.addColorStop(0, `rgba(255,110,45,${0.30 + 0.06 * Math.sin(simTime * 5)})`);
+  g.addColorStop(1, 'rgba(255,90,40,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, cv.height - 190, cv.width, 190);
 }
 // 把袋子裡的第 i 件裝到身上（改 roster；下一房 makePlayer 會照它重建）
 function descentEquip(i) {
@@ -4381,37 +4429,51 @@ function tickVacuum(dt) {
    清光一波 → 別的門亮起來 → warn 秒後湧出下一波 → 最後一波清光才開洞。
    門的位置取「離騎士最遠的錨點」：不是為了公平，是為了**可讀**——
    你要有時間看到它、轉過去、決定要不要衝上去堵門口。 */
-function waveGateFor() {
+// 取離騎士最遠的 n 個錨點當門。不是為了公平，是為了**可讀**：你要有時間看到、轉過去、決定要不要去堵。
+function waveGatesFor(n) {
   const kn = knight();
   const cands = [];
   if (MAP.accessPoints && MAP.accessPoints.length) cands.push(...MAP.accessPoints);
   cands.push(...encounterAnchorsOf(MAP));
-  if (!cands.length) return { x: WORLD.w / 2, y: WORLD.h / 2 };
-  let best = cands[0], bd = -1;
-  for (const c of cands) {
-    const d = kn ? dist(kn.pos, c) : 0;
-    if (d > bd) { bd = d; best = c; }
+  if (!cands.length) return [{ x: WORLD.w / 2, y: WORLD.h / 2 }];
+  const sorted = cands.slice().sort((a, b) => (kn ? dist(kn.pos, b) - dist(kn.pos, a) : 0));
+  const out = [];
+  for (const c of sorted) {
+    if (out.length >= n) break;
+    if (out.some(o => dist(o, c) < 140)) continue;   // 兩個門靠太近＝等於一個門
+    out.push({ x: c.x, y: c.y });
   }
-  return { x: best.x, y: best.y };
+  return out.length ? out : [{ x: sorted[0].x, y: sorted[0].y }];
 }
 function queueNextWave() {
-  wavePending = { at: waveGateFor(), t: CONFIG.waves.warn };
-  Sfx.play('alert', wavePending.at);
+  wavePending = { gates: waveGatesFor(CONFIG.waves.gates), t: CONFIG.waves.warn };
+  for (const g of wavePending.gates) Sfx.play('alert', g);
 }
+const aliveFoes = () => enemies.reduce((n, e) => n + (e.dead ? 0 : 1), 0);
 function tickWave(dt) {
+  const W = CONFIG.waves;
+  // 排程：時間到、或場上剩得夠少，就先讓門亮起來（不必等全殲）
+  if (!wavePending && waveIdx + 1 < waveTotal && !introActive && !roomCleared) {
+    waveTimer -= dt;
+    if (waveTimer <= 0 || aliveFoes() <= W.pressureLeft) queueNextWave();
+  }
   if (!wavePending) return;
   wavePending.t -= dt;
   if (wavePending.t > 0) return;
-  const at = wavePending.at;
+  const gates = wavePending.gates;
   wavePending = null;
   waveIdx++;
+  waveTimer = W.gap;
   // 波次內容沿用既有的遭遇模板（已經是設計過的兵種組合），tier 隨層數上升
-  const tier = (MAP.tier || 1) + (floorNo - 1) * CONFIG.waves.tierPerFloor;
+  const tier = (MAP.tier || 1) + (floorNo - 1) * W.tierPerFloor;
   const encId = pickEncounter(tier);
   const enc = ENCOUNTERS[encId];
   // 一律 'ambush' 開場＝直接 ENGAGED：門已經亮過了，湧出來的人沒有理由還在發呆
-  for (const e of spawnGroup(enc.units, at, 'enemy', 'ambush', knight() ? knight().pos : ENTRY)) enemies.push(e);
-  Hooks.fire('waveStart', { index: waveIdx, total: waveTotal, encId, at });
+  gates.forEach((g, gi) => {
+    const part = enc.units.filter((_, i) => i % gates.length === gi);
+    if (part.length) for (const e of spawnGroup(part, g, 'enemy', 'ambush', knight() ? knight().pos : ENTRY)) enemies.push(e);
+  });
+  Hooks.fire('waveStart', { index: waveIdx, total: waveTotal, encId, gates });
 }
 const waveActive = () => !!wavePending || waveIdx + 1 < waveTotal;   // 還有下一波沒來＝這房還沒完
 
@@ -5987,16 +6049,11 @@ function update(dt) {
   // 7.5) 清場 → **開洞**（不是直接結算）。
   // 清場那一刻房間中央的地板碎裂、洞打開；玩家自己走過去跳下去才進下一層。
   // 中間那段時間是留給你的：撿東西、看戰場、喘一口氣。
-  // ⚠️ `!wavePending` 是必要的：門亮著的那 warn 秒場上仍然「全部都死了」，
-  //    少了它就會每一幀重新排一次下一波，計時器永遠回到滿格＝那一波永遠不會來。
-  if (!roomCleared && !wavePending && enemies.length && enemies.every(e => e.dead)) {
-    if (waveIdx + 1 < waveTotal && !introActive) {
-      queueNextWave();          // 還有下一波：別的門亮起來，先不開洞
-    } else {
-      roomCleared = true;
-      // 序章是腳本化的演出（他是離開戰場，不是墜入地獄），不開洞、照舊直接收尾。
-      if (!introActive) openExitPortal();
-    }
+  // 清場＝**最後一波**也清光，而且沒有正在路上的援軍。排程本身在 tickWave 裡。
+  if (!roomCleared && !wavePending && waveIdx + 1 >= waveTotal && enemies.length && enemies.every(e => e.dead)) {
+    roomCleared = true;
+    // 序章是腳本化的演出（他是離開戰場，不是墜入地獄），不開洞、照舊直接收尾。
+    if (!introActive) openExitPortal();
   }
   tickWave(dt);
   if (roomBannerT > 0) roomBannerT -= dt;
@@ -6923,7 +6980,9 @@ function drawKnightResources() {
 function drawWaveGate() {
   if (!wavePending) return;
   const p = clamp(1 - wavePending.t / Math.max(0.01, CONFIG.waves.warn), 0, 1);
-  const a = wavePending.at;
+  for (const a of wavePending.gates) drawOneGate(a, p);
+}
+function drawOneGate(a, p) {
   ctx.save();
   ctx.strokeStyle = `rgba(255,90,70,${0.35 + 0.45 * p})`; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.arc(a.x, a.y, 64 * (1 - p) + 16, 0, Math.PI * 2); ctx.stroke();
@@ -6937,7 +6996,7 @@ function drawWaveGate() {
 function drawScreenOverlays() {
   // 區域標記（永遠正立、離場時夾到邊緣）
   edgeMarker(ENTRY, '#caa05a', 'ENTRY', false);
-  if (wavePending) edgeMarker(wavePending.at, '#ff5a46', '援軍', true);   // 門在畫面外也要指得到
+  if (wavePending) for (const g of wavePending.gates) edgeMarker(g, '#ff5a46', '援軍', true);   // 門在畫面外也要指得到
   if (exitPortalReady()) edgeMarker(exitPortal, '#ff9b5a', '出口', true);   // 洞開了：畫面邊緣指過去（清完場你可能離它很遠）
 
   // 我方單位：血條 + 編號（永遠可見）

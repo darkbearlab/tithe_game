@@ -236,7 +236,7 @@ const SCENARIOS = [
   { name: 'room-awake',      frames: 2,   enter: bootCombat, poke: pokeAwake, invariants: [allAwakeOnEntry] },
   { name: 'waves',           frames: 3000, enter: bootCombat, poke: pokeCombat, invariants: [wavesHappened] },
   { name: 'rooms',           frames: 6,    enter: () => { bootCombat(); }, poke: pokeRooms, invariants: [roomChainWorks] },
-  { name: 'crystal',         frames: 900,  enter: () => T.enterArena('melee'), poke: pokeCombat, invariants: [crystalStacks] },
+  { name: 'crystal',         frames: 2400,  enter: () => T.enterArena('melee'), poke: pokeCombat, invariants: [crystalStacks] },
   { name: 'free-slots',      frames: 4,    enter: () => {
       bootCombat();
       // 第 1 格放**習得**、第 2 格放**道具**——舊版剛好相反（1 只收卷軸、2 只收習得）
