@@ -552,7 +552,7 @@ CONFIG.melee = {
   bladeHalfDeg: 14,        // 刀刃的角度厚度（判定容錯）：掃過的角度帶再往兩側各放寬這麼多（太小＝對移動目標很容易揮空）
   thrustMinReachF: 0.35,   // 突刺起手時刀尖伸出的比例（判定窗內由此推到 1.0＝刺出去）
   // 擊退：實際位移 ≈ knock / knockDecay。兩個單位半徑和＝24px，位移必須明顯大於它才「推得開」。
-  knockDecay: 6,           // 擊退速度的指數衰減率（越大停得越快）
+  knockDecay: 9,           // 擊退速度的指數衰減率（越大停得越快＝位移越短）。實際位移 ≈ knock / knockDecay
 
   /* ── 體幹（poise）：**只有敵人有**（使用者定案）─────────────────────
      體幹在這套設計裡只有一個工作：把敵人推進踉蹌 → 開處決窗 → 讓玩家回血回怒。
@@ -584,8 +584,11 @@ CONFIG.melee = {
     zoomLerp: 18,     // 拉近很快、拉回沿用一般跟隨速度＝「猛地推進、緩緩退開」
     shake: 9,
     hitstop: 0.10,
+    focusFreeze: true,   // 處決期間**全場停下來**：敵人、子彈、波次全部凍結，只推進處決本身與特效。
+                         // 處決是這套戰鬥的爽點，它值得一個獨佔的鏡頭；而且在人堆裡按下去的那 0.42 秒
+                         // 本來就有無敵，凍住其餘的東西只是把「我現在很安全」這件事也演出來。
   },
-  poiseBreakKnockMul: 2.5, // 體幹破當下的擊退倍率
+  poiseBreakKnockMul: 1.8, // 體幹破當下的擊退倍率（太大會把人推到你追不上＝處決窗變成「看得到吃不到」）
   blockPoiseMul: 0.5,      // 舉盾擋下時，體幹只吃這個比例（擋得住傷害，擋不住全部衝擊）
   hyperPoiseMul: 0.5,      // hyperArmor 武器在判定窗中，體幹傷害只吃這個比例
 
@@ -2957,6 +2960,57 @@ function startRoom() {
   roadCurrent = null;
   startMission();
 }
+/* 三選一卡片的內容（§5.4 全揭露：連數值都要攤開，不能只寫名字）。
+   一律回 [[標籤, 值], ...]，畫的地方只負責排版。 */
+const offerKindName = (o) => ({ weapon: '武器', off: '副手', armor: '甲', equip: '裝備', ability: '習得', item: '卷軸' })[o.type] || o.type;
+function offerName(o) {
+  return o.type === 'weapon' ? WEAPONS[o.id].name
+    : o.type === 'off' ? OFFHANDS[o.id].name
+    : o.type === 'armor' ? ARMORS[o.id].name
+    : o.type === 'equip' ? EQUIPMENT[o.id].name
+    : (artOf(o.id) ? artOf(o.id).name : o.id);
+}
+function offerDetail(o) {
+  const rows = [];
+  if (o.type === 'weapon') {
+    const W = WEAPONS[o.id], L = lightOf(W), H = heavyOf(W);
+    rows.push(['稀有度', W.rarity], ['精良度', '★'.repeat(o.quality || 1)]);
+    if (W.melee) {
+      rows.push(['雙手', (W.hands || 1) >= 2 ? '是' : '否'], ['反裝甲', (W.pierce || 0).toFixed(2)]);
+      if (L) rows.push(['左：' + L.name, Math.round(W.damage * (L.dmgMul || 1)) + ' 傷 / ' + L.poiseDmg + ' 幹'],
+                       ['　一擊', (L.windup + L.activeT + L.recover).toFixed(2) + 's'], ['　觸及', L.reach]);
+      if (H) rows.push(['右：' + H.name, Math.round(W.damage * (H.dmgMul || 1)) + ' 傷 / ' + H.poiseDmg + ' 幹'],
+                       ['　一擊', (H.windup + H.activeT + H.recover).toFixed(2) + 's']);
+    } else {
+      rows.push(['傷害', W.damage], ['體幹傷', W.poiseDmg || 0], ['反裝甲', (W.pierce || 0).toFixed(2)],
+                ['射程', W.range], ['裝填', W.reloadTime + 's']);
+    }
+  } else if (o.type === 'off') {
+    const O = OFFHANDS[o.id];
+    rows.push(['稀有度', O.rarity], ['護弧', O.blockArcDeg + '°'], ['格擋減傷', Math.round(O.blockResist * 100) + '%'],
+              ['怒火成本', '×' + O.wrathMul], ['招架窗', '×' + O.parryWinMul], ['移速', '×' + O.moveMul]);
+  } else if (o.type === 'armor') {
+    const A = ARMORS[o.id];
+    rows.push(['稀有度', A.rarity], ['移速', '×' + A.moveMul], ['怒火獲得', '×' + A.wrathGainMul],
+              ['※ 人間的甲', '在地獄沒有防護']);
+  } else if (o.type === 'equip') {
+    const E = EQUIPMENT[o.id], fx = E.fx || {};
+    rows.push(['稀有度', E.rarity]);
+    const NAMES = { maxHpAdd: '生命上限', dmgResist: '減傷', spreadMul: '發散', reloadMul: '裝填', magMul: '彈夾', moveMul: '移速', senseMul: '感知' };
+    for (const k in fx) rows.push([NAMES[k] || k, (k === 'maxHpAdd' ? '+' : '×') + fx[k]]);
+  } else {
+    const A = artOf(o.id);
+    if (A) {
+      rows.push(['怒火', A.wrathCost != null ? A.wrathCost : '—'], ['前搖', A.castTime != null ? A.castTime + 's' : '即時']);
+      if (A.heal) rows.push(['回復', '+' + A.heal]);
+      if (A.bolt) rows.push(['彈道', A.bolt.dmg + ' 傷 / 破甲 ' + A.bolt.pierce]);
+      if (A.grenade) rows.push(['爆裂', A.grenade.dmg + ' 傷 × ' + A.grenade.pellets]);
+      if (A.scrollUses) rows.push(['次數', A.scrollUses]);
+      rows.push(['放進', '自由位 1~4']);
+    }
+  }
+  return rows;
+}
 const descentItemName = (it) => it.kind === 'weapon' ? WEAPONS[it.id].name
   : it.kind === 'off' ? (OFFHANDS[it.id] || {}).name
   : it.kind === 'armor' ? (ARMORS[it.id] || {}).name
@@ -4368,8 +4422,7 @@ function tickDash(u, dt) {
   const d = u.dash; if (!d) return;
   const D = CONFIG.dash;
   const step = (D.dist / Math.max(0.001, d.dur)) * dt;
-  u.pos.x += Math.cos(d.ang) * step;
-  u.pos.y += Math.sin(d.ang) * step;
+  stepCollide(u, Math.cos(d.ang) * step, Math.sin(d.ang) * step);   // dash 一幀也走二十幾 px，同樣會穿薄牆
   u.dashGhosts.push({ x: u.pos.x, y: u.pos.y, a: 1 });
   if (u.dashGhosts.length > D.trail) u.dashGhosts.shift();
   d.t += dt;
@@ -4595,9 +4648,21 @@ function meleeHitTest(u, s) {
 }
 // 擊退：給目標一個會衰減的速度（不瞬移＝仍走既有的牆面碰撞，不會穿牆）
 function applyKnock(t, ang, power) { if (!power) return; t.kbx = (t.kbx || 0) + Math.cos(ang) * power; t.kby = (t.kby || 0) + Math.sin(ang) * power; }
+/* 位移分段推進：**每段都不超過半個身體半徑，而且每段結束就解一次牆碰**。
+   `pushOutSeg` 是純位置式的解碰（只看「現在有沒有插進牆裡」），沒有掃掠判定——
+   所以一幀跨過整道薄牆時，它會在**另一側**把你推得更遠＝直接穿過去卡在柱子後面。
+   體幹破的擊退（knock × poiseBreakKnockMul）一幀可以走二十幾 px，正好踩中這個洞。
+   分段之後同一套位置式解碰就夠用了，不必寫掃掠。 */
+function stepCollide(u, dx, dy) {
+  const L = Math.hypot(dx, dy);
+  if (L < 1e-6) return;
+  const maxStep = Math.max(2, (u.radius || 10) * 0.5);
+  const n = Math.max(1, Math.ceil(L / maxStep));
+  for (let i = 0; i < n; i++) { u.pos.x += dx / n; u.pos.y += dy / n; collideWalls(u); }
+}
 function tickKnock(u, dt) {
   if (!u.kbx && !u.kby) return;
-  u.pos.x += u.kbx * dt; u.pos.y += u.kby * dt;
+  stepCollide(u, u.kbx * dt, u.kby * dt);
   const k = Math.exp(-CONFIG.melee.knockDecay * dt);
   u.kbx *= k; u.kby *= k;
   if (Math.abs(u.kbx) < 2 && Math.abs(u.kby) < 2) { u.kbx = 0; u.kby = 0; }
@@ -5789,6 +5854,16 @@ function update(dt) {
   updateCamera(dt);
   shakeAmt = Math.max(0, shakeAmt - CONFIG.juice.shakeDecay * dt); kickY *= Math.exp(-CONFIG.juice.shakeDecay * dt);   // 震動/相機踢衰減
   if (cutscene && cutscene.lock) return;   // 演出鎖控制：只跑鏡頭/演出，不跑常規 sim
+  /* 處決特寫：其餘的一切凍結（見 CONFIG.melee.exec.focusFreeze）。
+     只推進處決動作本身與純視覺的東西——飄字/粒子/相機還要動，不然畫面看起來像當機。 */
+  const execFocus = CONFIG.melee.exec.focusFreeze && knight() && knight().exec;
+  if (execFocus) {
+    const k = knight();
+    if ((k.invulnT || 0) > 0) k.invulnT -= dt;
+    tickExecution(k, dt);
+    updateParticles(dt); updateFloaters(dt);
+    return;
+  }
 
   const juiceDecay = (u) => { if (u.recoil > 0) u.recoil = Math.max(0, u.recoil - CONFIG.juice.recoilDecay * dt); if (u.hitFlash > 0) u.hitFlash -= dt; if (u.cardHitT > 0) u.cardHitT -= dt; if ((u.invulnT || 0) > 0) u.invulnT -= dt; if ((u.dashCd || 0) > 0) u.dashCd -= dt; if (u.dashGhosts && u.dashGhosts.length && !u.dash) { for (const g of u.dashGhosts) g.a -= dt * 4; u.dashGhosts = u.dashGhosts.filter(g => g.a > 0); } if (u.flinchX) { u.flinchX *= Math.exp(-22 * dt); u.flinchY *= Math.exp(-22 * dt); } };
   const meleeFxDecay = (u) => { for (const k of ['parryFxT', 'poiseBreakFxT', 'guardBreakFxT', 'flinchFxT', 'noWrathFxT', 'atkRestT']) if (u[k] > 0) u[k] -= dt; };
@@ -7803,17 +7878,40 @@ function drawDescent() {
 
   if (descentPhase === 'REWARD') {
     ctx.textAlign = 'center'; ctx.fillStyle = '#e8dcc8'; ctx.font = 'bold 16px Consolas';
-    ctx.fillText('挑一個（看得一清二楚，沒有賭）', cv.width / 2, 150);
-    ctx.textAlign = 'left';
-    const bw = 520, bh = 62, x = cv.width / 2 - bw / 2;
-    (descentOffers || []).forEach((o, i) => {
-      const y = 186 + i * (bh + 12);
-      ctx.fillStyle = 'rgba(26,20,17,0.95)'; ctx.fillRect(x, y, bw, bh);
-      ctx.lineWidth = 2; ctx.strokeStyle = o.color || '#c9a06a'; ctx.strokeRect(x, y, bw, bh);
-      ctx.font = 'bold 16px Consolas'; ctx.fillStyle = o.color || '#e8eef5';
-      ctx.fillText(`[${i + 1}]`, x + 16, y + 38);
-      ctx.font = '15px Consolas'; ctx.fillStyle = '#e8eef5'; ctx.fillText(o.label, x + 58, y + 38);
-      descentRects.push({ x, y, w: bw, h: bh, fn: () => descentPick(i) });
+    ctx.fillText('挑一個（看得一清二楚，沒有賭）', cv.width / 2, 148);
+    ctx.font = '11px Consolas'; ctx.fillStyle = '#8b7a6a';
+    ctx.fillText('這一段不限時。數字鍵或點擊。', cv.width / 2, 168);
+    // 直立卡片、左到右。全揭露＝連數值都攤開（§5.4：多巴胺來自「我在三個好東西裡挑一個」）
+    const list = descentOffers || [];
+    const cw = 210, ch = 320, gap = 22;
+    const totalW = list.length * cw + (list.length - 1) * gap;
+    const x0 = cv.width / 2 - totalW / 2, y = 196;
+    list.forEach((o, i) => {
+      const x = x0 + i * (cw + gap);
+      ctx.fillStyle = 'rgba(26,20,17,0.96)'; ctx.fillRect(x, y, cw, ch);
+      ctx.lineWidth = 2; ctx.strokeStyle = o.color || '#c9a06a'; ctx.strokeRect(x, y, cw, ch);
+      // 頂端色帶＝稀有度/類別，一眼分得出來
+      ctx.fillStyle = o.color || '#c9a06a'; ctx.fillRect(x, y, cw, 5);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 13px Consolas'; ctx.fillStyle = o.color || '#c9a06a';
+      ctx.fillText(offerKindName(o), x + cw / 2, y + 30);
+      ctx.font = 'bold 19px Consolas'; ctx.fillStyle = '#f2ead9';
+      ctx.fillText(offerName(o), x + cw / 2, y + 60);
+      ctx.textAlign = 'left';
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + 14, y + 74); ctx.lineTo(x + cw - 14, y + 74); ctx.stroke();
+      offerDetail(o).forEach((row, r) => {
+        const ry = y + 98 + r * 20;
+        if (ry > y + ch - 46) return;
+        ctx.font = '11px Consolas'; ctx.fillStyle = '#8b97a5'; ctx.fillText(row[0], x + 14, ry);
+        ctx.textAlign = 'right'; ctx.font = '12px Consolas'; ctx.fillStyle = '#dfe8f2';
+        ctx.fillText(String(row[1]), x + cw - 14, ry); ctx.textAlign = 'left';
+      });
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 15px Consolas'; ctx.fillStyle = o.color || '#c9a06a';
+      ctx.fillText(`[${i + 1}]`, x + cw / 2, y + ch - 18);
+      ctx.textAlign = 'left';
+      descentRects.push({ x, y, w: cw, h: ch, fn: () => descentPick(i) });
     });
     return;
   }
@@ -7828,13 +7926,20 @@ function drawDescent() {
   ctx.fillText('身上（帶得過去）', lx, 148);
   ctx.fillText('袋子（帶不過去）', rx, 148);
   ctx.font = '13px Consolas';
+  /* 自由位要**列出來**：它們是「裝非武器的東西會放到哪」的答案。
+     這裡本來還在讀 itemId/abilityId——那兩個欄位在自由位統一之後永遠是 null，
+     所以畫面上「卷軸／習得」永遠顯示空的，玩家自然看不出東西裝到哪去了。 */
+  const fe = freeEntries(r);
   const body = [
     ['主手', wN(r.weaponId) + (r.quality >= 2 ? ' ' + '★'.repeat(r.quality) : '')],
     ['副手', handsOf(r.weaponId) >= 2 ? '（雙手武器佔滿）' : oN(r.offId)],
     ['甲', (ARMORS[r.armorId] || ARMORS.none).name],
-    ['卷軸', aN(r.itemId)], ['習得', aN(r.abilityId)],
     ['裝備', r.equipId && EQUIPMENT[r.equipId] ? EQUIPMENT[r.equipId].name : '—'],
   ];
+  for (let fi = 0; fi < memberFreeSlots(KNIGHT_ID); fi++) {
+    const ex = fe[fi];
+    body.push(['自由 ' + (fi + 1), ex && ex.id ? (aN(ex.id) + (ex.kind === 'item' ? ' ×' + (ex.count || 0) : '')) : '—（空）']);
+  }
   body.forEach(([k, v], i) => {
     const y = 176 + i * 26;
     ctx.fillStyle = 'rgba(24,19,16,0.9)'; ctx.fillRect(lx, y - 15, colW, 22);

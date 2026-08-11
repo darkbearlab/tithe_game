@@ -520,14 +520,16 @@ function roomChainWorks() {
    這是刻意的：滑鼠 hit-test 的探針很容易在版面微調後變成假綠。
    這條顧的是「這一停真的走得完」：選了獎勵要進袋、裝上要離開袋子、落地要把袋子清空。 */
 const descProbe = { phase0: null, afterPick: null, bagAfterPick: 0, bagAfterEquip: 0, sceneEnd: null, bagEnd: 0, equipping: null, rosterChanged: false };
-// 裝上去的那一件，現在應該真的掛在騎士身上的對應欄位
+/* 裝上去的那一件，現在應該真的掛在騎士身上的對應欄位。
+   ⚠️ 術/道具要查**自由位（freeExtra）**，不是舊的 itemId/abilityId——
+   自由位統一之後那兩個欄位只是初始值的入口，裝上去不會寫回去。
+   照舊查的話，東西明明放進了自由位，探針卻會說「沒裝上」。 */
 const onBody = (r, it) => !!(r && it && (
   it.kind === 'weapon' ? r.weaponId === it.id :
   it.kind === 'off' ? r.offId === it.id :
   it.kind === 'armor' ? r.armorId === it.id :
   it.kind === 'equip' ? r.equipId === it.id :
-  it.kind === 'ability' ? r.abilityId === it.id :
-  it.kind === 'item' ? r.itemId === it.id : false));
+  (it.kind === 'ability' || it.kind === 'item') ? (r.freeExtra || []).some(e => e && e.id === it.id) : false));
 function pokeDescent(i) {
   if (i === 0) descProbe.phase0 = T.descentPhase;
   // 多塞一件進袋子：不然「選一個、裝一個」剛好把袋子清空，最後那條「落地要清袋」就變成空轉
