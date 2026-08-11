@@ -2328,7 +2328,6 @@ let simTime, deadCount;
 // 出口是房間中央的洞（DESIGN.md §5.3），洞在清場那一刻才開，所以過關條件就是清場本身。
 let roomCleared = false;
 let exitPortal = null;   // 清場後開啟的洞 { x, y, t, open }（t＝開啟演出進度）
-let exitPrompt = false;  // 站上洞口的確認框（避免誤觸就掉下去）
 /* 下墜整備（DESIGN.md §5.4b／§6.2b）：跳進洞之後、落地之前的那一停。
    一次停頓做完兩件事，順序固定：**先三選一，再配裝**（獎勵先落袋，才知道自己在配什麼）。
    **暫停、不限時**——§5.4 已經承諾「思考在房間之間，執行在房間之內」，加倒數會逼玩家
@@ -2790,7 +2789,7 @@ function startMission() {
   const faceInto = ENTRY ? angTo(ENTRY, { x: WORLD.w / 2, y: WORLD.h / 2 }) : 0;   // 開場面向地圖內部
   for (const p of players) { p.facing = faceInto; p.idleAnchor = faceInto; }
   controlledId = 0;
-  enemies = []; bullets = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; floaters = []; execCount = 0; exitPortal = null; exitPrompt = false; shakeAmt = 0; kickY = 0; hitstopT = 0;
+  enemies = []; bullets = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; floaters = []; execCount = 0; exitPortal = null; shakeAmt = 0; kickY = 0; hitstopT = 0;
   attackTokens = new Map(); enemyIdSeq = 1; drops = []; fileDrop = null;
   cacheGround = (MAP.caches || []).map(c => ({ x: c.x, y: c.y }));   // 密封容器：本場地圖配置的（撿走撤離才開封）
   for (const p of players) p.caches = 0;
@@ -3523,7 +3522,7 @@ function startIntro() {
   for (const d of (MAP.destructibles || [])) { d.cur = d.intact; d.curHp = d.hp; }
   enemyIdSeq = 1;
   bullets = []; grenades = []; flashFx = []; particles = []; drops = []; fileDrop = null;
-  cacheGround = []; prisoners = []; corpses = []; decals = []; floaters = []; execCount = 0; exitPortal = null; exitPrompt = false; shakeAmt = 0; kickY = 0; hitstopT = 0;
+  cacheGround = []; prisoners = []; corpses = []; decals = []; floaters = []; execCount = 0; exitPortal = null; shakeAmt = 0; kickY = 0; hitstopT = 0;
   introGuards = []; introConsole = null;
   // 騎士＝出身選定的孤身一人；醒來處在戰場左側
   const wake = { x: 220, y: 360 };
@@ -5668,10 +5667,6 @@ cv.addEventListener('mousedown', e => {
     if (e.button === 0) mouse.down = true;
     return;
   }
-  if (scene === 'COMBAT' && exitPrompt) {   // 洞口確認框：右鍵＝取消（Esc 會解除 pointer lock，不能用）
-    if (e.button === 2) { exitPrompt = false; if (exitPortal) exitPortal.declined = true; }
-    return;
-  }
   if (e.button === 0) mouse.down = true;                                  // 左鍵開火
   else if (e.button === 2) { if (CONFIG.scope.toggle) scopeToggled = !scopeToggled; else scopeHeld = true; }   // 右鍵＝望遠/偵察（按住；技能改空白鍵）
 });
@@ -5751,15 +5746,6 @@ window.addEventListener('keydown', e => {
     if (k === 'escape') { enterOrigin(); return; }
     if (k >= '1' && k <= '9') { const id = oathPickList[parseInt(k, 10) - 1]; if (id) toggleOathEquip(id); return; }
     return;
-  }
-  /* 洞口確認框：擋在所有戰鬥熱鍵之前。
-     **刻意不收空白鍵**——空白是 dash，用它確認等於把「誤觸」從走路換到按鍵上，正是這個框要防的事。
-     **刻意不收 Esc**——瀏覽器會在 Esc 解除 pointer lock，畫面會直接掉回「未鎖定」的黑幕，
-     看起來像當機。取消一律用 Backspace（或右鍵）。 */
-  if (scene === 'COMBAT' && exitPrompt) {
-    if (k === 'enter') { exitPrompt = false; startVacuum(); e.preventDefault(); return; }
-    if (k === 'backspace') { exitPrompt = false; if (exitPortal) exitPortal.declined = true; e.preventDefault(); return; }
-    e.preventDefault(); return;   // 框開著的時候吞掉其餘輸入
   }
   if (scene === 'DESCENT') {   // 全部操作都有鍵盤路徑（見 drawDescent 的註解）
     const n = parseInt(k, 10);
@@ -5848,8 +5834,6 @@ window.addEventListener('keyup', e => {
 function update(dt) {
   if (scene !== 'COMBAT') return;   // MAP/REST/結算：不模擬、不需鏡頭（此時 cam/players 可能尚未建立）
   if (!Input.locked) return;        // 戰鬥：滑鼠鎖定後才開始/繼續推進（未鎖定＝暫停）
-  if (exitPrompt) return;           // 洞口確認框：整個 sim 凍結。房間已清空，凍結沒有代價，
-                                    // 而且不凍的話你會一邊看對話框一邊被 WASD 推出判定圈
   if (cutscene) cutsceneTick(dt);   // 第0關演出導演（推進節拍）
   updateCamera(dt);
   shakeAmt = Math.max(0, shakeAmt - CONFIG.juice.shakeDecay * dt); kickY *= Math.exp(-CONFIG.juice.shakeDecay * dt);   // 震動/相機踢衰減
@@ -5977,12 +5961,11 @@ function update(dt) {
   const kn = knight();
   if (!kn || !knightAlive()) endMission();
   else if (roomCleared && !exitPortal) endMission();                                  // 序章等不開洞的情境：沿用清場即結束
-  else if (exitPortalReady() && kn.state === 'CONTROLLED') {
-    // 站上洞口＝**先問一次**，不直接掉下去。清完場的走動很隨意（撿東西、繞一圈），
-    // 一腳踩進去就結束這一房會是最無謂的一種挫折。
-    const on = dist(kn.pos, exitPortal) <= CONFIG.exit.radius;
-    if (on && !exitPortal.declined) { exitPrompt = true; }
-    if (!on) exitPortal.declined = false;   // 走開再回來＝可以再問一次（不然拒絕過就永遠問不到了）
+  else if (exitPortalReady() && kn.state === 'CONTROLLED' && vacuumT <= 0) {
+    /* 站上洞口＝直接跳。**確認框拿掉了**：它當初存在是為了防「還沒撿完就踩進去」，
+       但自動吸取（startVacuum）之後，地上的東西一件都不會留下——踩進去已經沒有任何損失，
+       那個框就只剩摩擦。少一次確認，節奏也更順。 */
+    if (dist(kn.pos, exitPortal) <= CONFIG.exit.radius) startVacuum();
   }
 }
 
@@ -6990,23 +6973,6 @@ function drawHUD() {
   if (drops.length || backpack.length) { ctx.fillStyle = '#ffe08a'; ctx.fillText(`BACKPACK ${backpack.length}${drops.length ? `   · 地上 ${drops.length} 件可撿` : ''}`, cv.width - 16, 40); }
 
   // 洞口確認框。清完場的走動很隨意，一腳踩進去就結束這一房會是最無謂的一種挫折。
-  if (exitPrompt) {
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(6,8,12,0.72)'; ctx.fillRect(0, 0, cv.width, cv.height);
-    const w = 420, h = 132, x = cv.width / 2 - w / 2, y = cv.height / 2 - h / 2;
-    ctx.fillStyle = 'rgba(18,14,12,0.96)'; ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = 'rgba(255,155,90,0.85)'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
-    ctx.fillStyle = '#ffcd96'; ctx.font = 'bold 20px Consolas';
-    ctx.fillText('跳下去？', cv.width / 2, y + 42);
-    ctx.fillStyle = '#9fb3c8'; ctx.font = '13px Consolas';
-    ctx.fillText('往下一層。這一房不會再回來了。', cv.width / 2, y + 70);
-    ctx.font = 'bold 14px Consolas';
-    ctx.fillStyle = '#ffd27a'; ctx.fillText('[Enter] 跳', cv.width / 2 - 82, y + 106);
-    ctx.fillStyle = '#9fb3c8'; ctx.fillText('[Backspace/右鍵] 還沒', cv.width / 2 + 92, y + 106);
-    ctx.textAlign = 'left';
-    return;   // 框開著就不畫其餘 HUD＝畫面乾淨、注意力在這一個決定上
-  }
-
   /* 左上角常駐一行：第幾層、第幾間房、第幾波。
      §5.5 說「單一出口讓路線規劃消失了，便宜的補法是每層開頭報一次」——
      一行字就夠，你要知道還剩多少、什麼時候該把資源留給層王。 */

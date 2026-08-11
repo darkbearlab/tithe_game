@@ -156,7 +156,7 @@ const EPILOGUE = `
   get execCount() { return execCount; },
   get knight() { return knight(); },
   get exitPortal() { return exitPortal; },
-  get exitPrompt() { return exitPrompt; },
+  get vacuumT() { return vacuumT; },
   get floaters() { return floaters; },
   setScene(s) { scene = s; },
   forceMap(k) { forcedMap = k; },
@@ -339,17 +339,18 @@ function sampleNewFx() {
 }
 function dashHappened() { return sawDash ? null : '整場沒有 dash 過——空白鍵的閃避路徑可能斷了'; }
 
-/* 出口的洞（D6 第一塊）：清場 → 開洞 → 走進去才過關。
-   這條探針顧的是「清場之後還走得完」——改成要走進洞之後，過關路徑就不再是
-   自動發生的了，很容易在後續改動中悄悄斷掉而測試全綠。 */
-let sawPortal = false, sawExitPrompt = false;
+/* 出口的洞：清場 → 開洞 → **走進去**才過關（沒有確認框了，見下）。
+   這條探針顧的是「清場之後還走得完」——過關路徑不是自動發生的，很容易在後續改動中
+   悄悄斷掉而測試全綠。確認框拿掉之後，它改成守「踩進去要跑吸取演出」：
+   那是現在唯一會把地上剩下的東西捲走的地方，斷了就會靜靜地漏東西。 */
+let sawPortal = false, sawVacuum = false;
 function samplePortal() {
   if (!sawPortal && T.exitPortal && T.exitPortal.open) sawPortal = true;
-  if (!sawExitPrompt && T.exitPrompt) sawExitPrompt = true;
+  if (!sawVacuum && T.vacuumT > 0) sawVacuum = true;
 }
 function portalRun() {
   if (!sawPortal) return '清場之後沒有開出口的洞';
-  if (!sawExitPrompt) return '站上洞口沒有跳出確認框——誤觸保護沒生效';
+  if (!sawVacuum) return '走進洞裡沒有跑吸取演出——地上剩的東西不會被捲走（而且過關路徑可能沒接上）';
   if (T.scene === 'COMBAT') return '確認之後還停在 COMBAT——過關判定沒接上';
   return null;
 }
@@ -777,7 +778,6 @@ function pokeCombat(i) {
   if (ep && ep.open) { const k = T.knight; if (k) { k.pos.x = ep.x + 6; k.pos.y = ep.y + 6; } }
   // 洞口確認框：按 Enter 跳下去。**框本身也要被驗到**（見 portalRun）——
   // 它是誤觸保護，斷掉的話玩家會莫名其妙地被結束一房，而且不會有例外可抓。
-  if (T.exitPrompt) { key('keydown', 'Enter'); key('keyup', 'Enter'); }
   const mm = { movementX: (i % 7) - 3, movementY: (i % 5) - 2, clientX: 640, clientY: 360, preventDefault() {} };
   fire(listeners.canvas, 'mousemove', mm); fire(listeners.window, 'mousemove', mm);
 }
@@ -796,7 +796,7 @@ for (const s of list) {
   let stage = 'enter', i = 0;
   try {
     seedRng(0x51ED + sIdx);   // 每個情境固定種子＝失敗可以原地重現
-    sawEnemyHurt = false; sawExec = false; sawFloater = false; sawDash = false; sawPortal = false; sawExitPrompt = false;
+    sawEnemyHurt = false; sawExec = false; sawFloater = false; sawDash = false; sawPortal = false; sawVacuum = false;
     sawWrathGain = false; prevWrath = null; prevHp = null;
     wrathProbe.start = wrathProbe.max = wrathProbe.mark = wrathProbe.after = null; wrathProbe.foes = wrathProbe.died = false;
     ultProbe.before = ultProbe.max = ultProbe.after = null; ultProbe.hit = false;
