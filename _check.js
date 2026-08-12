@@ -160,6 +160,21 @@ const EPILOGUE = `
   get floaters() { return floaters; },
   get motes() { return motes; },
   get moteGrabs() { return moteGrabs; },
+  AFFIXES, CONFIG_AFFIX: CONFIG.affix, rollWeaponAffixes, procCount, weaponInst, lootWeaponEntry, affixBurst,
+  get descentOffers() { return descentOffers; },
+  get affixProcCount() { return affixProcCount; },
+  get beams() { return beams; },
+  /* 把一條詞條裝到騎士主手上。刻意用**遊戲自己的**函式組起來（weaponInst → effWeapon →
+     equipActiveSet → applyWeaponAffixHooks），不是在 harness 裡另寫一份——
+     那樣才會在「掛勾這條路斷了」的時候紅。 */
+  giveKnightAffix(aid) {
+    const k = knight(); if (!k) return false;
+    const s = activeSet(k); if (!s || !s.main) return false;
+    const inst = weaponInst(k.weaponId, { quality: 5, enh: [{ kind: 'affix', affix: aid }] });
+    s.main.weapon = effWeapon(inst); s.main.quality = inst.quality; s.main.enh = inst.enh;
+    equipActiveSet(k); applyWeaponAffixHooks();
+    return true;
+  },
   setScene(s) { scene = s; },
   forceMap(k) { forcedMap = k; },
 };
@@ -253,6 +268,10 @@ const SCENARIOS = [
     }, invariants: [freeSlotsAreGeneric] },
   { name: 'descent-timeout', frames: 40, enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeTimeout, invariants: [descentTimesOut] },
   { name: 'descent',         frames: 40,  enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeDescent, invariants: [descentFlowWorks, swapGoesBackToBag] },
+  { name: 'affix-roll',      frames: 2,   enter: () => T.enterArena('melee'), invariants: [affixRollShape, affixLootPipeline] },
+  { name: 'affix-offer',     frames: 20,  enter: () => { bootCombat(); T.enterDescent(); }, poke: pokeAffixOffer, invariants: [offerKeepsAffixes] },
+  { name: 'affix-proc',      frames: 240, enter: () => T.enterArena('melee'), poke: pokeAffixProc,     invariants: [affixProcFires, procGivesNoWrath] },
+  { name: 'affix-everyhit',  frames: 300, enter: () => T.enterArena('melee'), poke: pokeAffixEveryHit, invariants: [affixNotEveryHit] },
   { name: 'combat-arena-ranged', frames: 900, enter: () => T.enterArena('ranged'), poke: pokeCombat, invariants: [combatHappened, noMorale, noStealth, noTacticalAI] },
   { name: 'arena-select',    frames: 30,  enter: () => T.enterArenaSelect() },
   { name: 'rest',            frames: 60,  enter: () => { bootCampaignToMap(); T.enterRest(); } },
@@ -680,6 +699,149 @@ function executionWindowExists() {
   return bad.length ? `這些組合開不出處決窗：${bad.slice(0, 4).join('、')}${bad.length > 4 ? ` …共 ${bad.length} 組` : ''}` : null;
 }
 
+/* ── 武器詞條（HARVEST §E 定案）──────────────────────────────────────────
+   三條規則各給一條探針，因為它們壞掉的時候**都不會有紅字**：
+     ① 兩池的形狀：數值型不設上限（長尾要真的存在）、效果型每把 1~2、精良度＝機率倍率
+     ② 效果型真的會觸發（掛勾這條路斷了的話，詞條就只是卡片上的一行字）
+     ③ **效果型絕不掛在每一刀**——這條是整個近戰讀招遊戲的存亡條件（§E）：
+        掛每一刀＝你不再需要讀招，站著揮就好，遊戲變成彈幕自動戰鬥。 */
+function affixRollShape() {
+  const A = T.CONFIG_AFFIX;
+  if (!A || !T.rollWeaponAffixes) return '詞條擲骰沒有從沙箱丟出來，這條探針量不到東西';
+  const N = 600;
+  const sample = (id, q) => {
+    let procMax = 0, statMax = 0, total = 0, sawNeeds = false;
+    for (let i = 0; i < N; i++) {
+      const enh = T.rollWeaponAffixes(id, q);
+      const procs = enh.filter(e => T.AFFIXES[e.affix].kind === 'proc');
+      const stats = enh.filter(e => T.AFFIXES[e.affix].kind === 'stat');
+      if (procs.some(e => T.AFFIXES[e.affix].needs === 'heavy')) sawNeeds = true;
+      procMax = Math.max(procMax, procs.length); statMax = Math.max(statMax, stats.length);
+      total += enh.length;
+    }
+    return { procMax, statMax, avg: total / N, sawNeeds };
+  };
+  const lo = sample('sword', 1), hi = sample('sword', 5);
+  if (hi.procMax > A.procMax) return `效果型滾出 ${hi.procMax} 條，上限是 ${A.procMax}——它是這把武器的身分，兩條以上就只剩雜訊`;
+  if (lo.procMax > A.procMax) return `效果型滾出 ${lo.procMax} 條，上限是 ${A.procMax}`;
+  if (hi.statMax < 4) return `${N} 次擲骰下來，數值型最多只滾出 ${hi.statMax} 條——長尾不見了（數值型不該有上限）`;
+  if (!(hi.avg > lo.avg * 1.5)) return `精良1 平均 ${lo.avg.toFixed(2)} 條、精良5 平均 ${hi.avg.toFixed(2)} 條——精良度沒有當成機率倍率在用`;
+  if (lo.sawNeeds || hi.sawNeeds) return '長劍身上滾出了「重擊」限定的效果型詞條——它沒有右鍵那一招，那是一條永遠不會觸發的死詞條';
+  return null;
+}
+/* 掉落管線：擲出來的詞條要一路帶到手上。這條擋的是「某一站又把 enh 寫成 []」——
+   那種回歸不會丟例外、武器還在，只是**每一把都變白板**，而整個 §6 的成長主軸就空了。 */
+function affixLootPipeline() {
+  if (!T.lootWeaponEntry) return 'lootWeaponEntry 沒有從沙箱丟出來，這條探針量不到東西';
+  let withAffix = 0;
+  for (let i = 0; i < 200; i++) if ((T.lootWeaponEntry('sword', 5).enh || []).length) withAffix++;
+  if (!withAffix) return '取得 200 把精良5 的長劍，沒有一把帶詞條——掉落那一站沒有在擲';
+  return null;
+}
+/* 三選一 → 袋子：卡片上寫著的詞條要真的跟著進袋（§5.4 全揭露的另一半——
+   攤開來給你看卻不給你，比不攤開更糟）。這條守的正是原本 `enh: []` 那一行。 */
+const offerProbe = { armed: false, got: null, equipped: false, onKnight: -1 };
+function pokeAffixOffer(i) {
+  if (i === 1) {
+    const offers = T.descentOffers; if (!offers || !offers.length) return;
+    // 就地改寫第一張卡＝不必等隨機剛好抽到武器（三選一的內容是隨機的，探針不該賭它）
+    Object.assign(offers[0], { type: 'weapon', id: 'sword', quality: 5,
+      enh: [{ kind: 'affix', affix: 'keen', value: 9 }, { kind: 'affix', affix: 'riftlight' }] });
+    offerProbe.armed = true;
+  }
+  if (i === 2) key('keydown', '1');
+  if (i === 5) offerProbe.got = (T.descentBag || []).find(x => x.kind === 'weapon' && x.id === 'sword');
+  // 裝到主手 → 落地 → 下一間房：詞條要跟著武器走過那道門（身上的留著，袋子裡的才會沒）
+  if (i === 6) offerProbe.equipped = T.descentEquipTo((T.descentBag || []).indexOf(offerProbe.got), 'main');
+  if (i === 8) key('keydown', 'Enter');
+  if (i === 12) offerProbe.onKnight = T.knight ? ((T.knight.enh || []).length) : -1;
+}
+function offerKeepsAffixes() {
+  if (!offerProbe.armed) return '沒改到三選一的卡片，這條探針量不到東西';
+  const g = offerProbe.got;
+  if (!g) return '選了武器卡，袋子裡卻沒有那把武器';
+  const n = (g.enh || []).length;
+  if (n !== 2) return `卡片上寫著 2 條詞條，進袋之後剩 ${n} 條——三選一那一站把詞條丟掉了`;
+  if (!offerProbe.equipped) return '裝到主手失敗，跨房那一段量不到東西';
+  if (offerProbe.onKnight !== 2) return `落地進到下一間房之後，騎士手上那把只剩 ${offerProbe.onKnight} 條詞條——詞條沒有跟著武器過那道門`;
+  return null;
+}
+
+/* ② 掛在「你打對了」的瞬間：把敵人的體幹壓到剩一點，一刀打破 → 裂光必須真的射出來。
+   斷言看的是 **beams**（效果本身），不是只看計數器——只看計數器的話，
+   把 affixBeam 的內容整段刪掉還是綠的（CLAUDE.md 記過這種假綠）。 */
+const procProbe = { armed: false, hits: 0, sawBeam: false, procs0: 0 };
+function pokeAffixProc(i) {
+  const k = T.knight; if (!k) return;
+  if (i === 0) { procProbe.armed = T.giveKnightAffix('riftlight'); procProbe.procs0 = T.affixProcCount; }
+  if (i < 10) return;
+  dragFoeToBlade();
+  const e = (T.enemies || []).find(x => !x.dead && !x.dummy);
+  if (e) e.poise = 1;                                  // 下一刀就會打破體幹＝製造「你打對了」的那一瞬間
+  if (i % 25 === 5) mouseEv('mousedown', 0);
+  if (i % 25 === 12) mouseEv('mouseup', 0);
+  if ((T.beams || []).length) procProbe.sawBeam = true;
+  /* 效果型詞條**不能回怒**（DESIGN §2.3 那個「一次打很多人的招會自己養活自己」的坑，
+     大絕招當初就是為了它才把清空排在傷害之後）。直接放一發 AOE 量：敵人要掉血、怒火不准漲。 */
+  if (i >= 60 && !burstProbe.ran) {
+    const foes = (T.enemies || []).filter(e => !e.dead && !e.dummy).slice(0, 3);   // 試作場的非假人會被打光，所以是「第一次有得打就量」，不是釘死某一幀
+    if (foes.length) {
+      foes.forEach((e, n) => { e.pos.x = k.pos.x + 18 + n * 6; e.pos.y = k.pos.y; });
+      /* ⚠️ 先把怒火壓低。**滿的時候量不到東西**——gainWrath 會被上限夾住，
+         於是「回怒了」和「沒回怒」看起來一模一樣，探針靜靜地空轉（第一版就是這樣假綠的）。 */
+      k.wrath = k.wrathMax * 0.4;
+      burstProbe.hp0 = foes.reduce((a, e) => a + e.hp, 0); burstProbe.w0 = k.wrath;
+      T.affixBurst(k.pos, 200, 20, 10, k, '#ffffff');
+      burstProbe.w1 = k.wrath; burstProbe.hp1 = foes.reduce((a, e) => a + e.hp, 0);
+      burstProbe.ran = true;
+    }
+  }
+}
+const burstProbe = { ran: false, hp0: 0, hp1: 0, w0: 0, w1: 0 };
+function procGivesNoWrath() {
+  if (!burstProbe.ran) return '沒放到那一發 AOE，這條探針量不到東西';
+  if (!(burstProbe.hp1 < burstProbe.hp0)) return 'AOE 放出去但敵人沒掉血——量到的不是那一發';
+  if (burstProbe.w1 > burstProbe.w0 + 0.001) return `一發 AOE 讓怒火從 ${burstProbe.w0.toFixed(1)} 漲到 ${burstProbe.w1.toFixed(1)}——詞條變成怒火發電機了（打很多人＝回很多怒）`;
+  return null;
+}
+function affixProcFires() {
+  if (!procProbe.armed) return '沒把詞條裝到騎士主手上，這條探針量不到東西';
+  const n = T.affixProcCount - procProbe.procs0;
+  if (n <= 0) return '打破了體幹，但效果型詞條一次都沒觸發——Hooks 那條掛勾斷了';
+  if (!procProbe.sawBeam) return '詞條說觸發了，但畫面上沒有出現裂光——效果本身是空的';
+  return null;
+}
+/* ③ **不能掛在每一刀**。做法：裝上同一條詞條，但把敵人的體幹按在滿格
+   （＝這一整場一次都沒有「打對」），然後一直砍。砍中很多刀、proc 必須是 0。
+   把 riftlight 的 on 改成 'attackHit' 這條就會紅——驗過。 */
+const everyHitProbe = { armed: false, hits: 0, procs: 0 };
+function pokeAffixEveryHit(i) {
+  const k = T.knight; if (!k) return;
+  if (i === 0) { everyHitProbe.armed = T.giveKnightAffix('riftlight'); everyHitProbe.procs = T.affixProcCount; }
+  if (i < 10) return;
+  dragFoeToBlade();
+  for (const e of (T.enemies || [])) { if (!e.dead && e.poiseMax) { e.poiseMax = 99999; e.poise = 99999; } }   // 體幹永遠破不了＝這一場沒有任何「打對」
+  if (i % 25 === 5) mouseEv('mousedown', 0);
+  if (i % 25 === 12) mouseEv('mouseup', 0);
+}
+/* 砍中幾刀＝逐幀比對血量。用 WeakMap 記上一幀的值，**不要往單位上塞欄位**——
+   noMorale/noStealth 那幾條探針是靠「單位身上不該有這些欄位」在守的，harness 自己弄髒單位
+   等於在幫未來的假綠鋪路。 */
+let hpSeen = new WeakMap();
+function sampleAffixHits() {
+  for (const e of (T.enemies || [])) {
+    const prev = hpSeen.get(e);
+    if (prev != null && e.hp < prev) everyHitProbe.hits++;
+    hpSeen.set(e, e.hp);
+  }
+}
+function affixNotEveryHit() {
+  if (!everyHitProbe.armed) return '沒把詞條裝到騎士主手上，這條探針量不到東西';
+  if (everyHitProbe.hits < 5) return `整場只砍中 ${everyHitProbe.hits} 刀，量不到「每一刀都觸發」這件事`;
+  const n = T.affixProcCount - everyHitProbe.procs;
+  return n ? `一次都沒打對（體幹按在滿格、沒招架、沒處決），效果型詞條卻觸發了 ${n} 次——它被掛在每一刀上了` : null;
+}
+
 /* 撿起來的武器要**帶著強化**。spawnDrop 帶上了 quality/enh，撿取那一步若只抄 {kind,id,ammo}
    就會靜靜地把它們洗掉——而且看起來一切正常（武器還在，只是變白板）。
    TITHE 以掉落為成長主軸，所以這條值得一個探針而不是一句註解。 */
@@ -880,6 +1042,10 @@ for (const s of list) {
     toProbe.entered = toProbe.ticked = false; toProbe.sceneEnd = null; toProbe.bagEnd = -1;
     msProbe.light = msProbe.heavy = msProbe.offW = null; msProbe.offHand = false;
     dropProbe.got = null;
+    procProbe.armed = procProbe.sawBeam = false; procProbe.hits = procProbe.procs0 = 0;
+    burstProbe.ran = false; burstProbe.hp0 = burstProbe.hp1 = burstProbe.w0 = burstProbe.w1 = 0;
+    everyHitProbe.armed = false; everyHitProbe.hits = everyHitProbe.procs = 0; hpSeen = new WeakMap();
+    offerProbe.armed = false; offerProbe.got = null; offerProbe.equipped = false; offerProbe.onKnight = -1;
     awakeProbe.sampled = false; awakeProbe.total = awakeProbe.idle = 0;
     descProbe.phase0 = descProbe.afterPick = descProbe.sceneEnd = descProbe.equipping = null;
     descProbe.bagAfterPick = descProbe.bagEnd = 0; descProbe.rosterChanged = false; descProbe.swapBack = false; descProbe.stillInBag = false;
@@ -893,7 +1059,7 @@ for (const s of list) {
       T.tickDescent(FIXED);   // 下墜整備的倒數不在 update 裡（那只跑 COMBAT），主迴圈另外推
       T.draw();
       T.drawSeedTag();
-      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves(); sampleSwing(); sampleCrystal(); sampleSeq(); sampleMotes();
+      sampleCombat(); sampleNewFx(); samplePortal(); sampleWrath(); sampleWaves(); sampleSwing(); sampleCrystal(); sampleSeq(); sampleMotes(); sampleAffixHits();
     }
     releaseKeys();
     for (const inv of (s.invariants || [])) {
