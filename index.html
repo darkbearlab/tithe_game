@@ -765,6 +765,61 @@ const RELICS = {
     },
   },
 };
+/* 結晶目錄。效果兩條路，和聖物/誓約同一套：
+     mods(k)  開局改騎士的數值/旋鈕（**絕不可改 u.weapon**，那是共用參照）
+     hooks    訂閱 Hooks 事件（打中/招架/處決/擊殺…）＝「你打對了」才觸發的效果
+   cat：'atk' 攻擊 / 'def' 生存 / 'mob' 機動。rarity 決定掉落權重與卡片配色。 */
+const CRYSTALS = {
+  // ── 攻擊 ──
+  emberheart: { name: '燼心', cat: 'atk', rarity: 'common', desc: '命中額外體幹傷 +6。',
+                mods(k) { k.poiseAdd = (k.poiseAdd || 0) + 6; } },
+  ironbite:   { name: '噬鐵', cat: 'atk', rarity: 'uncommon', desc: '反裝甲 +0.25（對重裝的體幹傷大增）。',
+                mods(k) { k.pierceBonus = (k.pierceBonus || 0) + 0.25; } },
+  wrathspur:  { name: '怒刺', cat: 'atk', rarity: 'uncommon', desc: '處決回怒 +50%。',
+                hooks: { execute: (c) => { if (c.u && c.u.id === KNIGHT_ID) gainWrath(c.u, CONFIG.wrath.gainExec * 0.5); } } },
+  cleaver:    { name: '裂顎', cat: 'atk', rarity: 'rare', desc: '體幹破時，對周圍再補一次衝擊。',
+                hooks: { poiseBroken: (c) => {
+                  if (!c.by || c.by.id !== KNIGHT_ID) return;
+                  for (const e of enemies) { if (e.dead || e === c.u) continue; if (dist(e.pos, c.u.pos) > 120) continue; applyPoise(e, 18, angTo(e.pos, c.u.pos), c.by); }
+                } } },
+  // ── 生存 ──
+  scabplate:  { name: '血痂', cat: 'def', rarity: 'common', desc: '結晶上限 +10%。',
+                mods(k) { k.crystalCapAdd = (k.crystalCapAdd || 0) + 0.10; } },
+  slowbleed:  { name: '凝血', cat: 'def', rarity: 'uncommon', desc: '結晶衰退減半。',
+                mods(k) { k.crystalDecayMul = (k.crystalDecayMul || 0.999) * 0.5; } },
+  gravemark:  { name: '墓印', cat: 'def', rarity: 'uncommon', desc: '處決多回 8 點聖血。',
+                hooks: { execute: (c) => { if (c.u && c.u.id === KNIGHT_ID) spawnMotes(c.u.pos, 'blood', 8); } } },
+  bulwark:    { name: '壁障', cat: 'def', rarity: 'rare', desc: '招架成功時，結晶直接疊一層。',
+                hooks: { parry: (c) => { if (c.u && c.u.id === KNIGHT_ID) gainCrystal(c.u); } } },
+  // ── 機動 ──
+  quickstep:  { name: '疾步', cat: 'mob', rarity: 'common', desc: '移動速度 +8%。',
+                mods(k) { k.moveSpeed *= 1.08; } },
+  windshear:  { name: '風剪', cat: 'mob', rarity: 'uncommon', desc: '閃避冷卻 −30%。',
+                mods(k) { k.dashCdMul = (k.dashCdMul || 1) * 0.7; } },
+  bloodrush:  { name: '血湧', cat: 'mob', rarity: 'uncommon', desc: '擊殺後 3 秒內移速 +25%。',
+                hooks: { kill: (c) => { if (c.killer && c.killer.id === KNIGHT_ID) { c.killer.buffMove = 1.25; c.killer.buffMoveT = 3; } } },
+                mods(k) { k.buffMoveT = 0; } },
+  vaultstep:  { name: '躍階', cat: 'mob', rarity: 'rare', desc: '閃避結束時回一點怒火。',
+                mods(k) { k.dashWrath = (k.dashWrath || 0) + 6; } },
+};
+const CRYSTAL_IDS = Object.keys(CRYSTALS);
+const CRYSTAL_CAT_NAME = { atk: '攻擊', def: '生存', mob: '機動' };
+const CRYSTAL_CAT_COLOR = { atk: '#ff8a5c', def: '#8fd8ff', mob: '#a8e06a' };
+// 這一層可以裝幾顆（每過一層 +1，夾在 base..max）
+const crystalSlotCount = () => clamp(CONFIG.crystalSlots.base + (floorNo - 1) * CONFIG.crystalSlots.perFloor, CONFIG.crystalSlots.base, CONFIG.crystalSlots.max);
+// 數值型結晶：開局套一次（絕不可改 u.weapon＝那是共用參照，一律用 per-unit 旋鈕）
+function applyCrystalMods(k) {
+  if (!k) return;
+  for (const cid of (k.crystals || [])) { const C = CRYSTALS[cid]; if (C && C.mods) C.mods(k); }
+}
+function applyCrystalHooks() {
+  for (const cid of CRYSTAL_IDS) Hooks.off('crystal:' + cid);
+  const r = roster[KNIGHT_ID]; if (!r) return;
+  for (const cid of (r.crystals || [])) {
+    const C = CRYSTALS[cid]; if (!C) continue;
+    for (const [ev, fn] of Object.entries(C.hooks || {})) Hooks.on(ev, 'crystal:' + cid, fn);
+  }
+}
 let knightRelics = new Set();   // 騎士持有的聖物 id（roguelite：run 中撿、run 結束清）
 function applyRelicHooks() {    // 重掛（撿到/失去聖物後呼叫）
   for (const rid of Object.keys(RELICS)) Hooks.off('relic:' + rid);
@@ -777,6 +832,14 @@ function applyRelicHooks() {    // 重掛（撿到/失去聖物後呼叫）
 CONFIG.oath = { baseSlots: 2, plunderHonor: 0.1, vengeanceBuffT: 4, vengeanceMove: 1.15, vengeanceFire: 1.15 };   // 誓約系統參數（自由槽基礎數、各自選誓約的數值）
 // 自由位（道具/習得載具）數：騎士基礎 2、可解鎖到 max。引擎支援任意數＝要再多改 max 即可。
 // slot 0/1＝舊 itemId/abilityId（不動）；slot 2+＝roster 的 freeExtra[]（通用載具）。只有騎士的數量會變，扈從恆 base。
+/* ── 結晶（DESIGN.md §2.6c）───────────────────────────────────────────
+   在地獄裡與聖血共鳴後結出的東西，是騎士唯一帶得走的護身與強化。
+   **通用 N 格**（不分類綁格）：三類——攻擊／生存／機動——可以任意組合，
+   要堆三個攻擊當玻璃大砲是你的選擇（§2.8：零解鎖也打得完，但不能犯錯）。
+   **每過一層 +1 格**：前期兩三格＝每顆結晶立刻是一個決定，不會有「先全部撿起來再說」的空窗；
+   上限被層數控制住，不會到第四層變成一坨數值湯。順便給「層」一個機制上的意義——
+   在這之前換層只是計數器加一，不會發生任何事。 */
+CONFIG.crystalSlots = { base: 3, perFloor: 1, max: 6 };
 CONFIG.freeSlots = { base: 4, max: 4 };   // **四格，對應數字鍵 1~4**（舊版 base 2、要靠 meta 升級解鎖到 4——
                                          // 而 §8 說 meta 只有裝備解鎖與不同騎士兩條軸，數值升級不該存在）
 /* 誓約（OATHS）— 可裝備的被動 build 層（詳見 OATHS.md）。引擎 + 綁定誓約 + 自選誓約池：
@@ -2563,6 +2626,7 @@ function makePlayer(i, cfg, pos) {
     // 他唯一的甲是結晶疊出來的 armorTemp。armorId 只剩外觀/名字，不再有數值。
     armorId: cfg.armorId || 'none', armorBase: (i === KNIGHT_ID ? 0 : Math.max(AR.armor, CLS.armor || 0)),
     armorTemp: cfg.armorTemp || 0, armorT: -99,
+    crystals: (cfg.crystals || []).slice(),   // 這一趟裝著的結晶（roster 帶著跨房）
     wrathGainMul: AR.wrathGainMul * (1 + kUp('wrathGain')),
     coneHalfDeg: null,                     // 逐單位視錐覆寫（null＝用全域）
     buffT: 0, buffMove: 1, buffFire: 1,    // 道具（腎上腺素）短時 buff
@@ -2637,7 +2701,7 @@ const rosterFromPlayer = (p) => {
     bonusMaxHp: p.maxHp - classOf(p.classId).hp - eqAdd, hp: p.hp,   // 以**自己兵種**的基底回推加值，換兵種不會憑空長血
     allocatedAmmo: m0 ? (isInfiniteAmmo(m0.weaponId) ? CONFIG.ammo.defaultAlloc : m0.ammoReserve) : CONFIG.ammo.defaultAlloc,
     disciplineOverride: p.disciplineOverride || null, equipId: p.equipId || null, armorId: p.armorId || 'none',
-    itemId: null, itemCount: 0, armorTemp: p.armorTemp || 0,   // 結晶跨房保留（上一房的血還沒乾）
+    itemId: null, itemCount: 0, armorTemp: p.armorTemp || 0, crystals: (p.crystals || []).slice(),   // 結晶跨房保留（上一房的血還沒乾）
     freeExtra: (p.slots || []).filter(sl => sl && sl.kind === 'free')
       .map(sl => sl.id ? { kind: sl.type === 'ability' ? 'ability' : 'item', id: sl.id, count: sl.count || 0 } : null),   // 自由位跨關保留（每一格都通用）
     carriesFile: !!p.hasFile };
@@ -2881,6 +2945,7 @@ function startMission() {
     // 每清一關多放幾名 rusher（暫定的上升張力，待路徑圖時再正式設計難度）
     if (!MAP.eventMap) for (let k = 0; k < missionIndex; k++) { const sp = MAP.enemySpawns[k % MAP.enemySpawns.length]; enemies.push(makeEnemy(sp.nodeId, 'rusher')); }   // 事件地圖不加難度遞增兵
   }
+  applyCrystalMods(players[KNIGHT_ID]); applyCrystalHooks();   // 結晶：數值走 mods、事件走 Hooks（和聖物/誓約同一套）
   if (pendingRescueKnight) { injectKnightRescue(); pendingRescueKnight = false; }   // B面「救援落難騎士」：注入接觸點 + 圍攻他的劫掠隊（一次性）
   /* **進房＝全員醒著**（DESIGN.md §5.1／§5.2）。你踏進的是一個封閉、上了鎖、已經被驚動的房間，
      不是一座還沒發現你的營地——潛行在 C3 就整套拆了，「繞過視錐」是那套系統留下的殘影。
@@ -3030,6 +3095,7 @@ function slotAccepts(slot, kind) {
   if (slot === 'main') return kind === 'weapon';
   if (slot === 'off') return kind === 'off' || kind === 'weapon';   // 副手也能放單手武器＝雙持
   if (slot === 'armor') return kind === 'armor';
+  if (slot.startsWith('cry')) return kind === 'crystal';
   if (slot === 'equip') return kind === 'equip';
   if (slot.startsWith('free')) return kind === 'ability' || kind === 'item';
   return false;
@@ -3060,6 +3126,13 @@ function descentEquipTo(i, slot) {
   } else if (slot === 'equip') {
     if (r.equipId) back = { kind: 'equip', id: r.equipId };
     r.equipId = it.id;
+  } else if (slot.startsWith('cry')) {
+    const ci = parseInt(slot.slice(3), 10);
+    if (!(ci >= 0 && ci < crystalSlotCount())) return false;
+    r.crystals = (r.crystals || []).slice();
+    const old = r.crystals[ci];
+    if (old) back = { kind: 'crystal', id: old };
+    r.crystals[ci] = it.id;
   } else {
     const fi = parseInt(slot.slice(4), 10);
     if (!(fi >= 0 && fi < memberFreeSlots(KNIGHT_ID))) return false;
@@ -3103,9 +3176,11 @@ function startRoom() {
 }
 /* 三選一卡片的內容（§5.4 全揭露：連數值都要攤開，不能只寫名字）。
    一律回 [[標籤, 值], ...]，畫的地方只負責排版。 */
-const offerKindName = (o) => ({ weapon: '武器', off: '副手', armor: '甲', equip: '裝備', ability: '習得', item: '卷軸' })[o.type] || o.type;
+const offerKindName = (o) => o.type === 'crystal' ? ('結晶 · ' + CRYSTAL_CAT_NAME[CRYSTALS[o.id].cat])
+  : ({ weapon: '武器', off: '副手', armor: '甲', equip: '裝備', ability: '習得', item: '卷軸' })[o.type] || o.type;
 function offerName(o) {
-  return o.type === 'weapon' ? WEAPONS[o.id].name
+  return o.type === 'crystal' ? CRYSTALS[o.id].name
+    : o.type === 'weapon' ? WEAPONS[o.id].name
     : o.type === 'off' ? OFFHANDS[o.id].name
     : o.type === 'armor' ? ARMORS[o.id].name
     : o.type === 'equip' ? EQUIPMENT[o.id].name
@@ -3113,6 +3188,12 @@ function offerName(o) {
 }
 function offerDetail(o) {
   const rows = [];
+  if (o.type === 'crystal') {
+    const C = CRYSTALS[o.id];
+    rows.push(['類別', CRYSTAL_CAT_NAME[C.cat]], ['稀有度', C.rarity]);
+    for (const line of wrapText(C.desc, 15)) rows.push(['', line]);
+    return rows;
+  }
   if (o.type === 'weapon') {
     const W = WEAPONS[o.id], L = lightOf(W), H = heavyOf(W);
     rows.push(['稀有度', W.rarity], ['精良度', '★'.repeat(o.quality || 1)]);
@@ -3156,6 +3237,7 @@ function offerDetail(o) {
    刻意壓成一行——這一段是限時的，讀不完的資訊等於沒有。 */
 function itemSummary(it) {
   if (!it || !it.id) return '';
+  if (it.kind === 'crystal') { const C = CRYSTALS[it.id]; return C ? `${CRYSTAL_CAT_NAME[C.cat]} · ${C.desc}` : ''; }
   if (it.kind === 'weapon') {
     const W = WEAPONS[it.id], L = lightOf(W);
     if (!W.melee) return `${W.damage} 傷 · 幹 ${W.poiseDmg || 0} · 反甲 ${(W.pierce || 0).toFixed(2)} · 射程 ${W.range}`;
@@ -3179,12 +3261,16 @@ function itemSummary(it) {
   if (it.kind === 'item') bits.push(`×${it.count || 1}`);
   return bits.join(' · ');
 }
-const descentItemName = (it) => it.kind === 'weapon' ? WEAPONS[it.id].name
+// 卡片很窄，說明要自己折行（每行大約 n 個全形字）
+function wrapText(t, n) { const out = []; for (let i = 0; i < t.length; i += n) out.push(t.slice(i, i + n)); return out; }
+const descentItemName = (it) => it.kind === 'crystal' ? (CRYSTALS[it.id] || {}).name
+  : it.kind === 'weapon' ? WEAPONS[it.id].name
   : it.kind === 'off' ? (OFFHANDS[it.id] || {}).name
   : it.kind === 'armor' ? (ARMORS[it.id] || {}).name
   : it.kind === 'equip' ? (EQUIPMENT[it.id] || {}).name
   : (artOf(it.id) ? artOf(it.id).name : it.id);
-const descentItemColor = (it) => it.kind === 'weapon' ? rarityColor(WEAPONS[it.id].rarity)
+const descentItemColor = (it) => it.kind === 'crystal' ? CRYSTAL_CAT_COLOR[(CRYSTALS[it.id] || {}).cat]
+  : it.kind === 'weapon' ? rarityColor(WEAPONS[it.id].rarity)
   : it.kind === 'off' ? '#bfe6ff' : it.kind === 'armor' ? '#e0c24a'
   : it.kind === 'equip' ? '#9fd0e0' : '#c0a0ff';
 
@@ -3875,8 +3961,12 @@ function rollArmory(n) {
   const ability = () => { const id = rngPick(availPool('ability', LOOT_ABILITY_IDS)), A = ABILITIES[id]; return { type: 'ability', id, label: `技能 · ${A.name}`, color: '#c0a0ff' }; };
   const itemO = () => { const id = rngPick(LOOT_ITEM_IDS), I = ITEMS[id]; return { type: 'item', id, label: `道具 · ${I.name}`, color: '#ffd27d' }; };
   const offO = () => { const id = rngPick(availPool('off', LOOT_OFF_IDS)), O = OFFHANDS[id]; return { type: 'off', id, label: `副手 · ${O.name}（${O.rarity}）`, color: '#bfe6ff' }; };
-  const armorO = () => { const id = rngPick(availPool('armor', LOOT_ARMOR_IDS)), A = ARMORS[id]; return { type: 'armor', id, label: `甲 · ${A.name}（${A.rarity}）`, color: '#e0c24a' }; };
-  const gens = [weapon, equipO, ability, itemO, offO, armorO];
+  const crystalO = () => { const id = weightedPick(CRYSTAL_IDS, cid => RARITY_WEIGHT[CRYSTALS[cid].rarity] || 10), C = CRYSTALS[id]; return { type: 'crystal', id, label: `結晶 · ${C.name}`, color: CRYSTAL_CAT_COLOR[C.cat] }; };
+  /* **結晶加權**（使用者定案）：一層 6 房＝6 次三選一，六個類別平均分的話一層只看得到一顆結晶，
+     那樣格數再多也填不滿、每顆都是「直接裝上」＝根本沒有取捨。
+     加權而不是「保底一定有一顆」：保底會讓三選一每次長得一樣，全揭露的驚喜感會鈍掉。
+     人間的甲（ARMORS）不再進池——騎士身上沒有人間的甲（§2.6c），那是個空選項。 */
+  const gens = [weapon, equipO, ability, itemO, offO, crystalO, crystalO, crystalO];
   const offers = []; while (offers.length < n) offers.push(rngPick(gens)());
   return offers;
 }
@@ -4402,6 +4492,7 @@ function tickResources(u, dt) {
   if (u.wrathMax && wrathDecaying() && simTime - (u.wrathT || -99) >= CONFIG.wrath.decayDelay)
     u.wrath = Math.max(0, (u.wrath || 0) - CONFIG.wrath.decay * dt);
   tickCrystal(u, dt);
+  if (u.buffMoveT > 0) { u.buffMoveT -= dt; if (u.buffMoveT <= 0) { u.buffMoveT = 0; u.buffMove = 1; } }   // 結晶「血湧」等限時移速
   if (u._hpLowFired && u.maxHp && u.hp / u.maxHp >= CONFIG.hooks.hpLowFrac) u._hpLowFired = false;
 }
 /* ── 怒火的四個入口（其餘地方一律走這四個，不要直接動 u.wrath）──────────
@@ -4422,7 +4513,7 @@ const armorOf = (u) => clamp((u.armorBase || 0) + (u.armorTemp || 0), 0, 1);
 function gainCrystal(u) {
   if (!u || u.id !== KNIGHT_ID || u.faction !== 'player') return;
   const C = CONFIG.crystal;
-  u.armorTemp = Math.min(C.cap, (u.armorTemp || 0) + C.perKill);
+  u.armorTemp = Math.min(C.cap + (u.crystalCapAdd || 0), (u.armorTemp || 0) + C.perKill);
   u.armorT = simTime;
   spawnFloater({ x: u.pos.x, y: u.pos.y - 18 }, '結晶', 'heal');
 }
@@ -4430,7 +4521,7 @@ function tickCrystal(u, dt) {
   if (!u.armorTemp || u.id !== KNIGHT_ID) return;
   if (!wrathDecaying()) return;                                   // 清場＝凍結（跨房保留）
   if (simTime - (u.armorT || -99) < CONFIG.crystal.decayDelay) return;
-  u.armorTemp = Math.max(0, u.armorTemp - CONFIG.crystal.decay * dt);
+  u.armorTemp = Math.max(0, u.armorTemp - CONFIG.crystal.decay * (u.crystalDecayMul || 1) * dt);
 }
 // 體幹傷害 → 可能觸發體幹破（大硬直 + 處決窗 + 大幅擊退）。回傳是否破了。by＝造成者（給 Hooks）。
 function applyPoise(t, amount, fromAng, by) {
@@ -4656,7 +4747,7 @@ function startDash(u) {
     ang = Math.atan2(fy * fwd + ry * strafe, fx * fwd + rx * strafe);
   }
   u.dash = { t: 0, dur: D.dur, ang };
-  u.dashCd = D.cd;
+  u.dashCd = D.cd * (u.dashCdMul || 1);
   u.swing = null; u.cast = null; u.blocking = false; u.blockT = null;   // 閃避會取消當下的動作＝那是它的代價
   u.invulnT = Math.max(u.invulnT || 0, D.dur * D.iframeFrac);
   u.dashGhosts = [];
@@ -4673,7 +4764,7 @@ function tickDash(u, dt) {
   u.dashGhosts.push({ x: u.pos.x, y: u.pos.y, a: 1 });
   if (u.dashGhosts.length > D.trail) u.dashGhosts.shift();
   d.t += dt;
-  if (d.t >= d.dur) u.dash = null;
+  if (d.t >= d.dur) { u.dash = null; if (u.dashWrath) gainWrath(u, u.dashWrath); }   // 結晶「躍階」：閃避結束回一點怒火
 }
 
 /* ── 處決 ─────────────────────────────────────────────────────────── */
@@ -4866,11 +4957,12 @@ function meleeHitTest(u, s) {
     s.hits.add(t); s.n++;
     const fromAng = angTo(t.pos, u.pos);                  // 目標→攻擊者＝來向（damageUnit 用來判繞背/格擋）
     const back = Math.abs(angDiff(fromAng, t.facing)) > Math.PI / 2;   // 從目標背面砍＝短劍背刺加成
-    let dmg = W.damage * (M.dmgMul || 1) * (back ? (M.backstabMul || 1) : 1) * outDmgMul(u);   // 招式倍率 × 背刺 × meta「鋒銳」/誓約「無畏」
+    let dmg = W.damage * (M.dmgMul || 1) * (back ? (M.backstabMul || 1) : 1) * outDmgMul(u);
+    const poiseOut = (M.poiseDmg || 0) + (u.poiseAdd || 0);   // 結晶「燼心」：命中額外體幹傷   // 招式倍率 × 背刺 × meta「鋒銳」/誓約「無畏」
     if (u.faction !== 'player' && t.faction === 'player') dmg *= CONFIG.enemy.meleeDmgMul;   // 英雄 vs 群體：AI 近接對我方減傷
     if (isFriendlyHit(u.faction, t)) dmg *= CONFIG.friendlyFire.dmgMul;                      // 誤傷倍率
     const hp0 = t.hp, stag0 = t.staggerT || 0, swing0 = !!t.swing;
-    const blocked = damageUnit(t, dmg, clamp((W.pierce || 0) + (u.pierceBonus || 0), 0, 1), fromAng, { melee: true, attacker: u, knock: (M.knock || 0) * (u.knockMul || 1), stagger: M.stagger || 0, poiseDmg: M.poiseDmg || 0 });   // 誓約「長驅」：pierceBonus 破甲 + knockMul 逼退
+    const blocked = damageUnit(t, dmg, clamp((W.pierce || 0) + (u.pierceBonus || 0), 0, 1), fromAng, { melee: true, attacker: u, knock: (M.knock || 0) * (u.knockMul || 1), stagger: M.stagger || 0, poiseDmg: poiseOut });   // 誓約「長驅」：pierceBonus 破甲 + knockMul 逼退
     Hooks.fire('attackHit', { u, t, dealt: Math.max(0, hp0 - t.hp), melee: true, blocked, backstab: back, armorDeflect: (hp0 === t.hp && !blocked) });
     if (arenaMode) {   // 試作場即時數據：本次揮擊打中幾隻、實際扣多少血（含裝甲/格擋後的真值）
       const dealt = Math.max(0, hp0 - t.hp);
@@ -8180,15 +8272,20 @@ function drawDescent() {
     { key: 'main', label: '主手', item: r.weaponId ? { kind: 'weapon', id: r.weaponId, quality: r.quality, enh: r.enh } : null },
     { key: 'off', label: '副手', item: handsOf(r.weaponId) >= 2 ? null : (r.offId ? (isShield(r.offId) ? { kind: 'off', id: r.offId } : { kind: 'weapon', id: r.offId }) : null),
       locked: handsOf(r.weaponId) >= 2, lockMsg: '雙手武器佔滿' },
-    { key: 'armor', label: '甲', item: (r.armorId && r.armorId !== 'none') ? { kind: 'armor', id: r.armorId } : null },
     { key: 'equip', label: '裝備', item: r.equipId ? { kind: 'equip', id: r.equipId } : null },
   ];
+  // 結晶：通用 N 格，每過一層 +1（§2.6c）
+  const cryN = crystalSlotCount();
+  for (let ci = 0; ci < cryN; ci++) {
+    const cid = (r.crystals || [])[ci];
+    slots.push({ key: 'cry' + ci, label: '結晶 ' + (ci + 1), item: cid ? { kind: 'crystal', id: cid } : null });
+  }
   for (let fi = 0; fi < memberFreeSlots(KNIGHT_ID); fi++) {
     const ex = fe[fi];
     slots.push({ key: 'free' + fi, label: '自由 ' + (fi + 1), item: (ex && ex.id) ? ex : null });
   }
   // 一行槽位：名稱 + 一行摘要（數值/效果）。拖曳中且放得下＝亮起來。
-  const rowH = 40, y0 = 178;
+  const rowH = 34, y0 = 178;
   slots.forEach((sl, i) => {
     const y = y0 + i * (rowH + 4);
     const hot = descentDrag && slotAccepts(sl.key, descentDrag.it.kind) && !sl.locked;
@@ -8197,11 +8294,11 @@ function drawDescent() {
     ctx.fillRect(lx, y, colW, rowH);
     ctx.lineWidth = over ? 2 : 1; ctx.strokeStyle = over ? '#5fcf9e' : hot ? 'rgba(95,207,158,0.45)' : 'rgba(90,105,120,0.30)';
     ctx.strokeRect(lx, y, colW, rowH);
-    ctx.font = 'bold 10px Consolas'; ctx.fillStyle = '#7f8b99'; ctx.fillText(sl.label, lx + 8, y + 15);
+    ctx.font = 'bold 10px Consolas'; ctx.fillStyle = '#7f8b99'; ctx.fillText(sl.label, lx + 8, y + 14);
     ctx.font = '13px Consolas'; ctx.fillStyle = sl.item ? descentItemColor(sl.item) : '#5f6870';
-    ctx.fillText(sl.item ? descentItemName(sl.item) : (sl.locked ? '（' + sl.lockMsg + '）' : '—（空）'), lx + 60, y + 16);
+    ctx.fillText(sl.item ? descentItemName(sl.item) : (sl.locked ? '（' + sl.lockMsg + '）' : '—（空）'), lx + 62, y + 14);
     ctx.font = '10px Consolas'; ctx.fillStyle = '#8b97a5';
-    ctx.fillText(itemSummary(sl.item), lx + 60, y + 31);
+    ctx.fillText(itemSummary(sl.item).slice(0, 34), lx + 62, y + 27);
     descentSlotRects.push({ x: lx, y, w: colW, h: rowH, key: sl.key, locked: !!sl.locked });
   });
 
@@ -8216,9 +8313,9 @@ function drawDescent() {
       ctx.fillStyle = 'rgba(24,19,16,0.9)'; ctx.fillRect(rx, y, colW, rowH);
       ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(90,105,120,0.30)'; ctx.strokeRect(rx, y, colW, rowH);
       ctx.font = '13px Consolas'; ctx.fillStyle = descentItemColor(it);
-      ctx.fillText(descentItemName(it) + (it.quality >= 2 ? ' ' + '★'.repeat(it.quality) : ''), rx + 10, y + 16);
+      ctx.fillText(descentItemName(it) + (it.quality >= 2 ? ' ' + '★'.repeat(it.quality) : ''), rx + 10, y + 14);
       ctx.font = '10px Consolas'; ctx.fillStyle = '#8b97a5';
-      ctx.fillText(itemSummary(it), rx + 10, y + 31);
+      ctx.fillText(itemSummary(it).slice(0, 34), rx + 10, y + 27);
       ctx.globalAlpha = 1;
       dBtn(rx + colW - 46, y + 10, 40, 20, '丟掉', () => descentDrop(i), 'rgba(160,120,110,0.7)');
       descentBagRects.push({ x: rx, y, w: colW - 52, h: rowH, idx: i });

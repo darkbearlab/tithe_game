@@ -141,7 +141,7 @@ const EPILOGUE = `
   get roadmap() { return roadmap; },
   get roster() { return roster; },
   CONFIG, WEAPONS, ENEMY_TYPES, ARENA_MODES, MAPS, ORIGIN_IDS, ENCOUNTER_IDS,
-  ARENA_WEAPON_IDS, ARENA_OFF_IDS, arenaSetWeapon, arenaSetOff,
+  ARENA_WEAPON_IDS, ARENA_OFF_IDS, arenaSetWeapon, arenaSetOff, CRYSTALS, crystalSlotCount,
   get drops() { return drops; }, get backpack() { return backpack; }, updateDrops,
   enterDescent, tickDescent, descentEquipTo, get descentPhase() { return descentPhase; }, get descentBag() { return descentBag; },
   get descentT() { return descentT; }, set descentT(v) { descentT = v; },
@@ -239,6 +239,11 @@ const SCENARIOS = [
   { name: 'waves',           frames: 3000, enter: bootCombat, poke: pokeCombat, invariants: [wavesHappened] },
   { name: 'rooms',           frames: 6,    enter: () => { bootCombat(); }, poke: pokeRooms, invariants: [roomChainWorks] },
   { name: 'crystal',         frames: 2400,  enter: () => T.enterArena('melee'), poke: pokeCombat, invariants: [crystalStacks, motesWork] },
+  { name: 'crystal-slots',   frames: 4,    enter: () => {
+      bootCombat();
+      T.roster[0].crystals = ['quickstep'];   // 機動：移速 +8%
+      T.startMission();
+    }, invariants: [crystalGearWorks] },
   { name: 'free-slots',      frames: 4,    enter: () => {
       bootCombat();
       // 第 1 格放**習得**、第 2 格放**道具**——舊版剛好相反（1 只收卷軸、2 只收習得）
@@ -495,6 +500,19 @@ function crystalStacks() {
   return null;
 }
 
+/* 結晶（§2.6c）：通用 N 格、每過一層 +1，效果分 mods（開局改數值）與 hooks（事件觸發）。
+   這條顧的是「裝上去真的有效」——數值型結晶如果沒被套用，玩家完全看不出來（沒有紅字、
+   面板還是會顯示你裝著它），那是最難發現的一種壞掉。 */
+function crystalGearWorks() {
+  const k = T.knight; if (!k) return '沒抓到騎士';
+  if (!(k.crystals || []).length) return '騎士身上沒有結晶，這條量不到東西';
+  const base = T.CONFIG.moveSpeed;
+  if (!(k.moveSpeed > base * 1.05)) return `裝了「疾步」（移速 +8%）但 moveSpeed 還是 ${k.moveSpeed}（基礎 ${base}）——mods 沒有套用`;
+  const n = T.CONFIG.crystalSlots;
+  if (T.crystalSlotCount() !== n.base) return `第一層應該有 ${n.base} 格結晶，實際 ${T.crystalSlotCount()}`;
+  return null;
+}
+
 /* 自由位（1~N）每一格都是**通用**的：卷軸、習得、消耗品放進任何一格都可以。
    舊版把第 1 格寫死成 itemId、第 2 格寫死成 abilityId（「每種類各限一個」），
    那是 Homeward 留下的欄位形狀不是設計。這條擋的是它偷偷長回來。 */
@@ -558,26 +576,27 @@ const onBody = (r, it) => !!(r && it && (
   it.kind === 'off' ? r.offId === it.id :
   it.kind === 'armor' ? r.armorId === it.id :
   it.kind === 'equip' ? r.equipId === it.id :
+  it.kind === 'crystal' ? (r.crystals || []).indexOf(it.id) >= 0 :
   (it.kind === 'ability' || it.kind === 'item') ? (r.freeExtra || []).some(e => e && e.id === it.id) : false));
 function pokeDescent(i) {
   if (i === 0) descProbe.phase0 = T.descentPhase;
   // 多塞一件進袋子：不然「選一個、裝一個」剛好把袋子清空，最後那條「落地要清袋」就變成空轉
-  if (i === 1) T.descentBag.push({ kind: 'armor', id: 'mail' });
+  if (i === 1) T.descentBag.push({ kind: 'crystal', id: 'quickstep' });   // 一定放得進結晶格
   if (i === 2) key('keydown', '1');                       // 選第一個獎勵
   if (i === 4) { descProbe.afterPick = T.descentPhase; descProbe.bagAfterPick = T.descentBag.length; }
   /* 裝備一律**指定槽位**（拖曳）。探針直接呼叫 descentEquipTo 而不是點座標——
      滑鼠 hit-test 的探針很容易在版面微調之後變成假綠（CLAUDE.md 那條）。 */
-  if (i === 5) descProbe.equipping = T.descentBag[0];     // 記下等一下要裝的是哪一件（甲）
-  if (i === 6) T.descentEquipTo(0, 'armor');
+  if (i === 5) descProbe.equipping = T.descentBag[0];     // 記下等一下要裝的是哪一件（結晶）
+  if (i === 6) T.descentEquipTo(0, 'cry0');
   if (i === 8) {
     // ⚠️ 不能用「袋子變短了」當判準：置換會把換下來的推回袋子，長度是**不變**的。
     descProbe.stillInBag = T.descentBag.indexOf(descProbe.equipping) >= 0;
     descProbe.rosterChanged = onBody(T.roster[0], descProbe.equipping);
     // 再裝一次同一格：這次身上已經有東西了，被換下的必須回到袋子
     const before = T.descentBag.length;
-    T.descentBag.push({ kind: 'armor', id: 'plate' });
-    T.descentEquipTo(T.descentBag.length - 1, 'armor');
-    descProbe.swapBack = T.descentBag.length === before + 1 && T.descentBag.some(x => x.kind === 'armor' && x.id === 'mail');
+    T.descentBag.push({ kind: 'crystal', id: 'emberheart' });
+    T.descentEquipTo(T.descentBag.length - 1, 'cry0');
+    descProbe.swapBack = T.descentBag.length === before + 1 && T.descentBag.some(x => x.kind === 'crystal' && x.id === 'quickstep');
   }
   if (i === 10) key('keydown', 'Enter');                  // 落地
   if (i === 12) { descProbe.sceneEnd = T.scene; descProbe.bagEnd = T.descentBag.length; }
