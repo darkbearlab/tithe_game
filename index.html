@@ -466,40 +466,154 @@ const MELEE_WEAPON_IDS = WEAPON_IDS.filter(id => WEAPONS[id].melee && id !== 'st
 const ENEMY_ONLY_WEAPON_IDS = ['fangs', 'club'];                       // 敵人專屬（不入玩家戰利品/沙盒池）
 
 /* =====================================================================
-   S2 · 裝備強化（純引擎，使用者定案）——武器實例化的核心，先不碰倉庫/UI/戰鬥。
+   S2 · 武器詞條（使用者定案，2026-08 重寫）——TITHE 以掉落為成長主軸，這張表是主軸的內容。
 
-   精良程度＝**能強化幾次**（charge 預算，從稀有度衍生），本身不加數值。
-   每次強化吃 charge，由不同的人賦予：
-     鐵匠 → 鋒利(+傷害)/平衡(+命中回怒)，連哪個都隨機、數值也隨機，1 格。
-     導師/女巫 → 詞條 affix，1~3 格；純數值的併進 effWeapon，有效果的訂閱 Hooks（同聖物）。
-   石中劍＝一把預先打滿的實例（charges 用盡＝不能再強化），帶 rally 詞條 → 接 S1 whileEquipped 氣勢。
+   **數量用機率限制，不設硬上限。** 每滾成一條就再擲一次，機率逐條衰減（幾何分佈）＝
+   絕大多數是一兩條，偶爾滾出一把六詞條的怪物。那條長尾是 roguelite 的故事時刻，
+   為了「可控」把它砍掉，掉落就從賭注變成配給。
+
+   **但要分兩池**（這是重點，不是實作細節）：
+     · 數值型 `stat`  ＋傷害／＋體幹傷／＋反裝甲…   **不設上限**——疊起來只是更強，尾巴很香
+     · 效果型 `proc`  投射物／AOE／雷射             **每把 1~2**——它是這把武器的**身分**
+   兩條以上的效果就沒有身分，只有雜訊。
+
+   **效果型一律掛在「你打對了」的瞬間**（處決／招架／重擊／體幹破），**絕不掛在每一刀**。
+   掛每一刀的話，這個近戰讀招遊戲會變成彈幕自動戰鬥——你不再需要讀招，站著揮就好。
+   harness 的 `affixNotEveryHit` 探針守著這條（普通命中一路打下去，proc 計數必須是 0）。
+
+   **`quality`（精良度）改義成「機率倍率」**，不再是 charge 格數預算。
+   舊義下掉落走機率、鐵匠走格數＝兩套系統共用一個欄位。現在精良度只管一件事：
+   擲詞條時每一輪成功的機率乘多少。鐵匠／導師改吃一個與精良度無關的小預算
+   （`CONFIG.enhance.craftSlots`）。
+
+   **效果型詞條和結晶共用同一套 Hooks**（DESIGN.md §2.6c 的 `mods`/`hooks` 兩條路）：
+   差別只是掛在武器上還是掛在身上，不是兩套引擎。
+   ⚠️ 目前詞條只長在**主手**的武器實例上——副手槽存的是一個 id（沒有實例可以掛身分）。
+   要讓副手也帶詞條得先把 `offInst` 串進 mkSet/roster/整備，那是另一件事（見 HARVEST §E）。
    ===================================================================== */
-const WEAPON_QUALITY = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 };   // 稀有度 → charge 預算
+const WEAPON_QUALITY = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 };   // 稀有度 → 精良度底線
 const qualityOf = (id) => WEAPON_QUALITY[(WEAPONS[id] || {}).rarity] || 1;
 CONFIG.enhance = { sharpMin: 3, sharpMax: 8, balanceMin: 2, balanceMax: 5,             // 鋒利/平衡的隨機值域
-  qualityWeights: { 1: 55, 2: 26, 3: 12, 4: 5, 5: 2 } };                               // 掉落武器的精良度分佈（大多粗製，偶爾精良/上乘＝強化次數更多）
-// 詞條池（迷你聖物）：純數值走 delta；有效果走 hook（poiseAdd 等）；source 限定來源
+  craftSlots: 2,                                                                       // 鐵匠/導師總共能打幾次（**與精良度脫鉤**：精良度現在只管掉落擲骰）
+  qualityWeights: { 1: 55, 2: 26, 3: 12, 4: 5, 5: 2 } };                               // 掉落武器的精良度分佈（大多粗製，偶爾上乘＝詞條擲骰更容易成功）
+/* 詞條擲骰的所有旋鈕（` 面板可即時調）。
+   `statFalloff` 是那條長尾的形狀：0.62 表示第二條的機率只有第一條的 62%，第三條再 62%…
+   六條詞條的機率因此是「很低但不是零」——那正是要的。
+   目前的數值下：精良1 平均約 0.6 條、精良5 平均約 2.1 條（＋最多 2 條效果型）。 */
+CONFIG.affix = {
+  statP: 0.62, statFalloff: 0.62, statRunaway: 12,   // statRunaway＝失控保險（不是設計上的上限，是防呆）
+  procP: 0.30, procP2: 0.11, procMax: 2,            // 效果型：第一條 / 第二條的機率，硬上限 2
+  qMul: { 1: 0.70, 2: 0.90, 3: 1.15, 4: 1.45, 5: 1.85 },   // 精良度 → 機率倍率（quality 的新語意）
+  // ── 效果型的共用數值（三個原型：AOE / 投射物 / 雷射）──
+  burstR: 96, burstDmg: 26, burstPoise: 30,                       // AOE
+  boltN: 3, boltFan: 6, boltDmg: 20, boltPoise: 10, boltSpeed: 620, boltRange: 460, boltSpread: 9,   // 投射物（boltFan＝360° 那種的發數）
+  beamLen: 520, beamHalfW: 11, beamDmg: 34, beamPoise: 26,        // 雷射
+  waveR: 132, waveDmg: 10, wavePoise: 34, waveKnock: 260,         // 衝擊波（重擊）
+};
+/* 詞條池。`kind` 決定它屬於哪一池、走哪條路：
+     stat → `stat` 欄位指到 effWeapon 併入的哪個數值，`roll` 是這一次滾出來的值域
+     proc → `on` 是它掛的那個「你打對了」事件，`fire(k, ctx)` 是效果本身（共用 Hooks）
+   `source` 限定來源（事件專屬，不進掉落池）；`needs` 限定它能長在什麼武器上。 */
 const AFFIXES = {
-  piercing: { name: '破甲', charges: 2, delta: { pierceAdd: 0.30 } },
-  keen:     { name: '鋒棱', charges: 1, delta: { dmgAdd: 6 } },
-  flame:    { name: '烈焰', charges: 2, poiseAdd: 12 },                                 // 命中額外體幹傷（Hooks：attackHit）
-  rally:    { name: '戰意', charges: 2, source: 'stone' },   // 石中劍專屬。⚠️ 原效果是士氣氣勢，C2 後已無效果——待 C8 連同事件內容一起處理
-  hex:      { name: '巫紋', charges: 3, source: 'witch', delta: { pierceAdd: 0.5 } },   // 女巫專屬（氣勢部分已隨士氣移除）
+  // ── 數值型：不設上限，滾到幾條算幾條 ──
+  keen:      { name: '鋒棱', kind: 'stat', stat: 'dmgAdd',    roll: [4, 11],       desc: '傷害' },
+  piercing:  { name: '破甲', kind: 'stat', stat: 'pierceAdd', roll: [0.12, 0.36], dec: 2, desc: '反裝甲' },
+  emberline: { name: '燼紋', kind: 'stat', stat: 'poiseAdd',  roll: [4, 12],       desc: '命中體幹傷' },
+  quickhand: { name: '順手', kind: 'stat', stat: 'wrathAdd',  roll: [2, 5],        desc: '命中回怒' },
+  crushing:  { name: '沉錘', kind: 'stat', stat: 'knockAdd',  roll: [70, 190],     desc: '擊退' },
+  // ── 效果型：每把 1~2，全部掛在「你打對了」的那一瞬間 ──
+  emberfall: { name: '燼落', kind: 'proc', on: 'execute', weight: 26, desc: '處決時腳下炸開一圈餘燼',
+               fire(k, ctx) { const A = CONFIG.affix, p = ctx.victim ? ctx.victim.pos : k.pos; affixBurst(p, A.burstR, A.burstDmg, A.burstPoise, k, '#ff8a3c'); } },
+  sunspike:  { name: '曜釘', kind: 'proc', on: 'execute', weight: 20, desc: '處決時朝四面射出光矢',
+               fire(k, ctx) { const A = CONFIG.affix, p = ctx.victim ? ctx.victim.pos : k.pos; affixBolts(k, p, null, A.boltFan, A.boltDmg, 360); } },
+  chasefire: { name: '逐火', kind: 'proc', on: 'parry',   weight: 24, desc: '招架成功時，朝對手追射火矢',
+               fire(k, ctx) { const A = CONFIG.affix; affixBolts(k, k.pos, ctx.from || null, A.boltN, A.boltDmg, A.boltSpread); } },
+  riftlight: { name: '裂光', kind: 'proc', on: 'poiseBroken', weight: 18, desc: '打破體幹時，一道貫穿的裂光',
+               fire(k, ctx) { const A = CONFIG.affix; affixBeam(k, ctx.u ? angTo(k.pos, ctx.u.pos) : k.facing, A.beamLen, A.beamDmg, A.beamPoise); } },
+  mauljaw:   { name: '崩牙', kind: 'proc', on: 'heavyHit', weight: 22, needs: 'heavy', desc: '重擊命中時，震開周圍一圈',
+               fire(k, ctx) { const A = CONFIG.affix, p = ctx.t ? ctx.t.pos : k.pos; affixBurst(p, A.waveR, A.waveDmg, A.wavePoise, k, '#ffd66a', A.waveKnock); } },
+  // ── 來源限定（事件專屬，不進掉落池）──
+  rally:     { name: '戰意', kind: 'stat', source: 'stone' },   // 石中劍專屬。⚠️ 原效果是士氣氣勢，C2 後已無效果——待 C8 連同事件內容一起處理
+  hex:       { name: '巫紋', kind: 'stat', stat: 'pierceAdd', value: 0.5, source: 'witch', desc: '反裝甲' },   // 女巫專屬（氣勢部分已隨士氣移除）
 };
 const AFFIX_IDS = Object.keys(AFFIXES);
+const STAT_AFFIX_IDS = AFFIX_IDS.filter(id => AFFIXES[id].kind === 'stat' && !AFFIXES[id].source);
+const PROC_AFFIX_IDS = AFFIX_IDS.filter(id => AFFIXES[id].kind === 'proc' && !AFFIXES[id].source);
 // 導師可給的詞條＝無來源限定的那些（rally/hex 是事件專屬）
 const TUTOR_AFFIX_IDS = AFFIX_IDS.filter(id => !AFFIXES[id].source);
+const isProcAffix = (aid) => !!(AFFIXES[aid] && AFFIXES[aid].kind === 'proc');
+const procCount = (inst) => (inst && inst.enh || []).filter(e => e.kind === 'affix' && isProcAffix(e.affix)).length;
+// 這條詞條長不長得上這把武器：`needs:'heavy'` 的效果要有右鍵那一招，否則它是一條死詞條
+function affixFits(A, id) {
+  if (!A || A.source) return false;
+  if (A.needs === 'heavy') return !!(WEAPONS[id] && WEAPONS[id].moves && WEAPONS[id].moves.heavy);
+  return true;
+}
+// 這一條詞條這次滾出來多少（吃 srand＝可重現）。沒有 roll 的走固定 value。
+function rollAffixValue(A) {
+  if (!A) return 0;
+  if (A.value != null) return A.value;
+  if (!A.roll) return 0;
+  const v = A.roll[0] + srand() * (A.roll[1] - A.roll[0]);
+  return A.dec ? Math.round(v * 100) / 100 : Math.round(v);
+}
+/* 擲一把武器的詞條（掉落／三選一／敵人屍體上那把都走這裡）。
+   兩池分開擲：數值型幾何衰減、不設上限；效果型最多 procMax 條。
+   `quality` 進來的方式只有一個——**當作機率倍率**（§E 定案）。 */
+function rollWeaponAffixes(id, quality) {
+  const W = WEAPONS[id]; if (!W || W.noEnhance) return [];
+  const A = CONFIG.affix, m = A.qMul[clamp(Math.round(quality || 1), 1, 5)] || 1;
+  const out = [];
+  const statPool = STAT_AFFIX_IDS.filter(aid => affixFits(AFFIXES[aid], id));
+  let p = A.statP * m;
+  while (statPool.length && out.length < A.statRunaway && srand() < p) {
+    // 數值型**允許重複**：「鋒棱 ×3」是合法的怪物。去重會讓池子大小變成隱形的硬上限。
+    const aid = statPool[Math.min(statPool.length - 1, Math.floor(srand() * statPool.length))];
+    out.push({ kind: 'affix', affix: aid, value: rollAffixValue(AFFIXES[aid]) });
+    p *= A.statFalloff;
+  }
+  let pool = PROC_AFFIX_IDS.filter(aid => affixFits(AFFIXES[aid], id));
+  for (let n = 0; n < A.procMax && pool.length; n++) {
+    if (!(srand() < (n === 0 ? A.procP : A.procP2) * m)) break;
+    const aid = weightedPick(pool, x => AFFIXES[x].weight || 10);
+    out.push({ kind: 'affix', affix: aid });
+    pool = pool.filter(x => x !== aid);   // 效果型**去重**：同一個身分講兩次沒有意義
+  }
+  return out;
+}
+// 一條詞條在 UI 上長什麼樣：數值型帶著這次滾出來的值（同一條詞條也有大小之分，看不到就等於沒滾）
+function affixLabel(e) {
+  const A = AFFIXES[e.affix]; if (!A) return e.affix;
+  if (A.kind === 'proc') return '◆' + A.name;                    // ◆＝效果型（這把武器的身分）
+  const v = affixValueOf(e, A);
+  return A.stat ? `${A.name}+${A.dec ? v.toFixed(2) : v}` : A.name;
+}
+// 一把武器的詞條列表（數值型的重複條目合併成「×N」，不然六詞條的卡片會爆版）
+function affixNames(enh) {
+  const out = [], seen = new Map();
+  for (const e of (enh || [])) {
+    if (e.kind !== 'affix') continue;
+    const s = affixLabel(e);
+    if (seen.has(s)) { out[seen.get(s)].n++; continue; }
+    seen.set(s, out.length); out.push({ s, n: 1 });
+  }
+  return out.map(x => x.n > 1 ? `${x.s}×${x.n}` : x.s);
+}
 /* 詞條取得成本（使用者定案：**先免費**，但留這三個鉤子給將來的 run 內經濟——
    之後只要改這裡就能加代價，不必動叫用端）。 */
 function affixCost(affixId) { return 0; }
 function canAffordAffix(affixId) { return true; }
 function payForAffix(affixId) { /* 之後扣 run 內資源 */ }
-// 武器實例：{ id, quality, enh:[{kind:'sharp'|'balance'|'affix', charges, value?/affix?}] }
+// 武器實例：{ id, quality, enh:[{kind:'sharp'|'balance'|'affix', value?/affix?, by?:'craft'}] }
+// `by:'craft'`＝鐵匠/導師打上去的（吃 craftSlots 預算）；掉落擲出來的沒有這個標記，所以不佔預算。
 function weaponInst(id, opts) {
   return { id, quality: (opts && opts.quality != null) ? opts.quality : qualityOf(id), enh: (opts && opts.enh) ? opts.enh.slice() : [] };
 }
-const chargesUsed = (inst) => (inst && inst.enh || []).reduce((n, e) => n + (e.charges || 1), 0);
-const chargesFree = (inst) => Math.max(0, (inst.quality || 1) - chargesUsed(inst));
+/* 鐵匠/導師的預算。**與精良度無關**——精良度改義成掉落擲骰的機率倍率之後，
+   再讓它兼任格數就會變成一個欄位兩套系統（正是這次要修掉的東西）。
+   舊名 chargesUsed/chargesFree 保留，因為 UI 那邊有六個地方在讀它們。 */
+const chargesUsed = (inst) => (inst && inst.enh || []).filter(e => e.by === 'craft').length;
+const chargesFree = (inst) => Math.max(0, CONFIG.enhance.craftSlots - chargesUsed(inst));
 const canEnhance = (inst) => !!inst && !WEAPONS[inst.id].noEnhance && chargesFree(inst) >= 1;
 // 鐵匠：1 格，隨機鋒利/平衡 + 隨機值（吃 srand＝可重現）
 function enhanceWeapon(inst) {
@@ -507,38 +621,53 @@ function enhanceWeapon(inst) {
   const sharp = srand() < 0.5;
   const value = sharp ? Math.round(CONFIG.enhance.sharpMin + srand() * (CONFIG.enhance.sharpMax - CONFIG.enhance.sharpMin))
                       : Math.round(CONFIG.enhance.balanceMin + srand() * (CONFIG.enhance.balanceMax - CONFIG.enhance.balanceMin));
-  inst.enh.push({ kind: sharp ? 'sharp' : 'balance', charges: 1, value });
+  inst.enh.push({ kind: sharp ? 'sharp' : 'balance', by: 'craft', value });
   return { kind: sharp ? 'sharp' : 'balance', value };
 }
-// 導師/女巫：套一條詞條（吃該詞條的 charges）。source 限定（女巫詞條只有女巫能給）。
+// 導師/女巫：套一條詞條（吃 1 格 craft 預算）。source 限定（女巫詞條只有女巫能給）。
+// **效果型的 1~2 上限在這裡也成立**：不然掉落守著上限、導師可以無限加，身分還是會被稀釋掉。
 function applyAffix(inst, affixId, opts) {
   const A = AFFIXES[affixId]; if (!A || !inst || WEAPONS[inst.id].noEnhance) return null;
   if (A.source && (!opts || opts.source !== A.source)) return null;   // 限定來源
-  if (!(opts && opts.force) && chargesFree(inst) < (A.charges || 1)) return null;   // force＝超凡（女巫）不受格數限制
-  inst.enh.push({ kind: 'affix', affix: affixId, charges: A.charges || 1 });
+  if (!affixFits(A, inst.id) && !A.source) return null;               // 例：沒有右鍵那一招就不給「崩牙」
+  if (A.kind === 'proc' && procCount(inst) >= CONFIG.affix.procMax) return null;
+  if (!(opts && opts.force) && chargesFree(inst) < 1) return null;    // force＝超凡（女巫）不受格數限制
+  inst.enh.push({ kind: 'affix', affix: affixId, by: 'craft', value: rollAffixValue(A) });
   return A;
 }
-// 戰鬥用的 effective 武器：base 淺拷貝 + 鋒利/平衡/純數值詞條併入（hands/melee 等定義屬性不動）
+// 數值型詞條併進 effWeapon 的哪一格（一張表，加詞條不用改 effWeapon）
+const AFFIX_STAT_APPLY = {
+  dmgAdd:    (w, v) => { w.damage = (w.damage || 0) + v; },
+  pierceAdd: (w, v) => { w.pierce = Math.min(1, (w.pierce || 0) + v); },   // 反裝甲＝加的是體幹傷不是傷害（§2.6c）
+  poiseAdd:  (w, v) => { w.poiseAdd = (w.poiseAdd || 0) + v; },            // 每次命中額外的體幹傷
+  wrathAdd:  (w, v) => { w.wrathAdd = (w.wrathAdd || 0) + v; },            // 每次命中多回的怒火
+  knockAdd:  (w, v) => { w.knockAdd = (w.knockAdd || 0) + v; },
+};
+const affixValueOf = (e, A) => (e && e.value != null) ? e.value : (A && A.value != null ? A.value : (A && A.roll ? A.roll[0] : 0));
+// 戰鬥用的 effective 武器：base 淺拷貝 + 鋒利/平衡/**數值型**詞條併入（hands/melee 等定義屬性不動）。
+// 效果型詞條不在這裡——它們走 Hooks（applyWeaponAffixHooks），和結晶同一套。
 function effWeapon(inst) {
   if (!inst) return null;
   const base = WEAPONS[inst.id]; if (!base) return null;
-  if (!inst.enh || !inst.enh.length) return base;   // 沒強化＝直接用共用定義（省拷貝）
+  if (!inst.enh || !inst.enh.length) return base;   // 沒詞條＝直接用共用定義（省拷貝）
   const w = Object.assign({}, base);
   for (const e of inst.enh) {
     if (e.kind === 'sharp') w.damage = (w.damage || 0) + (e.value || 0);
     else if (e.kind === 'balance') w.wrathAdd = (w.wrathAdd || 0) + (e.value || 0);   // 平衡＝順手：每次命中多回這麼多怒火（舊義「減耐力消耗」隨耐力一起作廢）
-    else if (e.kind === 'affix') { const A = AFFIXES[e.affix]; if (A && A.delta) { if (A.delta.dmgAdd) w.damage += A.delta.dmgAdd; if (A.delta.pierceAdd) w.pierce = Math.min(1, (w.pierce || 0) + A.delta.pierceAdd); } }
+    else if (e.kind === 'affix') {
+      const A = AFFIXES[e.affix]; if (!A || A.kind !== 'stat' || !A.stat) continue;
+      const fn = AFFIX_STAT_APPLY[A.stat]; if (fn) fn(w, affixValueOf(e, A));
+    }
   }
-  w._inst = inst;   // 讓 Hooks/氣勢掃得到此把的詞條
+  w._inst = inst;   // 讓 Hooks/詞條掃得到此把的實例（效果型 proc 用它認「是不是我這把打的」）
   return w;
 }
-// 這把武器的 whileEquipped 氣勢量（rally/hex 等詞條）——之後在 startMission 掃裝著的武器接 S1
-// 石中劍：預先打滿的實例（4 格全用：鋒利+平衡+rally）＝拿到就是這樣、不能再打
+// 石中劍：預先打滿的實例（craft 預算用盡＝拿到就是這樣、不能再打）
 function stoneSwordInst() {
   return weaponInst('stonesword', { quality: 4, enh: [
-    { kind: 'sharp', charges: 1, value: 8 },
-    { kind: 'balance', charges: 1, value: 5 },
-    { kind: 'affix', affix: 'rally', charges: 2 },
+    { kind: 'sharp', by: 'craft', value: 8 },
+    { kind: 'balance', by: 'craft', value: 5 },
+    { kind: 'affix', affix: 'rally' },
   ] });
 }
 const randomWeaponPool = (ids) => ids.filter(id => !(WEAPONS[id] && WEAPONS[id].noRandom));   // 抽選用：濾掉 noRandom（喪鐘）＝任何隨機抽選都不會抽到（手動選仍可）
@@ -819,6 +948,37 @@ function applyCrystalHooks() {
     const C = CRYSTALS[cid]; if (!C) continue;
     for (const [ev, fn] of Object.entries(C.hooks || {})) Hooks.on(ev, 'crystal:' + cid, fn);
   }
+}
+/* 武器的效果型詞條：和結晶走**同一套 Hooks**，差別只是掛在武器上還是身上。
+   只掛騎士的主手（副手槽沒有實例，見 AFFIXES 上面那段），開場與換武器時重掛。
+
+   ⚠️ 每一條 handler 都要先確認「這件事是**騎士做的**」：
+   `poiseBroken` 的 ctx.u 是被打破的那個人（不是騎士），`by` 才是動手的；
+   照著 ctx.u 判就會變成「敵人互毆也會放你的雷射」。 */
+let affixProcCount = 0;         // 效果型詞條總共觸發了幾次（探針用：它必須**不會**每一刀都跳）
+let weaponAffixHookIds = [];
+function affixProcHandler(A, inst) {
+  return (ctx) => {
+    const k = knight(); if (!k || k.state === 'DEAD' || !ctx) return;
+    if (A.on === 'poiseBroken') { if (ctx.by !== k) return; }
+    else if (ctx.u !== k) return;
+    if (A.on === 'heavyHit' && ctx.inst !== inst) return;   // 重擊：只有**這把**打出來的才算（雙持時另一把有另一套身分）
+    affixProcCount++;
+    A.fire(k, ctx);
+  };
+}
+function applyWeaponAffixHooks() {
+  for (const id of weaponAffixHookIds) Hooks.off(id);
+  weaponAffixHookIds = [];
+  const k = knight(); if (!k || !k.weapon) return;
+  const inst = k.weapon._inst; if (!inst) return;   // 白板武器：effWeapon 直接回共用定義，沒有實例也就沒有詞條
+  (inst.enh || []).forEach((e, i) => {
+    if (e.kind !== 'affix') return;
+    const A = AFFIXES[e.affix]; if (!A || A.kind !== 'proc' || !A.fire) return;
+    const hid = 'waffix:' + i + ':' + e.affix;
+    Hooks.on(A.on, hid, affixProcHandler(A, inst));
+    weaponAffixHookIds.push(hid);
+  });
 }
 let knightRelics = new Set();   // 騎士持有的聖物 id（roguelite：run 中撿、run 結束清）
 function applyRelicHooks() {    // 重掛（撿到/失去聖物後呼叫）
@@ -2429,6 +2589,7 @@ function w2s(p) {
    State
    ===================================================================== */
 let players, enemies, bullets, particles;
+let beams = [];              // 效果型詞條的雷射殘影 [{a,b,life,dur}]（傷害在生成那一幀就結算完了，這裡只剩畫面）
 let grenades = [];           // 飛行中的手榴彈/煙霧彈 [{x,y,vx,vy,dist,max,faction,G|smoke,spin}]（手榴彈落點等引信炸開；煙霧落地即成煙）
 let flashFx = [];            // 閃光彈爆閃視覺 [{x,y,t,max}]（純特效；暈眩效果在 u.flash + canSee/移動/發散）
 // HOMEWARD：無附身。players[KNIGHT_ID] 恆為騎士＝唯一受控單位；players[1..] 恆為 AI 扈從（IDLE，跑 archetype 人格）。
@@ -2921,7 +3082,7 @@ function startMission() {
   const faceInto = ENTRY ? angTo(ENTRY, { x: WORLD.w / 2, y: WORLD.h / 2 }) : 0;   // 開場面向地圖內部
   for (const p of players) { p.facing = faceInto; p.idleAnchor = faceInto; }
   controlledId = 0;
-  enemies = []; bullets = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; floaters = []; motes = []; moteGrabs = 0; execCount = 0; exitPortal = null; shakeAmt = 0; kickY = 0; hitstopT = 0;
+  enemies = []; bullets = []; beams = []; grenades = []; flashFx = []; particles = []; corpses = []; decals = []; floaters = []; motes = []; moteGrabs = 0; execCount = 0; exitPortal = null; shakeAmt = 0; kickY = 0; hitstopT = 0;
   attackTokens = new Map(); enemyIdSeq = 1; drops = []; fileDrop = null;
   cacheGround = (MAP.caches || []).map(c => ({ x: c.x, y: c.y }));   // 密封容器：本場地圖配置的（撿走撤離才開封）
   for (const p of players) p.caches = 0;
@@ -2946,6 +3107,7 @@ function startMission() {
     if (!MAP.eventMap) for (let k = 0; k < missionIndex; k++) { const sp = MAP.enemySpawns[k % MAP.enemySpawns.length]; enemies.push(makeEnemy(sp.nodeId, 'rusher')); }   // 事件地圖不加難度遞增兵
   }
   applyCrystalMods(players[KNIGHT_ID]); applyCrystalHooks();   // 結晶：數值走 mods、事件走 Hooks（和聖物/誓約同一套）
+  applyWeaponAffixHooks();   // 武器的效果型詞條：同一套 Hooks，只是掛在手上那把而不是身上
   if (pendingRescueKnight) { injectKnightRescue(); pendingRescueKnight = false; }   // B面「救援落難騎士」：注入接觸點 + 圍攻他的劫掠隊（一次性）
   /* **進房＝全員醒著**（DESIGN.md §5.1／§5.2）。你踏進的是一個封閉、上了鎖、已經被驚動的房間，
      不是一座還沒發現你的營地——潛行在 C3 就整套拆了，「繞過視錐」是那套系統留下的殘影。
@@ -2958,6 +3120,10 @@ function startMission() {
     e.lastSeenT = 0;
   }
   simTime = 0; roomCleared = false;
+  /* 跳下去那四拍是**上一間房**的收尾。進新房時它一定要是 null——
+     沒清乾淨的話，上一房沒播完的序列會在這一房的第一幀接著跑完，然後呼叫 endMission()：
+     你才剛進門就被結算掉，而且因為房間還沒清，那是一場敗仗。 */
+  descend = null;
   // 波次：第一波已經在場上了（上面的遭遇／enemySpawns），所以 waveIdx 從 0 起算。
   // 序章／最終挑戰／沙盒／編輯試玩／事件圖都是單波——它們是腳本化的場景，不是「一間房」。
   waveIdx = 0;
@@ -3014,7 +3180,7 @@ function enterDescent() {
 function descentPick(i) {
   if (scene !== 'DESCENT' || descentPhase !== 'REWARD') return;
   const o = descentOffers && descentOffers[i]; if (!o) return;
-  descentBag.push(o.type === 'weapon' ? { kind: 'weapon', id: o.id, quality: o.quality, enh: [] }
+  descentBag.push(o.type === 'weapon' ? { kind: 'weapon', id: o.id, quality: o.quality, enh: (o.enh || []).slice() }
                 : o.type === 'ability' ? { kind: 'ability', id: o.id }
                 : { kind: o.type, id: o.id });
   descentOffers = null;
@@ -3107,6 +3273,7 @@ function descentEquipTo(i, slot) {
   if (!slotAccepts(slot, it.kind)) { descentMsg = '這一格放不了這個東西'; return false; }
   const nameOf = (x) => x && x.id ? descentItemName(x) : null;
   let back = null;   // 被換下來的：回袋子，不是丟掉
+  let note = '';     // 附註（例：副手吃不下詞條）——接在收場訊息後面，不要被它蓋掉
 
   if (slot === 'main') {
     if (!WEAPONS[it.id]) return false;
@@ -3120,6 +3287,9 @@ function descentEquipTo(i, slot) {
     if (handsOf(r.weaponId) >= 2) { descentMsg = '主手是雙手武器，副手放不下東西'; return false; }
     if (r.offId) back = isShield(r.offId) ? { kind: 'off', id: r.offId } : { kind: 'weapon', id: r.offId };
     r.offId = it.id;
+    // 副手槽只存一個 id（沒有實例可以掛身分），所以詞條進不去。**明講**——
+    // 靜靜地吃掉玩家剛選到的東西，是最糟的一種「無聲失敗」。
+    if ((it.enh || []).some(e => e.kind === 'affix')) note = '（副手不吃詞條：' + affixNames(it.enh).join('・') + ' 會留在原地）';
   } else if (slot === 'armor') {
     if (r.armorId && r.armorId !== 'none') back = { kind: 'armor', id: r.armorId };
     r.armorId = it.id;
@@ -3143,7 +3313,7 @@ function descentEquipTo(i, slot) {
   }
   descentBag.splice(i, 1);
   if (back) descentBag.push(back);
-  descentMsg = back ? `${nameOf(back)} → ${descentItemName(it)}（換下的回袋子）` : `裝上 ${descentItemName(it)}`;
+  descentMsg = (back ? `${nameOf(back)} → ${descentItemName(it)}（換下的回袋子）` : `裝上 ${descentItemName(it)}`) + note;
   return true;
 }
 function descentDrop(i) {
@@ -3197,6 +3367,12 @@ function offerDetail(o) {
   if (o.type === 'weapon') {
     const W = WEAPONS[o.id], L = lightOf(W), H = heavyOf(W);
     rows.push(['稀有度', W.rarity], ['精良度', '★'.repeat(o.quality || 1)]);
+    for (const e of (o.enh || [])) {
+      if (e.kind !== 'affix') continue;
+      const A = AFFIXES[e.affix]; if (!A) continue;
+      rows.push([A.kind === 'proc' ? '◆詞條' : '詞條', affixLabel(e)]);
+      if (A.kind === 'proc') for (const line of wrapText(A.desc || '', 15)) rows.push(['', line]);   // 效果型要寫清楚**什麼時候**觸發，不然它看起來像被動
+    }
     if (W.melee) {
       rows.push(['雙手', (W.hands || 1) >= 2 ? '是' : '否'], ['反裝甲', (W.pierce || 0).toFixed(2)]);
       if (L) rows.push(['左：' + L.name, Math.round(W.damage * (L.dmgMul || 1)) + ' 傷 / ' + L.poiseDmg + ' 幹'],
@@ -3240,9 +3416,9 @@ function itemSummary(it) {
   if (it.kind === 'crystal') { const C = CRYSTALS[it.id]; return C ? `${CRYSTAL_CAT_NAME[C.cat]} · ${C.desc}` : ''; }
   if (it.kind === 'weapon') {
     const W = WEAPONS[it.id], L = lightOf(W);
-    if (!W.melee) return `${W.damage} 傷 · 幹 ${W.poiseDmg || 0} · 反甲 ${(W.pierce || 0).toFixed(2)} · 射程 ${W.range}`;
-    const H = heavyOf(W);
-    return `${Math.round(W.damage * ((L && L.dmgMul) || 1))} 傷 · 幹 ${L ? L.poiseDmg : 0} · 反甲 ${(W.pierce || 0).toFixed(2)} · ${L ? (L.windup + L.activeT + L.recover).toFixed(2) : '?'}s` + (H ? ` · 右:${H.name}` : '');
+    if (!W.melee) return `${W.damage} 傷 · 幹 ${W.poiseDmg || 0} · 反甲 ${(W.pierce || 0).toFixed(2)} · 射程 ${W.range}` + (affixNames(it.enh).length ? ' · ' + affixNames(it.enh).join('・') : '');
+    const H = heavyOf(W), af = affixNames(it.enh);
+    return `${Math.round(W.damage * ((L && L.dmgMul) || 1))} 傷 · 幹 ${L ? L.poiseDmg : 0} · 反甲 ${(W.pierce || 0).toFixed(2)} · ${L ? (L.windup + L.activeT + L.recover).toFixed(2) : '?'}s` + (H ? ` · 右:${H.name}` : '') + (af.length ? ' · ' + af.join('・') : '');
   }
   if (it.kind === 'off') { const O = OFFHANDS[it.id]; return `護弧 ${O.blockArcDeg}° · 減傷 ${Math.round(O.blockResist * 100)}% · 怒火×${O.wrathMul} · 招架×${O.parryWinMul}`; }
   if (it.kind === 'armor') { const A = ARMORS[it.id]; return `移速×${A.moveMul} · 回怒×${A.wrathGainMul} ·（人間的甲在地獄沒有防護）`; }
@@ -3446,6 +3622,7 @@ function arenaSetWeapon(i) {
   if (handsOf(id) >= 2) { s.off = null; k.offId = null; }      // 換成雙手武器＝副手自動放下
   else if (!s.off) { s.off = ARENA_OFF_IDS[arenaOffIdx] || null; k.offId = s.off; }
   equipActiveSet(k);
+  applyWeaponAffixHooks();   // 換了武器＝換了身分，效果型詞條要跟著重掛
   k.swing = null; k.blocking = false; k.blockT = null; k.parryT = 0; k.aimT = 0;
   const AR = ARMORS[k.armorId] || ARMORS.none, offW = isShield(s.off) ? OFFHANDS[s.off] : null;
   k.moveMul = AR.moveMul * (offW ? offW.moveMul : 1);
@@ -3465,7 +3642,7 @@ function arenaResetFight() {
     const sp = spawnPos(i, players.length); p.pos.x = sp.x; p.pos.y = sp.y;
   });
   controlledId = KNIGHT_ID;
-  corpses = []; decals = []; particles = []; bullets = []; drops = [];
+  corpses = []; decals = []; particles = []; bullets = []; beams = []; drops = [];
   deadCount = 0; simTime = 0; roomCleared = false;
 }
 
@@ -3776,7 +3953,7 @@ function startIntro() {
   for (const d of MAP.doors) d.open = false;
   for (const d of (MAP.destructibles || [])) { d.cur = d.intact; d.curHp = d.hp; }
   enemyIdSeq = 1;
-  bullets = []; grenades = []; flashFx = []; particles = []; drops = []; fileDrop = null;
+  bullets = []; beams = []; grenades = []; flashFx = []; particles = []; drops = []; fileDrop = null;
   cacheGround = []; prisoners = []; corpses = []; decals = []; floaters = []; motes = []; moteGrabs = 0; execCount = 0; exitPortal = null; shakeAmt = 0; kickY = 0; hitstopT = 0;
   introGuards = []; introConsole = null;
   // 騎士＝出身選定的孤身一人；醒來處在戰場左側
@@ -3945,7 +4122,12 @@ const rollLootWeapon = () => weightedPick(randomWeaponPool(availPool('weapon', L
 function rollDropQuality() { const W = CONFIG.enhance.qualityWeights; let tot = 0; for (const q of [1, 2, 3, 4, 5]) tot += (W[q] || 0); let x = srand() * tot; for (const q of [1, 2, 3, 4, 5]) { x -= (W[q] || 0); if (x <= 0) return q; } return 1; }
 const dropWeaponQuality = (id) => Math.max(qualityOf(id), rollDropQuality());
 // 撿到／取得一把武器的倉庫物件（帶擲出的精良度）；q 給定時沿用（拾取既有實例用）。附「★精良度」標籤給收場訊息。
-const lootWeaponEntry = (id, q) => ({ kind: 'weapon', id, quality: q != null ? q : dropWeaponQuality(id) });
+/* 取得一把武器＝**這把是什麼**被決定的那一刻：擲精良度、再拿精良度當機率倍率擲詞條。
+   enh 給定時沿用（撿既有實例／已經擲過的三選一），不重擲——不然同一把會每經手一次就變一次。 */
+const lootWeaponEntry = (id, q, enh) => {
+  const quality = q != null ? q : dropWeaponQuality(id);
+  return { kind: 'weapon', id, quality, enh: enh || rollWeaponAffixes(id, quality) };
+};
 const qualityTag = (q) => (q >= 2 ? `（${'★'.repeat(q)} 精良${q}）` : '');   // 精良1＝粗製，不特別標；精良2+ 才提示「這把值得帶去強化」
 
 // --- 倉庫容量 ---
@@ -3956,7 +4138,14 @@ const overCap = () => warehouseUsed() > warehouseCap();
 // --- 軍械庫節點：三選一拿 武器/裝備/技能/道具 → 倉庫 → 回路線圖（不進戰鬥、不耗時）---
 function enterArmory() { scene = 'ARMORY'; releasePointer(); armoryOffers = rollArmory(CONFIG.loadout.scavengeChoices); }
 function rollArmory(n) {
-  const weapon = () => { const id = rollLootWeapon(), W = WEAPONS[id], q = dropWeaponQuality(id); return { type: 'weapon', id, quality: q, label: `武器 · ${W.name}${q >= 2 ? ' ' + '★'.repeat(q) : ''}`, color: rarityColor(W.rarity) }; };
+  /* 武器選項的詞條**在這裡就擲好**——§5.4 全揭露：卡片上寫著什麼，拿到的就是什麼。
+     擲在選中之後的話，「三個都攤開讓你挑」就變成「挑一個盒子再開」，那正是 §5.4 不要的。 */
+  const weapon = () => {
+    const id = rollLootWeapon(), W = WEAPONS[id], q = dropWeaponQuality(id), enh = rollWeaponAffixes(id, q);
+    const names = affixNames(enh);
+    return { type: 'weapon', id, quality: q, enh, color: rarityColor(W.rarity),
+             label: `武器 · ${W.name}${q >= 2 ? ' ' + '★'.repeat(q) : ''}${names.length ? '〔' + names.join('・') + '〕' : ''}` };
+  };
   const equipO = () => { const id = rngPick(availPool('equip', LOOT_EQUIP_IDS)), E = EQUIPMENT[id]; return { type: 'equip', id, label: `裝備 · ${E.name}（${E.rarity}）`, color: '#9fd0e0' }; };
   const ability = () => { const id = rngPick(availPool('ability', LOOT_ABILITY_IDS)), A = ABILITIES[id]; return { type: 'ability', id, label: `技能 · ${A.name}`, color: '#c0a0ff' }; };
   const itemO = () => { const id = rngPick(LOOT_ITEM_IDS), I = ITEMS[id]; return { type: 'item', id, label: `道具 · ${I.name}`, color: '#ffd27d' }; };
@@ -4013,7 +4202,9 @@ function tutorPickWeapon(i) { if (scene !== 'TUTOR' || tutorMode !== 'affix') re
 function tutorGrantAffix(affixId) {
   if (scene !== 'TUTOR' || tutorMode !== 'affix' || tutorAffixWep == null) return false;
   const t = enhanceTargets()[tutorAffixWep], A = AFFIXES[affixId]; if (!t || !A || A.source) return false;   // 導師不給來源限定的詞條
-  if (chargesFree(t.inst) < (A.charges || 1)) { tutorMsg = `${A.name}：格數不夠（要 ${A.charges} 格，剩 ${chargesFree(t.inst)}）`; return false; }
+  if (chargesFree(t.inst) < 1) { tutorMsg = `${A.name}：格數不夠（剩 ${chargesFree(t.inst)}）`; return false; }
+  if (A.kind === 'proc' && procCount(t.inst) >= CONFIG.affix.procMax) { tutorMsg = `${A.name}：效果型詞條已經有 ${CONFIG.affix.procMax} 條了`; return false; }
+  if (!affixFits(A, t.id)) { tutorMsg = `${A.name}：這把武器沒有右鍵那一招，掛上去也不會觸發`; return false; }
   if (!canAffordAffix(affixId)) { tutorMsg = `${A.name}：資源不足`; return false; }   // 經濟鉤子（現免費）
   const r = applyAffix(t.inst, affixId);   // 就地改 enh 陣列（參照）
   if (!r) { tutorMsg = '施加失敗'; return false; }
@@ -4334,6 +4525,8 @@ const canBlock = (u) => !!shieldOf(u) && !!(u.weapon && u.weapon.melee) && (u.we
    heavy 只有雙手武器才有；沒有 heavy 的武器右鍵不會走揮擊分支。 */
 const lightOf = (W) => (W && W.moves && W.moves.light) || null;
 const heavyOf = (W) => (W && W.moves && W.moves.heavy) || null;
+// 這一刀是不是「右鍵那一招」。招式是共用參照（effWeapon 淺拷貝不會複製 moves），所以比對身分就夠。
+const isHeavyMove = (W, M) => !!(W && M && W.moves && W.moves.heavy === M);
 // 副手那把「武器」（不是盾）＝雙持。回傳武器定義，沒有就 null。
 function offWeaponOf(u) {
   const st = activeSet(u);
@@ -4958,12 +5151,16 @@ function meleeHitTest(u, s) {
     const fromAng = angTo(t.pos, u.pos);                  // 目標→攻擊者＝來向（damageUnit 用來判繞背/格擋）
     const back = Math.abs(angDiff(fromAng, t.facing)) > Math.PI / 2;   // 從目標背面砍＝短劍背刺加成
     let dmg = W.damage * (M.dmgMul || 1) * (back ? (M.backstabMul || 1) : 1) * outDmgMul(u);
-    const poiseOut = (M.poiseDmg || 0) + (u.poiseAdd || 0);   // 結晶「燼心」：命中額外體幹傷   // 招式倍率 × 背刺 × meta「鋒銳」/誓約「無畏」
+    const poiseOut = (M.poiseDmg || 0) + (u.poiseAdd || 0) + (W.poiseAdd || 0);   // 結晶「燼心」/ 詞條「燼紋」：命中額外體幹傷   // 招式倍率 × 背刺 × meta「鋒銳」/誓約「無畏」
     if (u.faction !== 'player' && t.faction === 'player') dmg *= CONFIG.enemy.meleeDmgMul;   // 英雄 vs 群體：AI 近接對我方減傷
     if (isFriendlyHit(u.faction, t)) dmg *= CONFIG.friendlyFire.dmgMul;                      // 誤傷倍率
     const hp0 = t.hp, stag0 = t.staggerT || 0, swing0 = !!t.swing;
-    const blocked = damageUnit(t, dmg, clamp((W.pierce || 0) + (u.pierceBonus || 0), 0, 1), fromAng, { melee: true, attacker: u, knock: (M.knock || 0) * (u.knockMul || 1), stagger: M.stagger || 0, poiseDmg: poiseOut });   // 誓約「長驅」：pierceBonus 破甲 + knockMul 逼退
+    const blocked = damageUnit(t, dmg, clamp((W.pierce || 0) + (u.pierceBonus || 0), 0, 1), fromAng, { melee: true, attacker: u, knock: (M.knock || 0) * (u.knockMul || 1) + (W.knockAdd || 0), stagger: M.stagger || 0, poiseDmg: poiseOut });   // 誓約「長驅」：pierceBonus 破甲 + knockMul 逼退；詞條「沉錘」：knockAdd
     Hooks.fire('attackHit', { u, t, dealt: Math.max(0, hp0 - t.hp), melee: true, blocked, backstab: back, armorDeflect: (hp0 === t.hp && !blocked) });
+    /* 「重擊命中」是效果型詞條四個觸發點之一（處決／招架／重擊／體幹破）。
+       它**不是** attackHit——那條每一刀都在跳，掛上去就會變成彈幕自動戰鬥（§E 定案）。
+       `inst` 帶著是為了雙持：右鍵那把有自己的身分，不該由主手的詞條代打。 */
+    if (isHeavyMove(W, M)) Hooks.fire('heavyHit', { u, t, W, inst: W._inst || null, dealt: Math.max(0, hp0 - t.hp), blocked });
     if (arenaMode) {   // 試作場即時數據：本次揮擊打中幾隻、實際扣多少血（含裝甲/格擋後的真值）
       const dealt = Math.max(0, hp0 - t.hp);
       const broke = (t.staggerT || 0) > stag0;
@@ -5070,7 +5267,7 @@ function fireUnit(u, angle, spreadDeg, fireRateMult, bloomAdd) {
       x: u.pos.x + Math.cos(angle) * (u.radius + 2), y: u.pos.y + Math.sin(angle) * (u.radius + 2),
       vx: Math.cos(a) * W.projSpeed * CONFIG.juice.bulletSpeedMul, vy: Math.sin(a) * W.projSpeed * CONFIG.juice.bulletSpeedMul,   // 碰撞是掃描式（不穿透），所以放慢彈速不會漏判
       dmg: W.damage * dmgF * outDmgMul(u), faction: u.faction, range: W.range, traveled: 0,   // meta 升級「鋒銳」+ 誓約「無畏」
-      poiseDmg: W.poiseDmg || 0, knock: W.knock || 0,   // **遠程也要打體幹**：沒有這個，弓弩投槍永遠開不出處決窗（§2.4 的迴圈對它們是斷的）
+      poiseDmg: (W.poiseDmg || 0) + (W.poiseAdd || 0), knock: (W.knock || 0) + (W.knockAdd || 0),   // **遠程也要打體幹**：沒有這個，弓弩投槍永遠開不出處決窗（§2.4 的迴圈對它們是斷的）。詞條「燼紋」/「沉錘」也走這裡
       ox: u.pos.x, oy: u.pos.y,   // 發射原點（低矮牆「貼牆可越射」判定用）
       pierce: clamp((W.pierce || 0) + (u.pierceBonus || 0), 0, 1),   // 穿甲：對裝甲敵人的擋格率衰減（誓約「重弩/長驅」：pierceBonus +）
       pierceThru: u.magicPierce || 0,   // 貫穿：可穿過幾名敵人繼續飛（誓約「法脈」＝魔法彈直線貫穿）
@@ -5110,6 +5307,73 @@ function tickAmmo(u, dt) {
   }
   if (u.bloom > 0) u.bloom = Math.max(0, u.bloom - u.weapon.spreadRecover * dt);
   if (u.buffT > 0) { u.buffT -= dt; if (u.buffT <= 0) { u.buffT = 0; u.buffMove = 1; u.buffFire = 1; } }  // 道具短時 buff 倒數
+}
+/* ── 效果型詞條的三個原型 ─────────────────────────────────────────────
+   投射物 / AOE / 雷射。刻意做成三支通用函式而不是三條寫死的效果：
+   加一條新詞條＝加一筆 AFFIXES 資料，不必再動這裡（和「加敵種＝加一筆 ENEMY_TYPES」同一條原則）。
+   全部只在「你打對了」的瞬間被 Hooks 叫到——**沒有任何一支掛在每一刀上**。 */
+// AOE：以 pos 為心的一圈。knock 給了就順便震開（重擊的衝擊波用）。
+function affixBurst(pos, r, dmg, poise, by, color, knock) {
+  for (const e of enemies.slice()) {
+    if (e.dead || e.state === 'DEAD') continue;
+    if (dist(pos, e.pos) > r + e.radius) continue;
+    const ang = angTo(e.pos, pos);
+    /* `melee: false`＝爆炸不是一刀。掛 true 的話，剛好在招架窗裡的盾兵會「招架」這團火，
+       然後把**騎士**打進硬直（damageUnit 的招架反擊是 opts.melee 閘住的）——
+       被自己的詞條炸到自己硬直，那是玩家指認不出來的傷害（§2.8 推論 2）。
+       pierce 給滿：詞條是「你打對了」的獎勵，被板甲吃掉就不是獎勵了（同大絕招那一發）。 */
+    damageUnit(e, dmg, 1, ang, { melee: false, attacker: by, knock: knock || 0, stagger: 0, poiseDmg: poise, noWrathGain: true });
+  }
+  for (let i = 0; i < 22; i++) particles.push(mkPart(pos, 200, 0.4, i % 3 ? color : '#ffd66a'));
+  pushDecal(pos.x, pos.y, r * 0.22, 'rgba(90,40,18,0.28)');
+  addShakeAt(pos, 6);
+  Sfx.play('grenade', pos);
+}
+// 投射物：從騎士身上射出（走既有的子彈管線＝擋牆、命中、體幹全部照舊）。
+// target 有給就朝它；沒給就以 spreadDeg 當成扇形／360° 散開。
+function affixBolts(u, from, target, n, dmg, spreadDeg) {
+  const A = CONFIG.affix, mul = CONFIG.juice.bulletSpeedMul;
+  const base = target ? angTo(from, target.pos) : u.facing;
+  for (let i = 0; i < n; i++) {
+    const a = spreadDeg >= 360 ? base + (i / n) * Math.PI * 2
+            : base + ((n === 1) ? 0 : (i / (n - 1) - 0.5)) * spreadDeg * Math.PI / 180;
+    bullets.push({
+      x: from.x + Math.cos(a) * 10, y: from.y + Math.sin(a) * 10,
+      vx: Math.cos(a) * A.boltSpeed * mul, vy: Math.sin(a) * A.boltSpeed * mul,
+      dmg, faction: u.faction, range: A.boltRange, traveled: 0,
+      poiseDmg: A.boltPoise, knock: 40, noWrath: true,   // noWrath＝這幾發不回怒（見 damageUnit 的 noWrathGain）
+      ox: from.x, oy: from.y, pierce: 1, magic: true,
+      shooterId: u.id, owner: u,   // 擊殺歸屬要記在騎士身上，否則詞條殺的人不算你殺的（怒火/結晶都會漏）
+    });
+  }
+  Sfx.play('shot', from);
+}
+/* 雷射：一條瞬間結算的線（不是飛行物），撞牆就停。
+   畫面上要留得住一瞬間，所以另外存一個 `beams` 清單——沒有這個它就是「什麼都沒發生但敵人掉血」。 */
+function affixBeam(u, ang, len, dmg, poise) {
+  const a = { x: u.pos.x, y: u.pos.y }, b = rayHit(u.pos, ang, len);
+  for (const e of enemies.slice()) {
+    if (e.dead || e.state === 'DEAD') continue;
+    const cp = closestOnSeg(e.pos, a, b);
+    if (dist(e.pos, cp) > e.radius + CONFIG.affix.beamHalfW) continue;
+    damageUnit(e, dmg, 1, angTo(e.pos, a), { melee: false, attacker: u, knock: 0, stagger: 0, poiseDmg: poise, noWrathGain: true });
+  }
+  beams.push({ a, b, life: 0.22, dur: 0.22 });
+  addShakeAt(u.pos, 5);
+  Sfx.play('crit', u.pos);
+}
+function updateBeams(dt) { for (let i = beams.length - 1; i >= 0; i--) { beams[i].life -= dt; if (beams[i].life <= 0) beams.splice(i, 1); } }
+function drawBeams() {
+  if (!beams.length) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+  for (const bm of beams) {
+    const f = clamp(bm.life / bm.dur, 0, 1);
+    ctx.strokeStyle = `rgba(255,240,190,${0.85 * f})`; ctx.lineWidth = 3 + 9 * f;
+    ctx.beginPath(); ctx.moveTo(bm.a.x, bm.a.y); ctx.lineTo(bm.b.x, bm.b.y); ctx.stroke();
+    ctx.strokeStyle = `rgba(255,150,60,${0.35 * f})`; ctx.lineWidth = 10 + 20 * f;
+    ctx.beginPath(); ctx.moveTo(bm.a.x, bm.a.y); ctx.lineTo(bm.b.x, bm.b.y); ctx.stroke();
+  }
+  ctx.restore();
 }
 // 手動：基礎+連射 bloom（玩家的扳機紀律＝技巧）。待機：固定平庸發散、不累積 bloom、射速慢。敵人：同手動會 bloom。
 /* 別名（C＝道具＝自由位0、useAbility＝自由位1）：**只是槽位的別名**，一律走 castArt。
@@ -5366,7 +5630,11 @@ function damageUnit(u, dmg, pierce = 0, fromAng = null, opts = null) {
   // 命中回怒（小）＝保底：只要你還在揮就不會完全枯竭。
   // 被盾擋下／被甲反彈只給零頭——打了個寂寞不該和砍進肉裡一樣值錢。武器詞條「平衡」加在這裡。
   const weakVsArmor = armorNow > 0 && (pierce || 0) < AR.weakTag;
-  if (opts && opts.attacker) {
+  /* `noWrathGain`＝這一下不回怒。**效果型詞條走這條**：它們一次打很多人，
+     照常回怒的話「處決一個 → 爆一圈 → 怒火回半條」，等於用詞條把資源迴圈短路掉
+     （和大絕招那條同一個坑：清空排在傷害之後，就是為了不讓一發打很多人的招自己養活自己）。
+     詞條是「你打對了」的獎勵，不是一台怒火發電機。 */
+  if (opts && opts.attacker && !opts.noWrathGain) {
     const W = CONFIG.wrath, aw = opts.attacker.weapon;
     gainWrath(opts.attacker, (blocked || weakVsArmor) ? W.gainHitBlocked : W.gainHit + ((aw && aw.wrathAdd) || 0));
   }
@@ -5455,7 +5723,10 @@ function killUnit(u, killer) {
 function spawnDrop(u, ammo) {
   if (isInfiniteAmmo(u.weaponId)) return;
   if (!LOOT_WEAPON_IDS.includes(u.weaponId)) return;   // 敵人專屬武器(fangs/lmg/shotgun)不掉落
-  drops.push({ pos: { x: u.pos.x, y: u.pos.y }, kind: 'weapon', id: u.weaponId, ammo, quality: u.quality, enh: u.enh });   // 掉落帶著強化
+  /* 敵人**手上**那把永遠是白板（詞條走 Hooks，是給騎士的動詞，不是給 AI 的數值），
+     掉在地上的那一刻才擲——所以地上撿的和門口三選一的是同一套規則、同一個擲骰。 */
+  const enh = (u.enh && u.enh.length) ? u.enh : rollWeaponAffixes(u.weaponId, u.quality);
+  drops.push({ pos: { x: u.pos.x, y: u.pos.y }, kind: 'weapon', id: u.weaponId, ammo, quality: u.quality, enh });
 }
 // 開發測試：第0關地上陳列各式武器(上排)與道具(下排)＝一般掉落（走過撿進背包，到休息關再配裝/使用）
 function spawnDevRack() {
@@ -5636,7 +5907,7 @@ function updateBullets(dt) {
         if (isFriendlyHit(b.faction, t)) dmg *= CONFIG.friendlyFire.dmgMul;              // 誤傷倍率
         const wasAlive = !t.dead && t.hp > 0;
         const hpB0 = t.hp;
-        const bBlocked = damageUnit(t, dmg, b.pierce || 0, angTo(t.pos, { x: b.ox, y: b.oy }), { attacker: b.owner || null, poiseDmg: b.poiseDmg || 0, knock: b.knock || 0 });   // attacker＝擊殺歸屬/Hooks（無 melee 旗標＝不觸發近戰限定效果）
+        const bBlocked = damageUnit(t, dmg, b.pierce || 0, angTo(t.pos, { x: b.ox, y: b.oy }), { attacker: b.owner || null, poiseDmg: b.poiseDmg || 0, knock: b.knock || 0, noWrathGain: !!b.noWrath });   // attacker＝擊殺歸屬/Hooks（無 melee 旗標＝不觸發近戰限定效果）
         if (b.owner) Hooks.fire('attackHit', { u: b.owner, t, dealt: Math.max(0, hpB0 - t.hp), melee: false, blocked: bBlocked, backstab: false, armorDeflect: (hpB0 === t.hp && !bBlocked) });
         if (arenaMode && b.owner === knight()) arenaStats.lastShotDist = Math.round(b.traveled);   // 射擊試作場：顯示這發打了多遠
         if ((b.pierceThru || 0) > 0) { b.pierceThru--; (b.hitSet || (b.hitSet = new Set())).add(t); continue; }   // 誓約「法脈」：貫穿一名、記下已命中、繼續飛
@@ -6285,7 +6556,7 @@ function update(dt) {
   for (const e of enemies) if (!e.dead) enemyTick(e, dt);
 
   // 5) 子彈 / 特效
-  updateBullets(dt); updateGrenades(dt); updateFlashFx(dt); updateParticles(dt); updateFloaters(dt); updateMotes(dt);
+  updateBullets(dt); updateBeams(dt); updateGrenades(dt); updateFlashFx(dt); updateParticles(dt); updateFloaters(dt); updateMotes(dt);
 
   // 6) 擊退位移 + 分離 + 牆面碰撞 + 掉落物拾取（擊退走位移而非瞬移＝仍吃 collideWalls，不會被推穿牆）
   const movers = [...activePlayers(), ...enemies.filter(e => !e.dead)];
@@ -6374,7 +6645,7 @@ function draw() {
   // ---- 世界（鏡頭變換）----
   ctx.save(); applyCam();
   drawGrid(); drawBushes(); drawAreas(); drawLowWalls(); drawDestructibles(); drawWalls(); drawDoors(); drawButtons(); drawWaypoints(); drawZonesWorld();
-  drawDecals(); drawExitPortal(); drawWaveGate(); drawCorpses(); drawDrops(); drawPrisoners(); drawIntroActors(); drawParticles(); drawMotes(); drawBullets(); drawGrenades();
+  drawDecals(); drawExitPortal(); drawWaveGate(); drawCorpses(); drawDrops(); drawPrisoners(); drawIntroActors(); drawParticles(); drawMotes(); drawBullets(); drawBeams(); drawGrenades();
   drawMeleeFx([...enemies.filter(e => !e.dead && isRevealed(e)), ...players]);   // 近接弧畫在單位之下（不遮血條/身體）；敵人比照 drawEnemies 只畫已感知者
   drawEnemies(); drawPlayers(); drawFlashFx();
   drawStaggerMarks([...enemies.filter(e => !e.dead && isRevealed(e)), ...players]);
@@ -7953,14 +8224,17 @@ function drawTutorAffix() {
     const free = chargesFree(t.inst);
     ctx.fillStyle = '#e8eef5'; ctx.font = 'bold 15px Consolas'; ctx.fillText(WEAPONS[t.id].name + '（剩 ' + free + ' 格）— 選一條詞條：', cv.width / 2, y0 + 6);
     TUTOR_AFFIX_IDS.forEach((aid, i) => {
-      const A = AFFIXES[aid], y = y0 + 24 + i * (bh + gap), x = cv.width / 2 - bw / 2, ok = free >= (A.charges || 1);
-      const desc = A.delta ? (A.delta.dmgAdd ? '+' + A.delta.dmgAdd + '傷害' : '') + (A.delta.pierceAdd ? '+' + A.delta.pierceAdd + '穿甲' : '') : (A.poiseAdd ? '命中+' + A.poiseAdd + '體幹傷' : '');
+      const A = AFFIXES[aid], y = y0 + 24 + i * (bh + gap), x = cv.width / 2 - bw / 2;
+      const capped = A.kind === 'proc' && procCount(t.inst) >= CONFIG.affix.procMax;   // 效果型 1~2 的上限，導師也守
+      const ok = free >= 1 && affixFits(A, t.id) && !capped;
+      const desc = A.kind === 'proc' ? ('◆ ' + (A.desc || '')) : (A.roll ? `${A.desc || A.stat} +${A.roll[0]}~${A.roll[1]}` : (A.desc || '—'));
       ctx.fillStyle = ok ? 'rgba(26,22,34,0.97)' : 'rgba(18,16,22,0.9)'; ctx.fillRect(x, y, bw, bh);
       ctx.lineWidth = 2; ctx.strokeStyle = ok ? '#c0a0ff' : 'rgba(120,110,130,0.35)'; ctx.strokeRect(x, y, bw, bh);
       ctx.textAlign = 'left';
       ctx.font = 'bold 15px Consolas'; ctx.fillStyle = ok ? '#c0a0ff' : '#5c646f'; ctx.fillText(`[${i + 1}]`, x + 14, y + 23);
       ctx.fillStyle = ok ? '#e8eef5' : '#6b7580'; ctx.font = '15px Consolas'; ctx.fillText(A.name, x + 54, y + 23);
-      ctx.font = '11px Consolas'; ctx.fillStyle = ok ? '#8b97a5' : '#5c646f'; ctx.fillText(desc + '　（吃 ' + A.charges + ' 格）', x + 54, y + 42);
+      ctx.font = '11px Consolas'; ctx.fillStyle = ok ? '#8b97a5' : '#5c646f';
+      ctx.fillText(desc + (capped ? '　（效果型已滿 ' + CONFIG.affix.procMax + ' 條）' : !affixFits(A, t.id) ? '　（這把武器沒有右鍵那一招）' : '　（吃 1 格）'), x + 54, y + 42);
       if (ok) pushRect(x, y, bw, bh, () => tutorGrantAffix(aid));
     });
     const cy = y0 + 24 + TUTOR_AFFIX_IDS.length * (bh + gap) + 6, cx = cv.width / 2 - 70;
@@ -7976,17 +8250,18 @@ function drawTutorAffix() {
   pushRect(bx, by, 180, 40, () => tutorLeave());
   ctx.textAlign = 'left';
 }
-// 武器強化摘要（配裝卡/鐵匠共用）：★精良度＋鋒利/平衡/詞條
+/* 武器摘要（配裝卡/鐵匠共用）：★精良度＋鋒利/平衡＋詞條。
+   `free`＝鐵匠還能打幾次（craft 預算），**不是**精良度——精良度現在只管掉落擲骰的機率倍率。 */
 function enhSummary(id, quality, enh) {
   const q = quality != null ? quality : qualityOf(id);
-  const used = (enh || []).reduce((n, e) => n + (e.charges || 1), 0);
+  const inst = { id, quality: q, enh: enh || [] };
   let parts = [];
   for (const e of (enh || [])) {
     if (e.kind === 'sharp') parts.push('鋒利+' + e.value);
-    else if (e.kind === 'balance') parts.push('平衡−' + e.value);
-    else if (e.kind === 'affix') parts.push((AFFIXES[e.affix] ? AFFIXES[e.affix].name : e.affix));
+    else if (e.kind === 'balance') parts.push('平衡+' + e.value);
   }
-  return { stars: '★'.repeat(q), free: q - used, used, parts };
+  parts = parts.concat(affixNames(enh));
+  return { stars: '★'.repeat(q), free: chargesFree(inst), used: chargesUsed(inst), parts };
 }
 function drawBlacksmith() {
   restRects = [];
@@ -7994,9 +8269,9 @@ function drawBlacksmith() {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#e6b060'; ctx.font = 'bold 30px Consolas'; ctx.fillText('鐵匠', cv.width / 2, 78);
   ctx.fillStyle = 'rgba(205,214,224,0.7)'; ctx.font = '14px Consolas';
-  ctx.fillText('打鋒利（+傷害）或平衡（+命中回怒）——隨機。精良度＝還能打幾次，打完就滿了。', cv.width / 2, 104);
+  ctx.fillText(`打鋒利（+傷害）或平衡（+命中回怒）——隨機。每把最多打 ${CONFIG.enhance.craftSlots} 次。`, cv.width / 2, 104);
   ctx.fillStyle = 'rgba(205,214,224,0.45)'; ctx.font = '12px Consolas';
-  ctx.fillText('詞條要找導師。石中劍等打滿的武器動不了。', cv.width / 2, 126);
+  ctx.fillText('詞條要找導師（★精良度只影響掉落時滾出幾條）。石中劍等打滿的武器動不了。', cv.width / 2, 126);
 
   const list = enhanceTargets();
   const bw = 560, bh = 58, gap = 8, y0 = 160;
